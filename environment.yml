@@ -1,0 +1,69 @@
+#
+# 1. install environment with:
+# $ conda env create -f environment.yml
+# $ conda activate pipeline-v2
+#
+# 2. install deeplabcut: 
+# $ cd deeplabcut/DeepLabCut-2.2b8
+# $ ./compile.sh
+# $ ./reinstall.sh
+#
+name: pipeline-v2
+#prefix: /your/custom/path/envs/yolact-env
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+dependencies:
+  # general
+  - python==3.7
+  - pip
+  - cython
+  - numpy <1.17
+  - regex
+  - opencv
+  - matplotlib
+  - pillow <=7.0 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision is upgraded
+  - pylint
+  ## deeplabcut stuff
+  - tensorflow==1.14
+  - bayesian-optimization
+  - certifi
+  - chardet
+  - click
+  - easydict
+  - filterpy
+  - h5py
+  - intel-openmp
+  - imgaug
+  - ipython
+  - numba==0.51.1
+  - moviepy<=1.0.1
+  - pandas>=1.0.1
+  - patsy
+  - python-dateutil
+  - pyyaml
+  - requests
+  - ruamel.yaml>=0.15.0
+  - setuptools
+  - scikit-image
+  - scikit-learn
+  - scipy>=1.4
+  - six
+  - statsmodels>=0.11
+  - tqdm
+  - wheel
+  ## yolact stuff
+  - pytorch::torchvision
+  - pytorch::pytorch >=1.0.1
+  - cudatoolkit
+  - cudnn
+  # - pytorch::cuda100
+  # - git # to download COCO dataset
+  # - curl # to download COCO dataset
+  # - unzip # to download COCO dataset
+  # - conda-forge::bash # to download COCO dataset
+
+  - pip:
+    - pycocotools 
+

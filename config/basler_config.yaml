@@ -1,0 +1,17 @@
+add_borders: false
+camera_new_resolution: [4608, 3288]
+camera_offsets: [1000, 100]  # x-offset, y-offset
+
+resize: true
+resized_resolution: [1450, 1450]
+
+undistort: true
+
+crop: false
+crop_margins: [50, 400, 50, 50] # top, right, bottom, left
+
+# pylon viewer -> AOI Controls:
+# Width: 2900px
+# Height: 2900px
+# X Offset: 1000px
+# Y Offset: 100px
