@@ -10,7 +10,9 @@ import types
 from layers.output_utils import postprocess, undo_image_transformation
 from data import cfg, set_cfg, set_dataset
 from data import COCODetection, get_label_map, MEANS, COLORS
-from collections import defaultdict 
+from collections import defaultdict
+import obb
+from PIL import Image
 
 iou_thresholds = [x / 100 for x in range(50, 100, 5)]
 coco_cats = {} # Call prep_coco_cats to fill this
@@ -96,7 +98,7 @@ def get_labeled_img(dets_out, img, h, w, undo_transform=True, class_color=False,
 
         # This is 1 everywhere except for 1-mask_alpha where the mask is
         inv_alph_masks = masks * (-mask_alpha) + 1
-        
+
         # I did the math for this on pen and paper. This whole block should be equivalent to:
         #    for j in range(num_dets_to_consider):
         #        img_gpu = img_gpu * inv_alph_masks[j] + masks_color[j]
@@ -122,6 +124,18 @@ def get_labeled_img(dets_out, img, h, w, undo_transform=True, class_color=False,
     # Then draw the stuff that needs to be done on the cpu
     # Note, make sure this is a uint8 tensor or opencv will not anti alias text for whatever reason
     img_numpy = (img_gpu * 255).byte().cpu().numpy()
+
+    for i in np.arange(len(masks)):
+        np_mask_2 = masks[i].cpu().numpy()[:,:, 0] == 1
+        corners, center = obb.get_obb_from_mask(np_mask_2)
+        corners = np.round(corners).astype(int)
+        center = np.round(center).astype(int)
+        # corners[:, 0], corners[:, 1] = corners[:, 1], corners[:, 0].copy()
+        # center[0], center[1] = center[1], center[0].copy()
+
+        cv2.circle(img_numpy, (center[1], center[0]), 5, (0, 255, 0), -1)
+        for i in np.arange(4):
+            cv2.line(img_numpy, (corners[i][1], corners[i][0]), (corners[i+1][1], corners[i+1][0]), (0, 255, 0), thickness=2)
 
     if args.display_fps:
         # Draw the text on the CPU

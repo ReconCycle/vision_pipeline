@@ -39,7 +39,7 @@ if __name__ == '__main__':
     object_detection = ObjectDetection() # *working
 
     # Iterate over images and run:
-    img_path = '/home/sruiz/datasets/deeplabcut/video_20-11-2020/163.png'
+    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/163.png"
     save_path = '' # set to None to not save
     imgs = get_images(img_path)
     if show_imgs:
