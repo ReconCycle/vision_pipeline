@@ -78,8 +78,6 @@ if __name__ == '__main__':
             print("saving!", save_file_path)
             cv2.imwrite(save_file_path, labeled_img)
 
-        break # !testing only
-
 
 
     # * old pipeline for deeplabcut detection

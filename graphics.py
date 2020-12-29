@@ -19,14 +19,14 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labeled_img(dets_out, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45, fps_str=''):
+def get_labeled_img(prediction, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45, fps_str=''):
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
     """
     args = types.SimpleNamespace()
     args.display_lincomb=False
     args.crop=True
-    args.score_threshold = 0.15
+    args.score_threshold = 0.80
     args.mask_proto_debug = False
     args.top_k = 15
     args.display_masks=True
@@ -48,7 +48,7 @@ def get_labeled_img(dets_out, img, h, w, undo_transform=True, class_color=False,
 
         cfg.mask_proto_debug = args.mask_proto_debug
 
-        t = postprocess(dets_out, w, h, visualize_lincomb = args.display_lincomb,
+        t = postprocess(prediction, w, h, visualize_lincomb = args.display_lincomb,
                                         crop_masks        = args.crop,
                                         score_threshold   = args.score_threshold)
         # cfg.rescore_bbox = save
@@ -111,7 +111,7 @@ def get_labeled_img(dets_out, img, h, w, undo_transform=True, class_color=False,
         img_gpu = img_gpu * inv_alph_masks.prod(dim=0) + masks_color_summand
     
     if args.display_fps:
-            # Draw the box for the fps on the GPU
+        # Draw the box for the fps on the GPU
         font_face = cv2.FONT_HERSHEY_DUPLEX
         font_scale = 0.6
         font_thickness = 1
@@ -125,9 +125,10 @@ def get_labeled_img(dets_out, img, h, w, undo_transform=True, class_color=False,
     # Note, make sure this is a uint8 tensor or opencv will not anti alias text for whatever reason
     img_numpy = (img_gpu * 255).byte().cpu().numpy()
 
+    # calculate and draw oriented bounding boxes
     for i in np.arange(len(masks)):
-        np_mask_2 = masks[i].cpu().numpy()[:,:, 0] == 1
-        corners, center = obb.get_obb_from_mask(np_mask_2)
+        obb_mask = masks[i].cpu().numpy()[:,:, 0] == 1
+        corners, center = obb.get_obb_from_mask(obb_mask)
         corners = np.round(corners).astype(int)
         center = np.round(center).astype(int)
         # corners[:, 0], corners[:, 1] = corners[:, 1], corners[:, 0].copy()
@@ -159,6 +160,7 @@ def get_labeled_img(dets_out, img, h, w, undo_transform=True, class_color=False,
             if args.display_text:
                 _class = cfg.dataset.class_names[classes[j]]
                 text_str = '%s: %.2f, (%.2f, %.2f)' % (_class, score, x1, y1) if args.display_scores else _class
+                print(text_str)
 
                 font_face = cv2.FONT_HERSHEY_DUPLEX
                 font_scale = 0.6

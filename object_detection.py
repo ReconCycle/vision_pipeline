@@ -80,6 +80,9 @@ class ObjectDetection:
 
         return preds
 
+    # def post_process(self, preds):
+        
+
     def test(self):
         with torch.no_grad():
             eval.evaluate(self.net, dataset=None) # This works :)
