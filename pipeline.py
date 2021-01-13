@@ -36,11 +36,12 @@ if __name__ == '__main__':
     # coords = WorkSurfaceDetection(config_path_work_surface, "/home/sruiz/datasets/deeplabcut/data/video_20-11-2020/0.png")
     # 3. object detection
 
-    object_detection = ObjectDetection() # *working
+    # * object detection is working
+    object_detection = ObjectDetection(trained_model="yolact/weights/yolact_base_47_60000.pth", score_threshold=0.80) 
 
     # Iterate over images and run:
-    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/163.png"
-    save_path = '' # set to None to not save
+    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020" # /163.png
+    save_path = 'output' # set to None to not save
     imgs = get_images(img_path)
     if show_imgs:
         cv2.namedWindow("labeled_img", cv2.WINDOW_NORMAL)
@@ -50,8 +51,9 @@ if __name__ == '__main__':
             frame = torch.from_numpy(cv2.imread(img_p)).cuda().float()
         print("img_p", img_p)
         print("frame.shape", frame.shape)
-        pred = object_detection.get_prediction(frame)
-        labeled_img = graphics.get_labeled_img(pred, frame, None, None, undo_transform=False)
+        preds = object_detection.get_prediction(frame)
+        classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider = object_detection.post_process(preds)
+        labeled_img = graphics.get_labeled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider)
         print("labeled_img.shape", labeled_img.shape)
 
         if show_imgs:

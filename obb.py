@@ -51,6 +51,12 @@ def get_obb_from_points(points, calcconvexhull=True):
     corners = np.dot(corners,tvect)
     center = np.dot(center,tvect)
 
+    # change to ints, and change order
+    corners = np.round(corners).astype(int)
+    center = np.round(center).astype(int)
+    corners[:, 0], corners[:, 1] = corners[:, 1], corners[:, 0].copy()
+    center[0], center[1] = center[1], center[0].copy()
+
     return corners, center
 
 def get_obb_from_labelim(label_im, labels=None):

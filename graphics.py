@@ -11,61 +11,30 @@ from layers.output_utils import postprocess, undo_image_transformation
 from data import cfg, set_cfg, set_dataset
 from data import COCODetection, get_label_map, MEANS, COLORS
 from collections import defaultdict
-import obb
-from PIL import Image
 
 iou_thresholds = [x / 100 for x in range(50, 100, 5)]
 coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labeled_img(prediction, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45, fps_str=''):
-    """
-    Note: If undo_transform=False then im_h and im_w are allowed to be None.
-    """
+def get_labeled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, h=None, w=None, undo_transform=False, class_color=False, mask_alpha=0.45, fps_str=''):
+
     args = types.SimpleNamespace()
-    args.display_lincomb=False
-    args.crop=True
-    args.score_threshold = 0.80
-    args.mask_proto_debug = False
-    args.top_k = 15
     args.display_masks=True
     args.display_fps=False
     args.display_text=True
     args.display_bboxes=True
     args.display_scores=True
 
+    """
+    Note: If undo_transform=False then im_h and im_w are allowed to be None.
+    """
     if undo_transform:
         img_numpy = undo_image_transformation(img, w, h)
         img_gpu = torch.Tensor(img_numpy).cuda()
     else:
         img_gpu = img / 255.0
         h, w, _ = img.shape
-    
-    with timer.env('Postprocess'):
-        # save = cfg.rescore_bbox
-        # cfg.rescore_bbox = True
-
-        cfg.mask_proto_debug = args.mask_proto_debug
-
-        t = postprocess(prediction, w, h, visualize_lincomb = args.display_lincomb,
-                                        crop_masks        = args.crop,
-                                        score_threshold   = args.score_threshold)
-        # cfg.rescore_bbox = save
-
-    with timer.env('Copy'):
-        idx = t[1].argsort(0, descending=True)[:args.top_k]
-        
-        if cfg.eval_mask_branch:
-            # Masks are drawn on the GPU, so don't copy
-            masks = t[3][idx]
-        classes, scores, boxes = [x[idx].cpu().numpy() for x in t[:3]]
-
-    num_dets_to_consider = min(args.top_k, classes.shape[0])
-    for j in range(num_dets_to_consider):
-        if scores[j] < args.score_threshold:
-            num_dets_to_consider = j
-            break
 
     # Quick and dirty lambda for selecting the color for a particular index
     # Also keeps track of a per-gpu color cache for maximum speed
@@ -89,9 +58,6 @@ def get_labeled_img(prediction, img, h, w, undo_transform=True, class_color=Fals
     # Beware: very fast but possibly unintelligible mask-drawing code ahead
     # I wish I had access to OpenGL or Vulkan but alas, I guess Pytorch tensor operations will have to suffice
     if args.display_masks and cfg.eval_mask_branch and num_dets_to_consider > 0:
-        # After this, mask is of size [num_dets, h, w, 1]
-        masks = masks[:num_dets_to_consider, :, :, None]
-        
         # Prepare the RGB images for each mask given their color (size [num_dets, h, w, 1])
         colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
         masks_color = masks.repeat(1, 1, 1, 3) * colors * mask_alpha
@@ -125,18 +91,11 @@ def get_labeled_img(prediction, img, h, w, undo_transform=True, class_color=Fals
     # Note, make sure this is a uint8 tensor or opencv will not anti alias text for whatever reason
     img_numpy = (img_gpu * 255).byte().cpu().numpy()
 
-    # calculate and draw oriented bounding boxes
-    for i in np.arange(len(masks)):
-        obb_mask = masks[i].cpu().numpy()[:,:, 0] == 1
-        corners, center = obb.get_obb_from_mask(obb_mask)
-        corners = np.round(corners).astype(int)
-        center = np.round(center).astype(int)
-        # corners[:, 0], corners[:, 1] = corners[:, 1], corners[:, 0].copy()
-        # center[0], center[1] = center[1], center[0].copy()
-
-        cv2.circle(img_numpy, (center[1], center[0]), 5, (0, 255, 0), -1)
-        for i in np.arange(4):
-            cv2.line(img_numpy, (corners[i][1], corners[i][0]), (corners[i+1][1], corners[i+1][0]), (0, 255, 0), thickness=2)
+    # draw oriented bounding boxes
+    for i in np.arange(len(obb_centers)):
+        cv2.circle(img_numpy, tuple(obb_centers[i]), 5, (0, 255, 0), -1)
+        for j in np.arange(4):
+            cv2.line(img_numpy, tuple(obb_corners[i][j]), tuple(obb_corners[i][j+1]), (0, 255, 0), thickness=2)
 
     if args.display_fps:
         # Draw the text on the CPU
@@ -174,5 +133,4 @@ def get_labeled_img(prediction, img, h, w, undo_transform=True, class_color=Fals
                 cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
             
-    
     return img_numpy
