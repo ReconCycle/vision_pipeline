@@ -58,6 +58,8 @@ dependencies:
   - pytorch::pytorch >=1.0.1
   - cudatoolkit
   - cudnn
+  ## ndds-to-coco tools
+  
   # - pytorch::cuda100
   # - git # to download COCO dataset
   # - curl # to download COCO dataset
