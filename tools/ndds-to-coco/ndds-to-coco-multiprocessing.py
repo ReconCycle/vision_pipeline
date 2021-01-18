@@ -12,7 +12,7 @@ import multiprocessing
 import cv2
 
 
-DATA_DIR = '/home/sruiz/datasets/ndds/13-01-2021-segmented-battery'
+DATA_DIR = '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery-val'
 JSON_PATH = os.path.join(DATA_DIR, "_coco.json")
 
 ################################################################################
@@ -73,12 +73,12 @@ CATEGORIES = [
     },
     {
         'id': 7,
-        'name': 'side2',
+        'name': 'side1',
         'supercategory': 'hca',
     },
     {
         'id': 8,
-        'name': 'side1',
+        'name': 'side2',
         'supercategory': 'hca',
     },
 ]
@@ -179,6 +179,12 @@ def compute_classes(managed_list_images, managed_list_annotations, image_id, tot
     return image_info
 
 def main():
+    if not TESTING_STAGE:
+        print("*************************************************************")
+        print("***   DID YOU FIRST RUN USING: TESTING_STAGE = False ???  ***")
+        print("*** and check the labels are correct using cocoviewer.py? ***")
+        print("*************************************************************")
+
     total_is_id = 0
 
     data_dir = os.path.join(DATA_DIR)
@@ -210,8 +216,10 @@ def main():
         managed_list_images = manager.list()
         managed_list_annotations = manager.list()
         total_is_id = 0
-        num_processes = int(np.round((multiprocessing.cpu_count())/2))
-        print("num_processes:", num_processes)
+        # using 3/4 of cpu power doesn't make things much faster
+        num_processes = int(np.round(multiprocessing.cpu_count() *(1/2))) 
+        print("total processes possible:", multiprocessing.cpu_count())
+        print("num_processes to be used:", num_processes)
         print("num_images_to_iterate_over:", num_images_to_iterate_over)
         pool = multiprocessing.Pool(processes=num_processes)
         

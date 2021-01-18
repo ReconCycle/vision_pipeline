@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import time
 
 
-DATA_DIR = '/home/sruiz/datasets/ndds/13-01-2021-segmented-battery'
+DATA_DIR = '/home/sruiz/datasets/ndds/13-01-2021-segmented-battery-val'
 JSON_PATH = os.path.join(DATA_DIR, "_coco.json")
 
 ################################################################################

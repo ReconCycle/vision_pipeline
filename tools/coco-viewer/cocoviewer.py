@@ -4,7 +4,8 @@ import argparse
 from app import App
 import os
 
-DATA_DIR = '/home/sruiz/datasets/ndds/13-01-2021-segmented-battery'
+# DATA_DIR = '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery-val'
+DATA_DIR = '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco'
 JSON_PATH = os.path.join(DATA_DIR, "_coco.json")
 
 parser = argparse.ArgumentParser(description='View images with bboxes from COCO dataset')
