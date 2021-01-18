@@ -20,6 +20,7 @@ import torch.utils.data as data
 import numpy as np
 import argparse
 import datetime
+from tensorboardX import SummaryWriter
 
 # Oof
 import eval as eval_script
@@ -56,11 +57,11 @@ parser.add_argument('--log_folder', default='logs/',
                     help='Directory for saving logs.')
 parser.add_argument('--config', default=None,
                     help='The config object to use.')
-parser.add_argument('--save_interval', default=10000, type=int,
+parser.add_argument('--save_interval', default=2000, type=int,
                     help='The number of iterations between saving the model.')
 parser.add_argument('--validation_size', default=5000, type=int,
                     help='The number of images to use for validation.')
-parser.add_argument('--validation_epoch', default=2, type=int,
+parser.add_argument('--validation_epoch', default=1, type=int,
                     help='Output validation information every n iterations. If -1, do no validation.')
 parser.add_argument('--keep_latest', dest='keep_latest', action='store_true',
                     help='Only keep the latest checkpoint instead of each one.')
@@ -118,6 +119,7 @@ if args.batch_size // torch.cuda.device_count() < 6:
     cfg.freeze_bn = True
 
 loss_types = ['B', 'C', 'M', 'P', 'D', 'E', 'S', 'I']
+better_names = {'B':'box_localization', 'C':'class_confidence', 'M':'mask', 'S': 'semantic_segmentation', 'T': 'total'}
 
 if torch.cuda.is_available():
     if args.cuda:
@@ -182,11 +184,22 @@ def train():
         val_dataset = COCODetection(image_path=cfg.dataset.valid_images,
                                     info_file=cfg.dataset.valid_info,
                                     transform=BaseTransform(MEANS))
+        
+        if hasattr(cfg.dataset, 'valid2_images'):
+            setup_eval()
+            val2_dataset = COCODetection(image_path=cfg.dataset.valid2_images,
+                                    info_file=cfg.dataset.valid2_info,
+                                    transform=BaseTransform(MEANS))
+        else:
+            val2_dataset = None
 
     # Parallel wraps the underlying module, but when saving and loading we don't want that
     yolact_net = Yolact()
     net = yolact_net
     net.train()
+
+    # tensorboardX
+    writer = SummaryWriter()
 
     if args.log:
         log = Log(cfg.name, args.log_folder, dict(args._get_kwargs()),
@@ -239,6 +252,7 @@ def train():
     conf_loss = 0
     iteration = max(args.start_iter, 0)
     last_time = time.time()
+    loss_info = None
 
     epoch_size = len(dataset) // args.batch_size
     num_epochs = math.ceil(cfg.max_iter / epoch_size)
@@ -257,6 +271,8 @@ def train():
 
     global loss_types # Forms the print order
     loss_avgs  = { k: MovingAverage(100) for k in loss_types }
+
+    run_val_at_start = True
 
     print('Begin training!')
     print()
@@ -350,7 +366,18 @@ def train():
                         lr=round(cur_lr, 10), elapsed=elapsed)
 
                     log.log_gpu_stats = args.log_gpu
-                
+                    
+                    writer.add_scalars('train/iter', { better_names[key] : value for key, value in loss_info.items() }, iteration)
+
+                    # added this to make sure it won't crash later if there bis a bug with the validation
+                    if run_val_at_start:
+                        print("running at start only validation map on val_dataset")
+                        compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
+                        if val2_dataset is not None:
+                            print("running at start only validation map on val2_dataset")
+                            compute_validation_map(epoch, iteration, yolact_net, val2_dataset, log if args.log else None, writer if args.log else None, is_val2_dataset=True)
+                        run_val_at_start = False
+
                 iteration += 1
 
                 if iteration % args.save_interval == 0 and iteration != args.start_iter:
@@ -368,10 +395,18 @@ def train():
             # This is done per epoch
             if args.validation_epoch > 0:
                 if epoch % args.validation_epoch == 0 and epoch > 0:
-                    compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None)
+                    if loss_info is not None:
+                        # log the training loss for this epoch
+                        writer.add_scalars('train/epoch', { better_names[key] : value for key, value in loss_info.items() }, epoch)
+                        print("computing validation loss...")
+                        # compute validate loss (this will also log it)
+                        compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
+                        if val2_dataset is not None:
+                            compute_validation_map(epoch, iteration, yolact_net, val2_dataset, log if args.log else None, writer if args.log else None, is_val2_dataset=True)
         
         # Compute validation mAP after training is finished
-        compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None)
+        compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
+
     except KeyboardInterrupt:
         if args.interrupt:
             print('Stopping early. Saving network...')
@@ -380,9 +415,16 @@ def train():
             SavePath.remove_interrupt(args.save_folder)
             
             yolact_net.save_weights(save_path(epoch, repr(iteration) + '_interrupt'))
+
+            writer.export_scalars_to_json("./runs/tensorboardx.json")
+            writer.close()
+
         exit()
 
     yolact_net.save_weights(save_path(epoch, iteration))
+
+    writer.export_scalars_to_json("./runs/tensorboardx.json")
+    writer.close()
 
 
 def set_lr(optimizer, new_lr):
@@ -482,7 +524,7 @@ def compute_validation_loss(net, data_loader, criterion):
         loss_labels = sum([[k, losses[k]] for k in loss_types if k in losses], [])
         print(('Validation ||' + (' %s: %.3f |' * len(losses)) + ')') % tuple(loss_labels), flush=True)
 
-def compute_validation_map(epoch, iteration, yolact_net, dataset, log:Log=None):
+def compute_validation_map(epoch, iteration, yolact_net, dataset, log:Log=None, writer=None, is_val2_dataset=False):
     with torch.no_grad():
         yolact_net.eval()
         
@@ -494,6 +536,16 @@ def compute_validation_map(epoch, iteration, yolact_net, dataset, log:Log=None):
 
         if log is not None:
             log.log('val', val_info, elapsed=(end - start), epoch=epoch, iter=iteration)
+        
+        if writer is not None:
+            print("val_info", val_info)
+            # the mAP keys are: all | .50  |  .55  |  .60  |  .65  |  .70  |  .75  |  .80  |  .85  |  .90  |  .95
+            # but the numbers are not strings
+            log_val_name = "val"
+            if is_val2_dataset:
+                log_val_name = "val2"
+            writer.add_scalars(log_val_name + "/box", { str(key) : value for key, value in val_info["box"].items() }, epoch) 
+            writer.add_scalars(log_val_name + "/mask", { str(key) : value for key, value in val_info["mask"].items() }, epoch)
 
         yolact_net.train()
 

@@ -28,38 +28,14 @@ COLORS = ((244,  67,  54),
 MEANS = (103.94, 116.78, 123.68)
 STD   = (57.38, 57.12, 58.40)
 
-COCO_CLASSES = ('person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
-                'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
-                'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog',
-                'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe',
-                'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
-                'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat',
-                'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
-                'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl',
-                'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot',
-                'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
-                'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop',
-                'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven',
-                'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase',
-                'scissors', 'teddy bear', 'hair drier', 'toothbrush')
-
-COCO_LABEL_MAP = { 1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8,
-                   9:  9, 10: 10, 11: 11, 13: 12, 14: 13, 15: 14, 16: 15, 17: 16,
-                  18: 17, 19: 18, 20: 19, 21: 20, 22: 21, 23: 22, 24: 23, 25: 24,
-                  27: 25, 28: 26, 31: 27, 32: 28, 33: 29, 34: 30, 35: 31, 36: 32,
-                  37: 33, 38: 34, 39: 35, 40: 36, 41: 37, 42: 38, 43: 39, 44: 40,
-                  46: 41, 47: 42, 48: 43, 49: 44, 50: 45, 51: 46, 52: 47, 53: 48,
-                  54: 49, 55: 50, 56: 51, 57: 52, 58: 53, 59: 54, 60: 55, 61: 56,
-                  62: 57, 63: 58, 64: 59, 65: 60, 67: 61, 70: 62, 72: 63, 73: 64,
-                  74: 65, 75: 66, 76: 67, 77: 68, 78: 69, 79: 70, 80: 71, 81: 72,
-                  82: 73, 84: 74, 85: 75, 86: 76, 87: 77, 88: 78, 89: 79, 90: 80}
-
-
-NDDS_COCO_CLASSES = ('battery', 'kalo_1.5_back', 'kalo_1.5_front', 'kalo_1.5_side1', 'kalo_1.5_side2', 'background')
-
-# NDDS categories for me are 0, 2, 3, 4, 5, 6 (1 is missing because I concatenated the battery classes into one)
-NDDS_COCO_LABEL_MAP = {0: 1, 2:  2,  3:  3,  4:  4, 5:  5, 6:  6}
-
+NDDS_COCO_CLASSES = ('background', 'back', 'battery', 'front', 'internals', 'pcb', 'side2', 'side1')
+#                     1             2       3          4        5            6       7       8      # let these always be the corresponding class labels
+# for YOLACT the labels need to start at 1
+NDDS_COCO_LABEL_MAP = {1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8,}
+# if the labels start at 0, then do:
+REAL_CLASSES = ('background', 'front', 'back', 'side1', 'side2', 'battery', 'pcb', 'internals')
+#                0             1        2       3        4        5          6      7
+REAL_LABEL_MAP = {0: 1, 1: 4, 2: 2, 3: 8, 4: 7, 5: 3, 6: 6, 7: 5}
 
 # ----------------------- CONFIG CLASS ----------------------- #
 
@@ -125,7 +101,7 @@ dataset_base = Config({
     'has_gt': True,
 
     # A list of names for each of you classes.
-    'class_names': COCO_CLASSES,
+    # 'class_names': COCO_CLASSES,
 
     # COCO class ids aren't sequential, so this is a bandage fix. If your ids aren't sequential,
     # provide a map from category_id -> index in class_names + 1 (the +1 is there because it's 1-indexed).
@@ -134,60 +110,34 @@ dataset_base = Config({
 })
 
 coco_ndds_dataset = dataset_base.copy({
-    'name': 'COCO 2014',
+    'name': 'COCO_ndds',
 
-    'train_images': '/home/sruiz/datasets/ndds/07-12-2020-front-back-sides-battery',
-    'valid_images': '/home/sruiz/datasets/ndds/07-12-2020-front-back-sides-battery',
+    'train_images': '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery',
+    'train_info': '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery/_coco.json',
 
-    'train_info': '/home/sruiz/datasets/ndds/07-12-2020-front-back-sides-battery/_coco.json',
-    'valid_info': '/home/sruiz/datasets/ndds/07-12-2020-front-back-sides-battery/_coco.json',
+    'valid_images': '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery-val',
+    'valid_info': '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery-val/_coco.json',
+
+    # also validate on real data
+    'valid2_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
+    'valid2_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
+    
 
     'class_names': NDDS_COCO_CLASSES,
     'label_map': NDDS_COCO_LABEL_MAP
 })
 
-coco2014_dataset = dataset_base.copy({
-    'name': 'COCO 2014',
-    
-    'train_info': './data/coco/annotations/instances_train2014.json',
-    'valid_info': './data/coco/annotations/instances_val2014.json',
+real_dataset = dataset_base.copy({
+    'name': 'COCO_ndds',
 
-    'label_map': COCO_LABEL_MAP
-})
+    'train_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
+    'train_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
 
-coco2017_dataset = dataset_base.copy({
-    'name': 'COCO 2017',
-    
-    'train_info': './data/coco/annotations/instances_train2017.json',
-    'valid_info': './data/coco/annotations/instances_val2017.json',
+    'valid_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
+    'valid_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
 
-    'label_map': COCO_LABEL_MAP
-})
-
-coco2017_testdev_dataset = dataset_base.copy({
-    'name': 'COCO 2017 Test-Dev',
-
-    'valid_info': './data/coco/annotations/image_info_test-dev2017.json',
-    'has_gt': False,
-
-    'label_map': COCO_LABEL_MAP
-})
-
-PASCAL_CLASSES = ("aeroplane", "bicycle", "bird", "boat", "bottle",
-                  "bus", "car", "cat", "chair", "cow", "diningtable",
-                  "dog", "horse", "motorbike", "person", "pottedplant",
-                  "sheep", "sofa", "train", "tvmonitor")
-
-pascal_sbd_dataset = dataset_base.copy({
-    'name': 'Pascal SBD 2012',
-
-    'train_images': './data/sbd/img',
-    'valid_images': './data/sbd/img',
-    
-    'train_info': './data/sbd/pascal_sbd_train.json',
-    'valid_info': './data/sbd/pascal_sbd_val.json',
-
-    'class_names': PASCAL_CLASSES,
+    'class_names': REAL_CLASSES,
+    'label_map': REAL_LABEL_MAP
 })
 
 
@@ -433,8 +383,8 @@ fpn_base = Config({
 # ----------------------- CONFIG DEFAULTS ----------------------- #
 
 coco_base_config = Config({
-    'dataset': coco2014_dataset,
-    'num_classes': 81, # This should include the background class
+    # 'dataset': coco_dataset,
+    # 'num_classes': 81, # This should include the background class
 
     'max_iter': 400000,
 
@@ -672,11 +622,11 @@ coco_base_config = Config({
 # ----------------------- YOLACT v1.0 CONFIGS ----------------------- #
 
 yolact_base_config = coco_base_config.copy({
-    'name': 'yolact_base',
+    # 'name': 'coco_ndds',
 
-    # Dataset stuff
-    'dataset': coco_ndds_dataset,
-    'num_classes': len(coco_ndds_dataset.class_names) + 1,
+    # # Dataset stuff
+    # 'dataset': coco_ndds_dataset,
+    # 'num_classes': len(coco_ndds_dataset.class_names) + 1,
 
     # Image Size
     'max_size': 550,
@@ -720,6 +670,21 @@ yolact_base_config = coco_base_config.copy({
 
     'use_semantic_segmentation_loss': True,
 })
+
+real_config = yolact_base_config.copy({
+    'name': 'real',
+    'dataset': real_dataset,
+    'num_classes': len(real_dataset.class_names) + 1,
+})
+
+coco_ndds_config = yolact_base_config.copy({
+    'name': 'coco_ndds',
+
+    # Dataset stuff
+    'dataset': coco_ndds_dataset,
+    'num_classes': len(coco_ndds_dataset.class_names) + 1,
+})
+
 
 yolact_im400_config = yolact_base_config.copy({
     'name': 'yolact_im400',
@@ -768,22 +733,6 @@ yolact_resnet50_config = yolact_base_config.copy({
     }),
 })
 
-
-yolact_resnet50_pascal_config = yolact_resnet50_config.copy({
-    'name': None, # Will default to yolact_resnet50_pascal
-    
-    # Dataset stuff
-    'dataset': pascal_sbd_dataset,
-    'num_classes': len(pascal_sbd_dataset.class_names) + 1,
-
-    'max_iter': 120000,
-    'lr_steps': (60000, 100000),
-    
-    'backbone': yolact_resnet50_config.backbone.copy({
-        'pred_scales': [[32], [64], [128], [256], [512]],
-        'use_square_anchors': False,
-    })
-})
 
 # ----------------------- YOLACT++ CONFIGS ----------------------- #
 
