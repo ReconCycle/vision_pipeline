@@ -17,6 +17,11 @@ class WorkSurfaceDetection:
         self.corners_likelihood = corners_likelihood
         self.corner_labels = corner_labels
 
+        # these will be populated below...
+        self.coord_transform = None
+        self.corners_in_pixels = None
+        self.corners_in_meters = None
+
         if len(corners_x) == 4 and len(corners_y) == 4 and len(corner_labels) == 4:
             # all 4 corners have been detected
             self.corners_in_pixels = np.hstack((corners_x, corners_y))
