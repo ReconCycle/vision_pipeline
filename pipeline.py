@@ -21,26 +21,25 @@ if __name__ == '__main__':
     show_imgs = False
 
     # 1. load calibration files
-    # * this part works!
-    # calibration = ImageCalibration(calibration_file="/home/sruiz/datasets/deeplabcut/kalo_v2_calibration/calibration_1450x1450_undistorted.yaml",
-                                    # basler_config_file="config/basler_config.yaml")
+    calibration = ImageCalibration(calibration_file="/home/sruiz/datasets/deeplabcut/kalo_v2_calibration/calibration_1450x1450_undistorted.yaml",
+                                    basler_config_file="config/basler_config.yaml")
 
     # camera_matrix = np.array(calibration.calibration['camera_matrix'])
     # dist_coefs = np.array(calibration.calibration['dist_coefs'])
 
     # 2. get work surface coordinates
-    # todo: broken atm, missing the work-surface data
-    # full_path = os.path.dirname(os.path.abspath(__file__))
-    # config_path_work_surface = os.path.join(full_path, 'deeplabcut/work_surface-sebastian-2020-11-19/config.yaml')
+    full_path = os.path.dirname(os.path.abspath(__file__))
+    config_path_work_surface = os.path.join(full_path, 'deeplabcut/work_surface-sebastian-2020-11-19/config.yaml')
 
-    # coords = WorkSurfaceDetection(config_path_work_surface, "/home/sruiz/datasets/deeplabcut/data/video_20-11-2020/0.png")
+    # todo: this will show an image using matplotlib because infer_from_img(..) does a lot more than it should
+    worksurface_detection = WorkSurfaceDetection(config_path_work_surface, "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/0.png")
     # 3. object detection
 
     # * object detection is working
-    object_detection = ObjectDetection(trained_model="yolact/weights/yolact_base_47_60000.pth", score_threshold=0.80) 
+    object_detection = ObjectDetection(trained_model="yolact/weights/training_15-01-2021-segmented-battery/coco_ndds_57_36000.pth", score_threshold=0.20) 
 
     # Iterate over images and run:
-    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020" # /163.png
+    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/163.png" # we can use a directory here or a single image
     save_path = 'output' # set to None to not save
     imgs = get_images(img_path)
     if show_imgs:
@@ -53,7 +52,10 @@ if __name__ == '__main__':
         print("frame.shape", frame.shape)
         preds = object_detection.get_prediction(frame)
         classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider = object_detection.post_process(preds)
-        labeled_img = graphics.get_labeled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider)
+
+        # todo: write a function that converts from px coordinates to meters using worksurface_detection
+
+        labeled_img = graphics.get_labeled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, worksurface_detection=worksurface_detection)
         print("labeled_img.shape", labeled_img.shape)
 
         if show_imgs:
