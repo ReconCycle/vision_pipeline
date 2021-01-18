@@ -17,7 +17,7 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labeled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, h=None, w=None, undo_transform=False, class_color=False, mask_alpha=0.45, fps_str=''):
+def get_labeled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, h=None, w=None, undo_transform=False, class_color=False, mask_alpha=0.45, fps_str='', worksurface_detection=None):
 
     args = types.SimpleNamespace()
     args.display_masks=True
@@ -25,6 +25,10 @@ def get_labeled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers
     args.display_text=True
     args.display_bboxes=True
     args.display_scores=True
+
+    font_face = cv2.FONT_HERSHEY_DUPLEX
+    font_scale = 0.6
+    font_thickness = 1
 
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
@@ -78,18 +82,25 @@ def get_labeled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers
     
     if args.display_fps:
         # Draw the box for the fps on the GPU
-        font_face = cv2.FONT_HERSHEY_DUPLEX
-        font_scale = 0.6
-        font_thickness = 1
-
         text_w, text_h = cv2.getTextSize(fps_str, font_face, font_scale, font_thickness)[0]
-
         img_gpu[0:text_h+8, 0:text_w+8] *= 0.6 # 1 - Box alpha
 
 
     # Then draw the stuff that needs to be done on the cpu
     # Note, make sure this is a uint8 tensor or opencv will not anti alias text for whatever reason
     img_numpy = (img_gpu * 255).byte().cpu().numpy()
+
+    # draw work surface corners
+    if worksurface_detection is not None:
+        for i in range(len(worksurface_detection.corners_in_pixels)):
+            xc, yc = worksurface_detection.corners_in_pixels[i]
+            xc_meters, yc_m = worksurface_detection.corners_in_meters[i]
+            print("xc, yc", xc, yc)
+            cv2.circle(img_numpy, (xc, yc), 5, (0, 255, 0), -1)
+            print(worksurface_detection.corner_labels[i] + ", (" + str(xc_meters) + ", " + str(yc_m) + ")")
+            cv2.putText(img_numpy, worksurface_detection.corner_labels[i] + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
+                        (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
+
 
     # draw oriented bounding boxes
     for i in np.arange(len(obb_centers)):
@@ -120,10 +131,6 @@ def get_labeled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers
                 _class = cfg.dataset.class_names[classes[j]]
                 text_str = '%s: %.2f, (%.2f, %.2f)' % (_class, score, x1, y1) if args.display_scores else _class
                 print(text_str)
-
-                font_face = cv2.FONT_HERSHEY_DUPLEX
-                font_scale = 0.6
-                font_thickness = 1
 
                 text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
 
