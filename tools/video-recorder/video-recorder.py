@@ -3,6 +3,7 @@ import cv2
 import os
 import time
 from calibration import *
+import sys
 
 def record_from_webcam(save_path, mirror=False):
     cap = cv2.VideoCapture(0)
@@ -36,7 +37,7 @@ def record_from_webcam(save_path, mirror=False):
     cv2.destroyAllWindows()
 
 
-def record_from_basler(save_path, record_video=False, undistort=True, save_all_imgs=False):
+def record_from_basler(save_path, record_video=False, undistort=True, save_all_imgs=False, limit_fps=None):
     # conecting to the first available camera
     camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
 
@@ -60,6 +61,7 @@ def record_from_basler(save_path, record_video=False, undistort=True, save_all_i
 
     t0 = time.time()
     tstart = t0
+    last_image_taken = 0
 
     if record_video:
         fps, duration = 5, 100
@@ -68,6 +70,8 @@ def record_from_basler(save_path, record_video=False, undistort=True, save_all_i
         # fourcc = cv2.VideoWriter_fourcc(*'XVID') # very big compression ratio
         fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
         video_writer = cv2.VideoWriter(os.path.join(save_path, 'output.avi'), fourcc, fps, video_resolution)  # native res: 3500, 2900
+    else:
+        cv2.namedWindow('title', cv2.WINDOW_NORMAL)
 
     while camera.IsGrabbing():
         grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
@@ -102,16 +106,25 @@ def record_from_basler(save_path, record_video=False, undistort=True, save_all_i
                 count += 1
                 t0 = t1
             else:
-                cv2.namedWindow('title', cv2.WINDOW_NORMAL)
                 cv2.imshow('title', img)
 
             waitkey = cv2.waitKey(1)
             if waitkey == 27:
                 break
             elif (waitkey == 115 and not record_video) or save_all_imgs:  # "s" key
-                print("saving image", str(count))
-                cv2.imwrite(os.path.join(save_path, str(count) + '.png'), img)
-                count += 1
+                time_now = time.time()
+                if (limit_fps and time_now > last_image_taken + 1/limit_fps) or limit_fps is None:
+                    img_3 = np.zeros([512, 512, 3], dtype=np.uint8)
+                    img_3.fill(255)
+                    # or img[:] = 255
+                    cv2.imshow('title', img_3)
+
+                    sys.stdout.write('\a')
+                    print("saving image", str(count))
+                    cv2.imwrite(os.path.join(save_path, str(count) + '.png'), img)
+                    count += 1
+                    last_image_taken = time_now
+
 
         grabResult.Release()
 
@@ -128,13 +141,13 @@ def record_from_basler(save_path, record_video=False, undistort=True, save_all_i
 
 
 if __name__ == '__main__':
-    save_img_path = "data/video_20-11-2020"
+    save_img_path = "data/kalo_18-01-2021"
     save_video_path = "data/basler_video"
 
     calibration = Calibration(calibration_file="data/kalo_v2_calibration/calibration_1450x1450.yaml",
                               basler_config_file="basler_config.yaml")
 
     # record_from_webcam(save_img_path)
-    record_from_basler(save_img_path, record_video=False, save_all_imgs=True, undistort=True)  # will save all images
+    record_from_basler(save_img_path, record_video=False, save_all_imgs=False, undistort=True, limit_fps=None)  # will save all images
     # record_from_basler(save_img_path, record_video=False, undistort=True)  # press 's' to save an image
     # record_from_basler(save_video_path, record_video=True, undistort=True)  # records to .avi file
