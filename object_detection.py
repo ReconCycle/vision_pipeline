@@ -17,7 +17,7 @@ import obb
 import numpy as np
 
 class ObjectDetection:
-    def __init__(self, trained_model, score_threshold=0.15):
+    def __init__(self, trained_model, config_name='coco_ndds', score_threshold=0.15):
         args = types.SimpleNamespace()
 
         args.display=False
@@ -26,7 +26,7 @@ class ObjectDetection:
         args.score_threshold = score_threshold
         args.top_k = 15
         args.mask_proto_debug = False
-        args.config='yolact_base_config'
+        args.config= config_name
         args.crop=True
         args.cuda=True
         eval.args = args

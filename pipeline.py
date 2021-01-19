@@ -36,10 +36,11 @@ if __name__ == '__main__':
     # 3. object detection
 
     # * object detection is working
-    object_detection = ObjectDetection(trained_model="yolact/weights/training_15-01-2021-segmented-battery/coco_ndds_57_36000.pth", score_threshold=0.20) 
+    # object_detection = ObjectDetection(trained_model="yolact/weights/training_15-01-2021-segmented-battery/coco_ndds_57_36000.pth", config_name='coco_ndds', score_threshold=0.20)
+    object_detection = ObjectDetection(trained_model="yolact/weights/real_266_2400.pth", config_name='real', score_threshold=0.20)
 
     # Iterate over images and run:
-    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/163.png" # we can use a directory here or a single image
+    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020" # we can use a directory here or a single image /163.png
     save_path = 'output' # set to None to not save
     imgs = get_images(img_path)
     if show_imgs:
