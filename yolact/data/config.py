@@ -32,10 +32,11 @@ NDDS_COCO_CLASSES = ('background', 'back', 'battery', 'front', 'internals', 'pcb
 #                     1             2       3          4        5            6       7       8      # let these always be the corresponding class labels
 # for YOLACT the labels need to start at 1
 NDDS_COCO_LABEL_MAP = {1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8,}
-# if the labels start at 0, then do:
-REAL_CLASSES = ('background', 'front', 'back', 'side1', 'side2', 'battery', 'pcb', 'internals')
+
+# REAL_CLASSES = ('background', 'front', 'back', 'side1', 'side2', 'battery', 'pcb', 'internals') # This is the order of the classes in the real dataset
 #                0             1        2       3        4        5          6      7
 REAL_LABEL_MAP = {0: 1, 1: 4, 2: 2, 3: 8, 4: 7, 5: 3, 6: 6, 7: 5}
+# we set the labels so that they correspond to the NDDS_COCO_CLASSES. We therefore also use the order of the NDDS_COCO_CLASSES here.
 
 # ----------------------- CONFIG CLASS ----------------------- #
 
@@ -136,7 +137,7 @@ real_dataset = dataset_base.copy({
     'valid_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
     'valid_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
 
-    'class_names': REAL_CLASSES,
+    'class_names': NDDS_COCO_CLASSES, # we set the label map so that we can use the same order of the class names here
     'label_map': REAL_LABEL_MAP
 })
 
@@ -685,6 +686,9 @@ coco_ndds_config = yolact_base_config.copy({
     'num_classes': len(coco_ndds_dataset.class_names) + 1,
 })
 
+# Default config
+#! change this depending on which config you are using!
+cfg = real_config.copy()
 
 yolact_im400_config = yolact_base_config.copy({
     'name': 'yolact_im400',
@@ -773,8 +777,7 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
 })
 
 
-# Default config
-cfg = yolact_base_config.copy()
+
 
 def set_cfg(config_name:str):
     """ Sets the active config. Works even if cfg is already imported! """

@@ -57,8 +57,8 @@ parser.add_argument('--log_folder', default='logs/',
                     help='Directory for saving logs.')
 parser.add_argument('--config', default=None,
                     help='The config object to use.')
-parser.add_argument('--save_interval', default=2000, type=int,
-                    help='The number of iterations between saving the model.')
+parser.add_argument('--save_interval', default=200, type=int,
+                    help='The number of iterations between saving the model.') #! Set to 2000 when training on NDDS
 parser.add_argument('--validation_size', default=5000, type=int,
                     help='The number of images to use for validation.')
 parser.add_argument('--validation_epoch', default=1, type=int,
@@ -371,11 +371,11 @@ def train():
 
                     # added this to make sure it won't crash later if there bis a bug with the validation
                     if run_val_at_start:
-                        print("running at start only validation map on val_dataset")
-                        compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
-                        if val2_dataset is not None:
-                            print("running at start only validation map on val2_dataset")
-                            compute_validation_map(epoch, iteration, yolact_net, val2_dataset, log if args.log else None, writer if args.log else None, is_val2_dataset=True)
+                        # print("running at start only validation map on val_dataset")
+                        # compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
+                        # if val2_dataset is not None:
+                        #     print("running at start only validation map on val2_dataset")
+                        #     compute_validation_map(epoch, iteration, yolact_net, val2_dataset, log if args.log else None, writer if args.log else None, is_val2_dataset=True)
                         run_val_at_start = False
 
                 iteration += 1
@@ -386,6 +386,11 @@ def train():
 
                     print('Saving state, iter:', iteration)
                     yolact_net.save_weights(save_path(epoch, iteration))
+
+                    #! for real dataset computing validation loss here. Running it once per epoch makes it run way too often
+                    # compute validate loss
+                    print("computing validation loss...")
+                    compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
 
                     if args.keep_latest and latest is not None:
                         if args.keep_latest_interval <= 0 or iteration % args.keep_latest_interval != args.save_interval:
@@ -398,11 +403,10 @@ def train():
                     if loss_info is not None:
                         # log the training loss for this epoch
                         writer.add_scalars('train/epoch', { better_names[key] : value for key, value in loss_info.items() }, epoch)
-                        print("computing validation loss...")
                         # compute validate loss (this will also log it)
-                        compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
-                        if val2_dataset is not None:
-                            compute_validation_map(epoch, iteration, yolact_net, val2_dataset, log if args.log else None, writer if args.log else None, is_val2_dataset=True)
+                        # compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
+                        # if val2_dataset is not None:
+                        #     compute_validation_map(epoch, iteration, yolact_net, val2_dataset, log if args.log else None, writer if args.log else None, is_val2_dataset=True)
         
         # Compute validation mAP after training is finished
         compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
