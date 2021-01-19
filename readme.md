@@ -2,6 +2,8 @@
 
 Project to track heat cost allocators and the individual parts of the heat cost allocator.
 
+![Object Tracking](./readme_image.png)
+
 ## Camera Calibration
 
 TODO.
