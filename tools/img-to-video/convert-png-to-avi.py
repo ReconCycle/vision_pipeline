@@ -71,7 +71,10 @@ def copy_imgs_into_batches(image_folder, output_folder, batch_size=10, starting_
 
 
 if __name__ == '__main__':
-    image_folder = 'data/video_20-11-2020-labeled'
-    video_folder = 'data/video_20-11-2020-labeled'
-    convert_folder_to_avi_batches(image_folder, video_folder, batch_size=624, fps=1.5, starting_value=0)
+    image_folder = '/home/sruiz/projects/reconcycle/pipeline-v2/output'
+    video_folder = '/home/sruiz/projects/reconcycle/pipeline-v2/output'
+    convert_folder_to_avi_batches(image_folder, video_folder, batch_size=476, fps=5, starting_value=0)
     # copy_imgs_into_batches(image_folder, image_folder, starting_value=0)
+
+    # videos can be compressed with the following command:
+    # ffmpeg -i input.avi -vcodec libx264 -crf 20 output.avi

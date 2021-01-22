@@ -67,6 +67,11 @@ dependencies:
   # - unzip # to download COCO dataset
   # - conda-forge::bash # to download COCO dataset
 
+  ## ROS 1 stuff
+  - rospkg
+  - catkin_pkg
+  # - ros-rosbag
+  # - ros-sensor-msgs
   - pip:
     - pycocotools 
-
+    # - pypylon # Basler camera api # not working, using the wheel instead
