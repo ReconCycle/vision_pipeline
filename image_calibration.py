@@ -7,37 +7,35 @@ import yaml
 from glob import glob
 import time
 import regex as re
+from config import *
 
 
 class ImageCalibration:
-    def __init__(self, calibration_file=None, basler_config_file=None):
+    def __init__(self, camera_calibration_file=None):
         self.calibration = {}
-        self.basler_config = {}
-        self.load_calibration_file(calibration_file)
-        self.load_basler_config_file(basler_config_file)
-        print("basler_config", self.basler_config)
+    
+        if camera_calibration_file is None:
+            camera_calibration_file = cfg.camera_calibration_file
+    
+        self.load_calibration_file(camera_calibration_file)
 
-        self.undistort = self.basler_config["undistort"]
+        self.undistort = cfg.camera_parameters.undistort
 
-        self.resize = self.basler_config["resize"]
-        self.resized_resolution = tuple(self.basler_config["resized_resolution"])
+        self.resize = cfg.camera_parameters.resize
+        self.resized_resolution = cfg.camera_parameters.resized_resolution
 
-        self.add_borders = self.basler_config["add_borders"]
-        self.camera_new_resolution = tuple(self.basler_config["camera_new_resolution"])
-        self.camera_offsets = tuple(self.basler_config["camera_offsets"])
+        self.add_borders = cfg.camera_parameters.add_borders
+        self.camera_new_resolution = cfg.camera_parameters.camera_new_resolution
+        self.camera_offsets = cfg.camera_parameters.camera_offsets
 
-        self.crop = self.basler_config["crop"]
-        self.crop_margins = self.basler_config["crop_margins"]
+        self.crop = cfg.camera_parameters.crop
+        self.crop_margins = cfg.camera_parameters.crop_margins
 
     def load_calibration_file(self, calibration_file):
         if calibration_file is not None:
             with open(calibration_file) as fr:
                 self.calibration = yaml.load(fr)
 
-    def load_basler_config_file(self, basler_config_file):
-        if basler_config_file is not None:
-            with open(basler_config_file) as fr:
-                self.basler_config = yaml.load(fr)
 
     def get_images(self, input_dir):
         images = [img for img in os.listdir(input_dir) if img.endswith(".png")]

@@ -1,10 +1,8 @@
 import sys, os
-# having trouble importing the yolact directory. Doing this as a workaround:
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'deeplabcut'))
 os.environ["DLClight"] = "True" # no gui
 os.environ['KMP_WARNINGS'] = 'off' # some info about KMP_AFFINITY
-from config import *
-from infer import Inference
+from dlc.config import *
+# from infer import Inference
 from image_calibration import ImageCalibration
 from work_surface_detection import WorkSurfaceDetection
 import numpy as np
@@ -15,32 +13,32 @@ import cv2
 import torch
 import time
 
+
+class Pipeline():
+    def __init__(self):
+        pass
+
+    def pipeline(img):
+        pass
+
+
 if __name__ == '__main__':
 
     # pipeline
     show_imgs = False
 
     # 1. load calibration files
-    calibration = ImageCalibration(calibration_file="/home/sruiz/datasets/deeplabcut/kalo_v2_calibration/calibration_1450x1450_undistorted.yaml",
-                                    basler_config_file="config/basler_config.yaml")
-
-    # camera_matrix = np.array(calibration.calibration['camera_matrix'])
-    # dist_coefs = np.array(calibration.calibration['dist_coefs'])
+    calibration = ImageCalibration()
 
     # 2. get work surface coordinates
-    full_path = os.path.dirname(os.path.abspath(__file__))
-    config_path_work_surface = os.path.join(full_path, 'deeplabcut/work_surface-sebastian-2020-11-19/config.yaml')
-
     # todo: this will show an image using matplotlib because infer_from_img(..) does a lot more than it should
-    worksurface_detection = WorkSurfaceDetection(config_path_work_surface, "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/0.png")
-    # 3. object detection
+    worksurface_detection = WorkSurfaceDetection("/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/0.png")
 
-    # * object detection is working
-    # object_detection = ObjectDetection(trained_model="yolact/weights/training_15-01-2021-segmented-battery/coco_ndds_57_36000.pth", config_name='coco_ndds', score_threshold=0.20)
-    object_detection = ObjectDetection(trained_model="yolact/weights/real_266_2400.pth", config_name='real', score_threshold=0.20)
+    # 3. object detection
+    object_detection = ObjectDetection()
 
     # Iterate over images and run:
-    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020" # we can use a directory here or a single image /163.png
+    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/163.png" # we can use a directory here or a single image /163.png
     save_path = 'output' # set to None to not save
     imgs = get_images(img_path)
     if show_imgs:

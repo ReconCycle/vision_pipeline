@@ -1,15 +1,12 @@
-import sys, os
-# having trouble importing the yolact directory. Doing this as a workaround:
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'deeplabcut'))
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import torch
-from utils import timer
+# from utils import timer
 import types
-from layers.output_utils import postprocess, undo_image_transformation
-from data import cfg, set_cfg, set_dataset
-from data import COCODetection, get_label_map, MEANS, COLORS
+from yolact.layers.output_utils import postprocess, undo_image_transformation
+from yolact.data import cfg, set_cfg, set_dataset
+from yolact.data import COCODetection, get_label_map, MEANS, COLORS
 from collections import defaultdict
 
 iou_thresholds = [x / 100 for x in range(50, 100, 5)]

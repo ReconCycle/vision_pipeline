@@ -1,35 +1,36 @@
 import sys, os
-# having trouble importing the yolact directory. Doing this as a workaround:
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'yolact'))
-from yolact import Yolact
-import eval
+from yolact.yolact import Yolact
+import yolact.eval
 import torch
 import torch.backends.cudnn as cudnn
 import types
 import cv2
-from utils.augmentations import BaseTransform, FastBaseTransform, Resize
+from yolact.utils.augmentations import BaseTransform, FastBaseTransform, Resize
 
 # post process function
-from utils import timer
-from layers.output_utils import postprocess, undo_image_transformation
-from data import cfg
+from yolact.utils import timer
+from yolact.layers.output_utils import postprocess, undo_image_transformation
+from yolact.data import cfg
 import obb
 import numpy as np
+import config
+
+# trained_model="yolact/weights/real_266_2400.pth", config_name='real', score_threshold=0.20
 
 class ObjectDetection:
-    def __init__(self, trained_model, config_name='coco_ndds', score_threshold=0.15):
+    def __init__(self):
         args = types.SimpleNamespace()
 
         args.display=False
         args.display_lincomb=False
-        args.trained_model = trained_model
-        args.score_threshold = score_threshold
+        args.trained_model = config.cfg.yolact_trained_model
+        args.score_threshold = config.cfg.yolact_score_threshold
         args.top_k = 15
         args.mask_proto_debug = False
-        args.config= config_name
+        args.config= config.cfg.yolact_config_name
         args.crop=True
         args.cuda=True
-        eval.args = args
+        # eval.args = args
         self.args = args
 
         self.h = None

@@ -1,19 +1,22 @@
 import sys, os
-# having trouble importing the yolact directory. Doing this as a workaround:
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'deeplabcut'))
 os.environ["DLClight"] = "True" # no gui
 
-from config import *
+from dlc.config import *
 import numpy as np
-from infer import Inference
+from dlc.infer import Inference
+from config import *
+import cv2
 
 
 class WorkSurfaceDetection:
-    def __init__(self, model_config_path, img):
+    def __init__(self, img_path):
 
         # get corners of work surface
-        inference = Inference(model_config_path)
-        corners_x, corners_y, corners_likelihood, corner_labels, bpts2connect = inference.infer_from_img(img)
+        inference = Inference(cfg.dlc_config_file)
+
+        img = np.array(cv2.imread(img_path))
+        
+        corners_x, corners_y, corners_likelihood, corner_labels, bpts2connect = inference.get_pose(img)
         self.corners_likelihood = corners_likelihood
         self.corner_labels = corner_labels
 

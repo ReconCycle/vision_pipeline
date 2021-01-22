@@ -1,7 +1,11 @@
 from pypylon import pylon
-from calibration import *
+from image_calibration import ImageCalibration
 
 def camera_feed(undistort=True):
+
+    calibration = ImageCalibration(calibration_file="/home/sruiz/datasets/deeplabcut/kalo_v2_calibration/calibration_1450x1450_undistorted.yaml",
+                                    basler_config_file="config/basler_config.yaml")
+
     # conecting to the first available camera
     camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
 
