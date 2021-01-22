@@ -20,7 +20,6 @@ class Pipeline:
         self.calibration = ImageCalibration()
 
         # 2. get work surface coordinates
-        # todo: this will show an image using matplotlib because infer_from_img(..) does a lot more than it should
         self.worksurface_detection = WorkSurfaceDetection("/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/0.png")
 
         # 3. object detection

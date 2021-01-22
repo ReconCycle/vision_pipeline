@@ -2,3 +2,4 @@
 *.png
 !readme_image.png
 output/
+data/

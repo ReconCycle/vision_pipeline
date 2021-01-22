@@ -61,11 +61,11 @@ camera_parameters = Config({
 
 
 main_config = Config({
-    "camera_calibration_file": "/home/sruiz/datasets/deeplabcut/kalo_v2_calibration/calibration_1450x1450_undistorted.yaml",
+    "camera_calibration_file": "data/camera_calibration/calibration_1450x1450_undistorted.yaml",
     "camera_parameters": camera_parameters,
 
-    "dlc_config_file": "dlc/work_surface-sebastian-2020-11-19/config.yaml",
-    "yolact_trained_model": "yolact/weights/real_266_2400.pth",
+    "dlc_config_file": "data/dlc/work_surface-sebastian-2020-11-19/config.yaml",
+    "yolact_trained_model": "data/yolact/weights/training_18-01-2021-real/real_266_2400.pth",
     "yolact_config_name": "real", #! not enough, also need to specify the config in yolact/data/config.py
     "yolact_score_threshold": 0.2,
 })

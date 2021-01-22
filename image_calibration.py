@@ -196,8 +196,7 @@ class ImageCalibration:
 
 
 if __name__ == '__main__':
-    # image_calibration = ImageCalibration(calibration_file="data/kalo_v2_calibration/calibration_2k.yaml",
-    #                           basler_config_file="basler_config.yaml")
+    # image_calibration = ImageCalibration(calibration_file="data/kalo_v2_calibration/calibration_2k.yaml")
 
     # # step 1: resize to self.resized_resolution
     # # step 2: undistort resized images
@@ -206,7 +205,6 @@ if __name__ == '__main__':
     #                    output="data/kalo_v2_test_imgs_undistorted")
 
     # To redo the calibration, run:
-    image_calibration = ImageCalibration(calibration_file="data/kalo_v2_calibration/calibration_1450x1450.yaml",
-                              basler_config_file="basler_config.yaml")
+    image_calibration = ImageCalibration(calibration_file="data/kalo_v2_calibration/calibration_1450x1450.yaml")
     # image_calibration.undistort_imgs('data/calibration_2900x2900', output='data/calibration_undistorted_19-11-2020')
     image_calibration.calibrate('data/calibration_undistorted_19-11-2020', 'data/kalo_v2_calibration/calibration_1450x1450_undistorted.yaml')

@@ -15,8 +15,6 @@ import obb
 import numpy as np
 import config
 
-# trained_model="yolact/weights/real_266_2400.pth", config_name='real', score_threshold=0.20
-
 class ObjectDetection:
     def __init__(self):
         args = types.SimpleNamespace()
@@ -39,9 +37,6 @@ class ObjectDetection:
         self.check_gpu()
 
         with torch.no_grad():
-            if not os.path.exists('results'):
-                os.makedirs('results')
-
             if args.cuda:
                 cudnn.fastest = True
                 torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -125,5 +120,3 @@ class ObjectDetection:
 if __name__ == '__main__':
     object_detection = ObjectDetection(trained_model="yolact/weights/yolact_base_47_60000.pth")
     object_detection.test()
-
-# python yolact/eval.py --trained_model=yolact/weights/yolact_base_39_50000.pth --score_threshold=0.15 --top_k=15 --image=/home/sruiz/datasets/ndds/07-12-2020-front-back-sides-battery/000001.color.png:output.png
