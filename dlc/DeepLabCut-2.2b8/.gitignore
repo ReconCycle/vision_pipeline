@@ -116,3 +116,5 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+!deeplabcut/gui/media/*.png

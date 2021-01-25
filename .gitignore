@@ -3,3 +3,6 @@
 !readme_image.png
 output/
 data/
+
+__pycache__/
+

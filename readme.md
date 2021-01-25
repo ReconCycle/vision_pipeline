@@ -8,7 +8,15 @@ Project to track heat cost allocators and the individual parts of the heat cost 
 
 TODO.
 
-## Deeplabcut Training
+## Deeplabcut 
+
+To install:
+```
+cd dlc/DeepLabCut-2.2b8
+./reinstall.sh
+```
+
+### Deeplabcut Training
 
 TODO.
 
