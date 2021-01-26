@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
     def img_from_camera(img):
         print("image from camera received")
-        labelled_img =  pipeline.publish_img(img)
+        labelled_img = pipeline.process_img(img)
 
         camera_publisher.publish_img(img)
         labelled_img_publisher.publish_img(labelled_img)

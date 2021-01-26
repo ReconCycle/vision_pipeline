@@ -1,12 +1,15 @@
 from pypylon import pylon
 from image_calibration import ImageCalibration
+import sys
+import signal
 
-# class CameraFeed:
-#     def __init__(self):
-#         self.img = None
 
-#     def camera_feed(self, undistort=True, callback=None):
-#         pass    
+# adding this signal handler to handle CTRL+C to quit. Doesn't work sometimes otherwise
+def signal_handler(signal, frame):
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+
 
 def camera_feed(undistort=True, callback=None):
 
@@ -26,7 +29,6 @@ def camera_feed(undistort=True, callback=None):
     while camera.IsGrabbing():
 
         grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-
         if grabResult.GrabSucceeded():
             # Access the image data
             image = converter.Convert(grabResult)
@@ -35,9 +37,18 @@ def camera_feed(undistort=True, callback=None):
             if undistort:
                 img = calibration.undistort_imgs(img)  # resizes and undistorts image
 
-                # self.img = img
+            if callback:
+                callback(img)
 
-                if callback:
-                    callback(img)
 
         grabResult.Release()
+
+if __name__ == '__main__':
+
+    def img_from_camera(img):
+        if img is not None:
+            print("image received")
+        else:
+            print("img is none")
+    
+    camera_feed(callback=img_from_camera)

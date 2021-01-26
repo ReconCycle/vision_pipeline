@@ -127,3 +127,9 @@ python train.py --config=real_config --resume=weights/training_15-01-2021-segmen
 In the `config.py` set the config to use correctly: `cfg = real_config.copy()`
 
 In the `pipeline.py` script set the `trained_model` and the `config_name`.
+
+## PyPylon
+
+This is covered more in the ROS-vision-pipeline git container.
+
+export LD_LIBRARY_PATH=$HOME/.anaconda3/envs/pipeline-v2/lib:$LD_LIBRARY_PATH

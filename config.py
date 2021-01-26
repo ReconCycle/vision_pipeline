@@ -46,14 +46,14 @@ class Config(object):
 
 
 camera_parameters = Config({
-    "add_borders": False,
-    "camera_new_resolution": tuple([4608, 3288]),
-    "camera_offsets": tuple([1000, 100]),  # x-offset, y-offset
-
     "resize": True,
     "resized_resolution": tuple([1450, 1450]),
 
     "undistort": True,
+
+    "add_borders": False,
+    "camera_new_resolution": tuple([4608, 3288]),
+    "camera_offsets": tuple([1000, 100]),  # x-offset, y-offset
 
     "crop": False,
     "crop_margins": [50, 400, 50, 50], # top, right, bottom, left
@@ -61,7 +61,7 @@ camera_parameters = Config({
 
 
 main_config = Config({
-    "camera_calibration_file": "data/camera_calibration/calibration_1450x1450_undistorted.yaml",
+    "camera_calibration_file": "data/camera_calibration/calibration_1450x1450.yaml",
     "camera_parameters": camera_parameters,
 
     "dlc_config_file": "data/dlc/work_surface-sebastian-2020-11-19/config.yaml",

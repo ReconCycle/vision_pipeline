@@ -21,7 +21,7 @@ if __name__ == '__main__':
     print("camera publisher node")
 
     ros_publisher = ROSPublisher(node_name="/camera/image_color")
-    img_path = "./example.png"
+    img_path = "./readme_image.png"
     img = cv2.imread(img_path)
     loop_rate = rospy.Rate(1)
 

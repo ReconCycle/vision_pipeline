@@ -20,15 +20,20 @@ class Pipeline:
         self.calibration = ImageCalibration()
 
         # 2. get work surface coordinates
-        self.worksurface_detection = WorkSurfaceDetection("/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/0.png")
+
+        #! Todo, accept image as well as image path for work surface detection
+        # self.worksurface_detection = WorkSurfaceDetection("/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/0.png")
 
         # 3. object detection
         self.object_detection = ObjectDetection()
 
-    def process_img(self, img_path):
+    def process_img(self, img):
         with torch.no_grad():
-            frame = torch.from_numpy(cv2.imread(img_path)).cuda().float()
-        print("img_p", img_path)
+            if isinstance(img, str):
+                print("img path:", img)
+                img = cv2.imread(img)
+            frame = torch.from_numpy(img).cuda().float()
+        
         print("frame.shape", frame.shape)
 
         preds = self.object_detection.get_prediction(frame)
@@ -36,7 +41,8 @@ class Pipeline:
 
         # todo: write a function that converts from px coordinates to meters using worksurface_detection
 
-        labeled_img = graphics.get_labeled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, worksurface_detection=self.worksurface_detection)
+        # labeled_img = graphics.get_labeled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, worksurface_detection=self.worksurface_detection)
+        labeled_img = graphics.get_labeled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider)
         print("labeled_img.shape", labeled_img.shape)
 
         return labeled_img

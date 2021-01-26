@@ -11,13 +11,14 @@ from config import *
 
 
 class ImageCalibration:
-    def __init__(self, camera_calibration_file=None):
+    def __init__(self, calibration_file=None):
         self.calibration = {}
     
-        if camera_calibration_file is None:
-            camera_calibration_file = cfg.camera_calibration_file
+        if calibration_file is None:
+            print("cfg.camera_calibration_file", cfg.camera_calibration_file)
+            calibration_file = cfg.camera_calibration_file
     
-        self.load_calibration_file(camera_calibration_file)
+        self.load_calibration_file(calibration_file)
 
         self.undistort = cfg.camera_parameters.undistort
 
@@ -119,6 +120,7 @@ class ImageCalibration:
 
                 if output is not None:
                     name, ext = os.path.splitext(os.path.basename(input_img))
+                    print("outputting file...", os.path.join(output, name + ext))
                     cv2.imwrite(os.path.join(output, name + ext), resized_img)
 
                 if len(input) == 1:
@@ -195,16 +197,29 @@ class ImageCalibration:
             yaml.dump(calibration, fw)
 
 
+def calibration_process():
+    # step 0: take images of the checkerboard at a resolution of 2900 x 2900
+
+    # step 1: run undistort_imgs(...) but only with resize enabled (no undistorting)
+    image_calibration = ImageCalibration()
+    image_calibration.resize = True
+    image_calibration.undistort = False
+    image_calibration.add_borders = False
+    image_calibration.crop = False
+    image_calibration.undistort_imgs('data/calibration_19-11-2020', output='data/temp')
+
+    # step 1: run calibrate(...) to create calibration file
+    image_calibration = ImageCalibration()
+    image_calibration.calibrate('data/temp', 'data/calibration_file.yaml')
+    
+    # step 2: run undistort_imgs(...) with everything enabled
+    # check that these images are properly undistorted
+    image_calibration = ImageCalibration('data/calibration_file.yaml')
+    image_calibration.undistort_imgs('data/calibration_19-11-2020', output='data/temp_out')
+
+    # step 3: set the camera to output images of size 1450 x 1450
+
 if __name__ == '__main__':
-    # image_calibration = ImageCalibration(calibration_file="data/kalo_v2_calibration/calibration_2k.yaml")
-
-    # # step 1: resize to self.resized_resolution
-    # # step 2: undistort resized images
-    # # step 3: crop using self.crop_margins
-    # image_calibration.resize(calibration.get_images("data/kalo_v2_test_imgs_distorted"),
-    #                    output="data/kalo_v2_test_imgs_undistorted")
-
-    # To redo the calibration, run:
-    image_calibration = ImageCalibration(calibration_file="data/kalo_v2_calibration/calibration_1450x1450.yaml")
-    # image_calibration.undistort_imgs('data/calibration_2900x2900', output='data/calibration_undistorted_19-11-2020')
-    image_calibration.calibrate('data/calibration_undistorted_19-11-2020', 'data/kalo_v2_calibration/calibration_1450x1450_undistorted.yaml')
+    # for calibrating run:
+    # calibration_process()
+    pass
