@@ -2,7 +2,7 @@
 *.png
 !readme_image.png
 output/
-# data/
+data_full/
 
 __pycache__/
 .vscode/
