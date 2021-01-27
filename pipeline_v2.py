@@ -13,6 +13,10 @@ import cv2
 import torch
 import time
 
+from yolact.data import cfg
+
+
+import json
 
 class Pipeline:
     def __init__(self):
@@ -41,11 +45,21 @@ class Pipeline:
 
         # todo: write a function that converts from px coordinates to meters using worksurface_detection
 
-        # labeled_img = graphics.get_labeled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, worksurface_detection=self.worksurface_detection)
-        labeled_img = graphics.get_labeled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider)
-        print("labeled_img.shape", labeled_img.shape)
+        # labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, worksurface_detection=self.worksurface_detection)
+        labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider)
+        print("labelled_img.shape", labelled_img.shape)
 
-        return labeled_img
+        # todo: the graphics part should accept a list of detections like this below instead of what it is doing now
+        detections = []
+        for i in np.arange(len(classes)):
+            detection = {}
+            detection["class_name"] = cfg.dataset.class_names[classes[i]]
+            detection["score"] = float(scores[i])
+            detection["obb_corners"] = obb_corners[i].tolist()
+            detection["obb_center"] = obb_centers[i].tolist()
+            detections.append(detection)
+
+        return labelled_img, detections
 
 
 

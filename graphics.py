@@ -14,7 +14,7 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labeled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps_str='', worksurface_detection=None):
+def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps_str='', worksurface_detection=None):
 
     args = types.SimpleNamespace()
     args.display_masks=True
