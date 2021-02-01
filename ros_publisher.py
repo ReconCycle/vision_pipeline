@@ -4,24 +4,9 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from std_msgs.msg import String
 
-def run_once(f):
-    def wrapper(*args, **kwargs):
-        if not wrapper.has_run:
-            wrapper.has_run = True
-            return f(*args, **kwargs)
-    wrapper.has_run = False
-    return wrapper
-
-@run_once
-def init_node(node_name):
-    print("initialising node with name", node_name)
-    rospy.init_node(node_name)
-
 
 class ROSPublisher:
     def __init__(self, topic_name, msg_images=True):
-        init_node("camera_publisher")
-        
         self.topic_name = topic_name
         if msg_images:
             self.br = CvBridge()

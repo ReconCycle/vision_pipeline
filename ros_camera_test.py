@@ -1,13 +1,15 @@
 import sys
 import os
 import cv2
+import rospy
 from camera_feed import camera_feed
 from ros_publisher import ROSPublisher
 from pipeline_v2 import Pipeline
 
 if __name__ == '__main__':
 
-    camera_publisher = ROSPublisher(node_name="/camera/image_color")
+    rospy.init_node("vision_pipeline")
+    camera_publisher = ROSPublisher(topic_name="/camera/image_color")
 
     def img_from_camera(img):
         print("image from camera received")
