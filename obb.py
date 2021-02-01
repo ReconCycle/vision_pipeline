@@ -64,11 +64,11 @@ def get_obb_from_points(points, calcconvexhull=True):
     rot_matrix[:2, :2] = tvect
 
     rotation_obj = Rotation.from_matrix(rot_matrix)
-    rot_quart = rotation_obj.as_quat()
+    rot_quat = rotation_obj.as_quat()
     # degrees = rotation_obj.as_euler('xyz', degrees=True)
     # print("degrees", degrees)
 
-    return corners, center, rot_quart
+    return corners, center, rot_quat
 
 def get_obb_from_labelim(label_im, labels=None):
     """ given a label image, calculate the oriented 
