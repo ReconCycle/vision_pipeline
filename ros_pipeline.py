@@ -11,9 +11,9 @@ if __name__ == '__main__':
     # 1. Create ROS camera node and feed images from camera to camera node
     # 2. Create ROS camera labelled node and ROS data node -> feed images and data from pipeline
 
-    camera_publisher = ROSPublisher(node_name="/camera/image_color", msg_images=True)
-    labelled_img_publisher = ROSPublisher(node_name="/vision_pipeline/image_color", msg_images=True)
-    data_publisher = ROSPublisher(node_name="/vision_pipeline/data", msg_images=False)
+    camera_publisher = ROSPublisher(topic_name="/camera/image_color", msg_images=True)
+    labelled_img_publisher = ROSPublisher(topic_name="/vision_pipeline/image_color", msg_images=True)
+    data_publisher = ROSPublisher(topic_name="/vision_pipeline/data", msg_images=False)
     pipeline = Pipeline()
 
     def img_from_camera(img):
