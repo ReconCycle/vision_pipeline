@@ -105,13 +105,15 @@ class ObjectDetection:
         # calculate the oriented bounding boxes
         obb_corners = []
         obb_centers = []
+        obb_rot_quarts = []
         for i in np.arange(len(masks)):
             obb_mask = masks[i].cpu().numpy()[:,:, 0] == 1
-            corners, center = obb.get_obb_from_mask(obb_mask)
+            corners, center, rot_quart = obb.get_obb_from_mask(obb_mask)
             obb_corners.append(corners)
             obb_centers.append(center)
+            obb_rot_quarts.append(rot_quart)
 
-        return classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider
+        return classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quarts, num_dets_to_consider
 
     def test(self):
         with torch.no_grad():

@@ -8,6 +8,7 @@
 import numpy as np
 import skimage.morphology
 from scipy.spatial import ConvexHull
+from scipy.spatial.transform import Rotation
 
 
 def get_obb_from_points(points, calcconvexhull=True):
@@ -57,7 +58,17 @@ def get_obb_from_points(points, calcconvexhull=True):
     corners[:, 0], corners[:, 1] = corners[:, 1], corners[:, 0].copy()
     center[0], center[1] = center[1], center[0].copy()
 
-    return corners, center
+    # convert 2d rotation matrix to a 3d rotation matrix the rotation is around the z-axis
+    # the upper left corner of the 3d rotation matrix is the 2d rotation matrix
+    rot_matrix = np.identity(3)
+    rot_matrix[:2, :2] = tvect
+
+    rotation_obj = Rotation.from_matrix(rot_matrix)
+    rot_quart = rotation_obj.as_quat()
+    # degrees = rotation_obj.as_euler('xyz', degrees=True)
+    # print("degrees", degrees)
+
+    return corners, center, rot_quart
 
 def get_obb_from_labelim(label_im, labels=None):
     """ given a label image, calculate the oriented 

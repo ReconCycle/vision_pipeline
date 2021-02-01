@@ -41,7 +41,7 @@ class Pipeline:
         print("frame.shape", frame.shape)
 
         preds = self.object_detection.get_prediction(frame)
-        classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider = self.object_detection.post_process(preds)
+        classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quarts, num_dets_to_consider = self.object_detection.post_process(preds)
 
         # todo: write a function that converts from px coordinates to meters using worksurface_detection
 
@@ -57,6 +57,7 @@ class Pipeline:
             detection["score"] = float(scores[i])
             detection["obb_corners"] = obb_corners[i].tolist()
             detection["obb_center"] = obb_centers[i].tolist()
+            detection["obb_rot_quart"] = obb_rot_quarts[i].tolist()
             detections.append(detection)
 
         return labelled_img, detections
@@ -78,7 +79,7 @@ if __name__ == '__main__':
         cv2.namedWindow("labeled_img", cv2.WINDOW_NORMAL)
     frame_count = 0
     for img_p in imgs:
-        labeled_img = pipeline.process_img(img_p)
+        labeled_img, detections = pipeline.process_img(img_p)
         
         if show_imgs:
             cv2.imshow('labeled_img', labeled_img)
