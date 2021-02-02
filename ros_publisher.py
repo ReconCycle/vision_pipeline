@@ -17,13 +17,13 @@ class ROSPublisher:
     def publish_img(self, img):
         if not rospy.is_shutdown():
             if img is not None:
-                print("publishing image")
+                # print("publishing image")
                 self.pub.publish(self.br.cv2_to_imgmsg(img))
 
     def publish_text(self, text):
         if not rospy.is_shutdown():
             if text is not None:
-                print("publishing text")
+                # print("publishing text")
                 self.pub.publish(String(text))
 
 

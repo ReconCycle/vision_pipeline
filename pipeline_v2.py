@@ -23,13 +23,12 @@ class Pipeline:
         # 1. load camera calibration files
         self.calibration = ImageCalibration()
 
-        # 2. get work surface coordinates
-
-        #! Todo, accept image as well as image path for work surface detection
-        # self.worksurface_detection = WorkSurfaceDetection("/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/0.png")
+        # 2. work surface coordinates, will be initialised on first received image
+        self.worksurface_detection = None
 
         # 3. object detection
         self.object_detection = ObjectDetection()
+
 
     def process_img(self, img):
         with torch.no_grad():
@@ -38,16 +37,16 @@ class Pipeline:
                 img = cv2.imread(img)
             frame = torch.from_numpy(img).cuda().float()
         
+        if self.worksurface_detection is None:
+            print("detecting work surface...")
+            self.worksurface_detection = WorkSurfaceDetection(img)
+
         print("frame.shape", frame.shape)
 
         preds = self.object_detection.get_prediction(frame)
         classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats, num_dets_to_consider = self.object_detection.post_process(preds)
 
-        # todo: write a function that converts from px coordinates to meters using worksurface_detection
-
-        # labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, worksurface_detection=self.worksurface_detection)
-        labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider)
-        print("labelled_img.shape", labelled_img.shape)
+        labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, worksurface_detection=self.worksurface_detection)
 
         # todo: the graphics part should accept a list of detections like this below instead of what it is doing now
         detections = []
@@ -55,13 +54,12 @@ class Pipeline:
             detection = {}
             detection["class_name"] = cfg.dataset.class_names[classes[i]]
             detection["score"] = float(scores[i])
-            detection["obb_corners"] = obb_corners[i].tolist()
-            detection["obb_center"] = obb_centers[i].tolist()
+            detection["obb_corners"] = self.worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
+            detection["obb_center"] = self.worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
             detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
             detections.append(detection)
 
         return labelled_img, detections
-
 
 
 if __name__ == '__main__':

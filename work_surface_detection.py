@@ -9,12 +9,15 @@ import cv2
 
 
 class WorkSurfaceDetection:
-    def __init__(self, img_path):
+    def __init__(self, img):
 
         # get corners of work surface
         inference = Inference(cfg.dlc_config_file)
 
-        img = np.array(cv2.imread(img_path))
+        if isinstance(img, str):
+            img = np.array(cv2.imread(img))
+        else:
+            img = np.array(img)
         
         corners_x, corners_y, corners_likelihood, corner_labels, bpts2connect = inference.get_pose(img)
         self.corners_likelihood = corners_likelihood
@@ -51,3 +54,12 @@ class WorkSurfaceDetection:
             self.corners_in_pixels = np.around(self.corners_in_pixels).astype(int)
         else:
             raise ValueError("too many/few corners detected.")
+
+    def pixels_to_meters(self, coords):
+        if len(coords.shape) == 1:
+            # single coordinate pair.
+            return self.coord_transform(np.array([coords]))[0]
+        else:
+            # assume array of coordinate pairs. 
+            # Each row contains a coordinate (x, y) pair
+            return self.coord_transform(coords)

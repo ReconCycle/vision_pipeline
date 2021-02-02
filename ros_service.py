@@ -11,8 +11,8 @@ import json
 
 
 class ROSService:
-    def __init__(self, service_name="get_detection", camera_topic="/camera/image_color", also_publish=False):
-        self.pipeline = Pipeline()
+    def __init__(self, pipeline, service_name="get_detection", camera_topic="/camera/image_color", also_publish=False):
+        self.pipeline = pipeline
         self.also_publish = also_publish
 
         self.br = CvBridge()
