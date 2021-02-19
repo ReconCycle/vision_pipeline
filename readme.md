@@ -87,12 +87,12 @@ To check whether it worked properly, use the **coco-viewer** tool. Using `TESTIN
 3. Open `yolact/data/config.py` and set the following correctly: `NDDS_COCO_CLASSES`, `NDDS_COCO_LABEL_MAP` and the paths in `coco_ndds_dataset`.
 4. To start training, replace num_gpus and run:
 ```
-export CUDA_VISIBLE_DEVICES=0,1,2 (or whichever GPUs to use, then)
-python train.py --config=yolact_base_config --batch_size=8*num_gpus
+$ export CUDA_VISIBLE_DEVICES=0,1,2 (or whichever GPUs to use, then)
+$ python -m yolact.train --config=coco_ndds_dataset --batch_size=8*num_gpus
 ```
 To resume:
 ```
-# python train.py --config=yolact_base_config --resume=weights/****_interrupt.pth --start_iter=-1 --batch_size=8*num_gpus
+$ python -m yolact.train --config=coco_ndds_dataset --resume=weights/****_interrupt.pth --start_iter=-1 --batch_size=8*num_gpus
 ```
 5. To view logs run: `tensorboard --logdir=yolact/runs`.
 First we train on synthetic data.
