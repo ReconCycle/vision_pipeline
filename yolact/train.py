@@ -1,10 +1,10 @@
-from data import *
-from utils.augmentations import SSDAugmentation, BaseTransform
-from utils.functions import MovingAverage, SavePath
-from utils.logger import Log
-from utils import timer
-from layers.modules import MultiBoxLoss
-from yolact import Yolact
+from yolact.data import *
+from .utils.augmentations import SSDAugmentation, BaseTransform
+from .utils.functions import MovingAverage, SavePath
+from .utils.logger import Log
+from .utils import timer
+from .layers.modules import MultiBoxLoss
+from .yolact import Yolact
 import os
 import sys
 import time
@@ -23,7 +23,8 @@ import datetime
 from tensorboardX import SummaryWriter
 
 # Oof
-import eval as eval_script
+# from .eval import * as eval_script
+import yolact.eval as eval_script
 
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
