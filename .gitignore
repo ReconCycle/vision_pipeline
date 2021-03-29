@@ -3,6 +3,7 @@
 !readme_image.png
 output/
 data_full/
+camera_images/
 
 __pycache__/
 .vscode/

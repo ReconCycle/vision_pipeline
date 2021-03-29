@@ -14,11 +14,11 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps_str='', worksurface_detection=None):
+def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
 
     args = types.SimpleNamespace()
     args.display_masks=True
-    args.display_fps=False
+    args.display_fps=True
     args.display_text=True
     args.display_bboxes=True
     args.display_scores=True
@@ -77,9 +77,10 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
 
         img_gpu = img_gpu * inv_alph_masks.prod(dim=0) + masks_color_summand
     
-    if args.display_fps:
+    if args.display_fps and fps is not None:
         # Draw the box for the fps on the GPU
-        text_w, text_h = cv2.getTextSize(fps_str, font_face, font_scale, font_thickness)[0]
+        fps_text = str(round(fps, 1)) + " fps"
+        text_w, text_h = cv2.getTextSize(fps_text, font_face, font_scale, font_thickness)[0]
         img_gpu[0:text_h+8, 0:text_w+8] *= 0.6 # 1 - Box alpha
 
 
@@ -105,12 +106,12 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
         for j in np.arange(4):
             cv2.line(img_numpy, tuple(obb_corners[i][j]), tuple(obb_corners[i][j+1]), (0, 255, 0), thickness=2)
 
-    if args.display_fps:
+    if args.display_fps and fps is not None:
         # Draw the text on the CPU
         text_pt = (4, text_h + 2)
         text_color = [255, 255, 255]
 
-        cv2.putText(img_numpy, fps_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        cv2.putText(img_numpy, fps_text, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
     
     if num_dets_to_consider == 0:
         return img_numpy
@@ -118,6 +119,7 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
     if args.display_text or args.display_bboxes:
         for j in reversed(range(num_dets_to_consider)):
             x1, y1, x2, y2 = boxes[j, :]
+            x1_center, y1_center = obb_centers[j]
             color = get_color(j)
             score = scores[j]
 
@@ -126,7 +128,10 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
 
             if args.display_text:
                 _class = cfg.dataset.class_names[classes[j]]
-                text_str = '%s: %.2f, (%.2f, %.2f)' % (_class, score, x1, y1) if args.display_scores else _class
+
+                x1_m, y1_m = worksurface_detection.pixels_to_meters((x1_center, y1_center)).tolist()
+
+                text_str = '%s: %.2f, (%.2f, %.2f)' % (_class, score, x1_m, y1_m) if args.display_scores else _class
                 print(text_str)
 
                 text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]

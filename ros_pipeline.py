@@ -8,7 +8,7 @@ from ros_service import ROSService
 from pipeline_v2 import Pipeline
 import json
 import argparse
-
+import time
 
 
 if __name__ == '__main__':
@@ -34,17 +34,23 @@ if __name__ == '__main__':
 
     #? the following might need to run on a separate thread!
     is_first_img = True
+    fps = None
+    t_prev = None
     def img_from_camera_callback(img):
         camera_publisher.publish_img(img)
 
-        global is_first_img
+        global is_first_img, fps, t_prev
         if args.publish_continuously or is_first_img:
             is_first_img = False
-            labelled_img, detections = pipeline.process_img(img)
+            t_now = time.time()
+            if t_prev is not None and t_now - t_prev > 0:
+                fps = 1 / (t_now - t_prev)
+            labelled_img, detections = pipeline.process_img(img, fps)
             json_detections = json.dumps(detections)
 
             labelled_img_publisher.publish_img(labelled_img)
             data_publisher.publish_text(json_detections)
+            t_prev = t_now
             
 
     camera_feed(callback=img_from_camera_callback) # this stops python from quitting since we are looping here

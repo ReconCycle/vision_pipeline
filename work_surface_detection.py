@@ -56,7 +56,7 @@ class WorkSurfaceDetection:
             raise ValueError("too many/few corners detected.")
 
     def pixels_to_meters(self, coords):
-        if len(coords.shape) == 1:
+        if isinstance(coords, tuple) or len(coords.shape) == 1:
             # single coordinate pair.
             return self.coord_transform(np.array([coords]))[0]
         else:

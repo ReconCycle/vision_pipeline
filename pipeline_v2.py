@@ -30,7 +30,7 @@ class Pipeline:
         self.object_detection = ObjectDetection()
 
 
-    def process_img(self, img):
+    def process_img(self, img, fps=None):
         with torch.no_grad():
             if isinstance(img, str):
                 print("img path:", img)
@@ -46,7 +46,7 @@ class Pipeline:
         preds = self.object_detection.get_prediction(frame)
         classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats, num_dets_to_consider = self.object_detection.post_process(preds)
 
-        labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, worksurface_detection=self.worksurface_detection)
+        labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, fps=fps, worksurface_detection=self.worksurface_detection)
 
         # todo: the graphics part should accept a list of detections like this below instead of what it is doing now
         detections = []
@@ -76,8 +76,10 @@ if __name__ == '__main__':
     if show_imgs:
         cv2.namedWindow("labeled_img", cv2.WINDOW_NORMAL)
     frame_count = 0
+    fps = None
+    t_prev = None
     for img_p in imgs:
-        labeled_img, detections = pipeline.process_img(img_p)
+        labeled_img, detections = pipeline.process_img(img_p, fps)
         
         if show_imgs:
             cv2.imshow('labeled_img', labeled_img)
@@ -95,8 +97,11 @@ if __name__ == '__main__':
         if frame_count == 0:
             t_start = time.time()
         else:
+            if t_prev is not None and t_now - t_prev > 0:
+                fps = 1 / (t_now - t_prev)
             print("avg. FPS:", frame_count / (t_now - t_start))
         frame_count += 1
+        t_prev = t_now
 
         if save_path is not None:
             save_file_path = os.path.join(save_path, os.path.basename(img_p))
