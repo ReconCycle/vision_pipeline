@@ -51,13 +51,14 @@ class Pipeline:
         # todo: the graphics part should accept a list of detections like this below instead of what it is doing now
         detections = []
         for i in np.arange(len(classes)):
-            detection = {}
-            detection["class_name"] = cfg.dataset.class_names[classes[i]]
-            detection["score"] = float(scores[i])
-            detection["obb_corners"] = self.worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
-            detection["obb_center"] = self.worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
-            detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
-            detections.append(detection)
+            if obb_corners[i] is not None:
+                detection = {}
+                detection["class_name"] = cfg.dataset.class_names[classes[i]]
+                detection["score"] = float(scores[i])
+                detection["obb_corners"] = self.worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
+                detection["obb_center"] = self.worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
+                detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
+                detections.append(detection)
 
         return labelled_img, detections
 
@@ -70,8 +71,10 @@ if __name__ == '__main__':
     show_imgs = False
 
     # Iterate over images and run:
-    img_path = "/home/sruiz/datasets/deeplabcut/kalo_v2_imgs_20-11-2020/163.png"  # we can use a directory here or a single image /163.png
-    save_path = 'output' # set to None to not save
+    img_path = "./camera_images_3"  # we can use a directory here or a single image /163.png
+    save_path = './labelled_images_3' # set to None to not save
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
     imgs = get_images(img_path)
     if show_imgs:
         cv2.namedWindow("labeled_img", cv2.WINDOW_NORMAL)
@@ -97,8 +100,8 @@ if __name__ == '__main__':
         if frame_count == 0:
             t_start = time.time()
         else:
-            if t_prev is not None and t_now - t_prev > 0:
-                fps = 1 / (t_now - t_prev)
+            # if t_prev is not None and t_now - t_prev > 0:
+                # fps = 1 / (t_now - t_prev)
             print("avg. FPS:", frame_count / (t_now - t_start))
         frame_count += 1
         t_prev = t_now

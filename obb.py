@@ -9,6 +9,7 @@ import numpy as np
 import skimage.morphology
 from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation
+import cv2
 
 
 def get_obb_from_points(points, calcconvexhull=True):
@@ -26,8 +27,15 @@ def get_obb_from_points(points, calcconvexhull=True):
         tuple of corners, centre
     """
 
+    if points.size == 0 or len(points) < 4:
+        return None, None, None
+
     if calcconvexhull:
-        _ch = ConvexHull(points)
+        try:
+            _ch = ConvexHull(points)
+        except:
+            # something went wrong
+            return None, None, None
         points = _ch.points[_ch.vertices]
 
     cov_points = np.cov(points,y = None,rowvar = 0,bias = 1)
@@ -104,4 +112,16 @@ def get_obb_from_mask(mask_im):
     eroded = skimage.morphology.erosion(mask_im)
     outline = mask_im ^ eroded
     boundary_points = np.argwhere(outline > 0)
+
+    # I seem to be getting problems with the above when the mask is really small.
+    # Sometimes the mask contains only one point or points on a single line only.
+    # The problems lie with the mask.
+    # print("boundary_points", boundary_points.shape)
+    # int_mask_im = mask_im.astype("uint8")
+    # print("mask_im", np.count_nonzero(int_mask_im), int_mask_im.shape)
+    # ret, thresh = cv2.threshold(int_mask_im, 0.1, 1, cv2.THRESH_BINARY)
+    # contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) # try using cv2.CHAIN_APPROX_SIMPLE
+    # contours = np.asarray(contours).squeeze()
+    # print("contours", contours.shape, type(contours))
+
     return get_obb_from_points(boundary_points)

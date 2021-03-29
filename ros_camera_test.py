@@ -16,6 +16,10 @@ if __name__ == '__main__':
     rospy.init_node("vision_pipeline")
     camera_publisher = ROSPublisher(topic_name="/camera/image_color")
 
+    save_folder = "./camera_images"
+    if args.save and not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
     img_count = 0
     def img_from_camera(img):
         global img_count
@@ -27,7 +31,7 @@ if __name__ == '__main__':
         camera_publisher.publish_img(img)
 
         if args.save:
-            save_file_path = os.path.join("./camera_images", str(img_count) + ".png")
+            save_file_path = os.path.join(save_folder, str(img_count) + ".png")
             cv2.imwrite(save_file_path, img)
         
         img_count += 1
