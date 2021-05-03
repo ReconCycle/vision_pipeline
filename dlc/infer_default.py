@@ -1,6 +1,6 @@
 import deeplabcut
 import os
-from config import *
+from .config import *
 
 print("deeplabcut version:", deeplabcut.__version__)
 videos = [os.path.join(full_path, "data/kalo_v2_test_videos/test_video_13-11-20.avi")]
@@ -28,7 +28,7 @@ pickle_file = "data/kalo_v2_test_videos/test_video_13-11-20DLC_resnet50_kalo_v2N
 
 # deeplabcut.plot_trajectories(config_path, videos, track_method="skeleton")
 
-deeplabcut.create_labeled_video(config_path, videos, draw_skeleton=True, track_method="skeleton")
+deeplabcut.create_labeled_video(config_path_kalo, videos, draw_skeleton=True, track_method="skeleton")
 
 
 

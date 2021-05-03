@@ -1,6 +1,6 @@
 import deeplabcut
 import os
-from config import *
+from .config import *
 import os.path
 from deeplabcut.pose_estimation_tensorflow.nnet import predict
 from deeplabcut.pose_estimation_tensorflow.config import load_config
