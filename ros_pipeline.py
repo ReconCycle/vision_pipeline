@@ -2,10 +2,13 @@ import sys
 import os
 import cv2
 import rospy
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
 from camera_feed import camera_feed
 from ros_publisher import ROSPublisher
 from ros_service import ROSService
 from pipeline_v2 import Pipeline
+import numpy as np
 import json
 import argparse
 import time
@@ -15,29 +18,34 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("publish_continuously", help="Publish labelled images and detections continuously otherwise create a service.", nargs='?', type=bool, default=False)
-    parser.add_argument("publish_on_service_call", help="When a service call is received, also publish the image and detections", nargs='?', type=bool, default=True)
+    parser.add_argument("camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="/camera/image_color")
+    parser.add_argument("node_name", help="The name of the node", nargs='?', type=str, default="vision_pipeline")
     args = parser.parse_args()
+
+    print("\npublish_continuously:", args.publish_continuously)
+    print("camera_topic:", args.camera_topic)
+    print("node_name:", args.node_name, "\n")
 
     # 1. Create ROS camera node and feed images from camera to camera node
     # 2. Create ROS camera labelled node and ROS data node -> feed images and data from pipeline
 
-    rospy.init_node("vision_pipeline")
+    rospy.init_node(args.node_name)
     pipeline = Pipeline()
 
-    camera_publisher = ROSPublisher(topic_name="/camera/image_color", msg_images=True)
+    # if there is no camera topic then try and subscribe here and create a publisher for the camera images
     labelled_img_publisher = ROSPublisher(topic_name="/vision_pipeline/image_color", msg_images=True)
     data_publisher = ROSPublisher(topic_name="/vision_pipeline/data", msg_images=False)
 
     # either create a publisher topic for the labelled images and detections or create a service
     if not args.publish_continuously:
-        ros_service = ROSService(pipeline, service_name="get_detection", camera_topic="/camera/image_color", also_publish=args.publish_on_service_call)
+        ros_service = ROSService(pipeline, service_name="get_detection", camera_topic=args.camera_topic)
 
     #? the following might need to run on a separate thread!
     is_first_img = True
     fps = None
     t_prev = None
     def img_from_camera_callback(img):
-        camera_publisher.publish_img(img)
+        rgb_img = CvBridge().imgmsg_to_cv2(img)
 
         global is_first_img, fps, t_prev
         if args.publish_continuously or is_first_img:
@@ -45,12 +53,13 @@ if __name__ == '__main__':
             t_now = time.time()
             if t_prev is not None and t_now - t_prev > 0:
                 fps = 1 / (t_now - t_prev)
-            labelled_img, detections = pipeline.process_img(img, fps)
+            labelled_img, detections = pipeline.process_img(rgb_img, fps)
             json_detections = json.dumps(detections)
 
             labelled_img_publisher.publish_img(labelled_img)
             data_publisher.publish_text(json_detections)
             t_prev = t_now
-            
-
-    camera_feed(callback=img_from_camera_callback) # this stops python from quitting since we are looping here
+    
+    if args.publish_continuously:
+        rospy.Subscriber(args.camera_topic, Image, img_from_camera_callback)
+    rospy.spin()

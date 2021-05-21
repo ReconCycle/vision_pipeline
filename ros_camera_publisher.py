@@ -4,17 +4,22 @@ import cv2
 import rospy
 from camera_feed import camera_feed
 from ros_publisher import ROSPublisher
-from pipeline_v2 import Pipeline
 import argparse
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("save", help="Save images to folder..", nargs='?', type=bool, default=False)
+    parser.add_argument("camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="/camera/image_color")
+    parser.add_argument("node_name", help="The name of the node", nargs='?', type=str, default="camera")
     args = parser.parse_args()
 
-    rospy.init_node("vision_pipeline")
-    camera_publisher = ROSPublisher(topic_name="/camera/image_color")
+    print("\nsave:", args.save)
+    print("camera_topic:", args.camera_topic)
+    print("node_name:", args.node_name, "\n")
+
+    rospy.init_node(args.node_name)
+    camera_publisher = ROSPublisher(topic_name=args.camera_topic)
 
     save_folder = "./camera_images"
     if args.save and not os.path.exists(save_folder):
