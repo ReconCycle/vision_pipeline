@@ -12,11 +12,15 @@ if __name__ == '__main__':
     parser.add_argument("save", help="Save images to folder..", nargs='?', type=bool, default=False)
     parser.add_argument("camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="/camera/image_color")
     parser.add_argument("node_name", help="The name of the node", nargs='?', type=str, default="camera")
+    parser.add_argument("undistort", help="Use the calibration file to undistort the image", nargs='?', type=bool, default=True)
+    parser.add_argument("fps", help="Set fps of camera", nargs='?', type=float, default=None)
     args = parser.parse_args()
 
     print("\nsave:", args.save)
     print("camera_topic:", args.camera_topic)
-    print("node_name:", args.node_name, "\n")
+    print("node_name:", args.node_name)
+    print("undistort:", args.undistort)
+    print("fps:", args.fps, "\n")
 
     rospy.init_node(args.node_name)
     camera_publisher = ROSPublisher(topic_name=args.camera_topic)
@@ -41,6 +45,6 @@ if __name__ == '__main__':
         
         img_count += 1
 
-    camera_feed(undistort=True, callback=img_from_camera)
+    camera_feed(undistort=args.undistort, callback=img_from_camera)
 
 
