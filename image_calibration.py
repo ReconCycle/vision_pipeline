@@ -119,6 +119,8 @@ class ImageCalibration:
                 resized_img = undistort_img(img)
 
                 if output is not None:
+                    if not os.path.exists(output):
+                        os.makedirs(output)
                     name, ext = os.path.splitext(os.path.basename(input_img))
                     print("outputting file...", os.path.join(output, name + ext))
                     cv2.imwrite(os.path.join(output, name + ext), resized_img)
@@ -197,7 +199,7 @@ class ImageCalibration:
             yaml.dump(calibration, fw)
 
 
-def calibration_process():
+def calibration_process(input_dir="data/calibration", pattern_size=(8, 6)):
     # step 0: take images of the checkerboard at a resolution of 2900 x 2900
 
     # step 1: run undistort_imgs(...) but only with resize enabled (no undistorting)
@@ -206,20 +208,27 @@ def calibration_process():
     image_calibration.undistort = False
     image_calibration.add_borders = False
     image_calibration.crop = False
-    image_calibration.undistort_imgs('data/calibration_19-11-2020', output='data/temp')
+    image_calibration.undistort_imgs(input_dir, output='data/temp_resized')
 
-    # step 1: run calibrate(...) to create calibration file
+    # step 2: run calibrate(...) to create calibration file
     image_calibration = ImageCalibration()
-    image_calibration.calibrate('data/temp', 'data/calibration_file.yaml')
+    image_calibration.calibrate('data/temp_resized', 'data/calibration_file.yaml', pattern_size=pattern_size)
     
-    # step 2: run undistort_imgs(...) with everything enabled
+    # step 3: run undistort_imgs(...) with everything enabled
     # check that these images are properly undistorted
     image_calibration = ImageCalibration('data/calibration_file.yaml')
-    image_calibration.undistort_imgs('data/calibration_19-11-2020', output='data/temp_out')
-
-    # step 3: set the camera to output images of size 1450 x 1450
+    image_calibration.undistort_imgs(input_dir, output='data/temp_undistorted')
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--board_h", help="The board height", nargs='?', type=int, default=8)
+    parser.add_argument("--board_w", help="The board width", nargs='?', type=int, default=6)
+    parser.add_argument("--input", help="Input directory of images", nargs='?', type=str, default="data/calibration")
+    args = parser.parse_args()
+
+    print("\nboard_h:", args.board_h)
+    print("board_w:", args.board_w)
+    print("input:", args.input)
+
     # for calibrating run:
-    # calibration_process()
-    pass
+    calibration_process(input_dir=args.input, pattern_size=(args.board_h, args.board_w))

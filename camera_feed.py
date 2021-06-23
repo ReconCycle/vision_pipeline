@@ -2,6 +2,7 @@ from pypylon import pylon
 from image_calibration import ImageCalibration
 import sys
 import signal
+import time
 
 
 # adding this signal handler to handle CTRL+C to quit. Doesn't work sometimes otherwise
@@ -11,7 +12,7 @@ def signal_handler(signal, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 
-def camera_feed(undistort=True, callback=None):
+def camera_feed(undistort=True, fps=None, callback=None):
 
     calibration = ImageCalibration()
 
@@ -26,8 +27,8 @@ def camera_feed(undistort=True, callback=None):
     converter.OutputPixelFormat = pylon.PixelType_BGR8packed
     converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
 
+    t_start = 0
     while camera.IsGrabbing():
-
         grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
         if grabResult.GrabSucceeded():
             # Access the image data
@@ -36,10 +37,12 @@ def camera_feed(undistort=True, callback=None):
 
             if undistort:
                 img = calibration.undistort_imgs(img)  # resizes and undistorts image
-
-            if callback:
-                callback(img)
-
+            
+            t_now = time.time()
+            if fps is None or t_now - t_start > 1/fps:
+                t_start = t_now # reset t_start
+                if callback:
+                    callback(img)
 
         grabResult.Release()
 
