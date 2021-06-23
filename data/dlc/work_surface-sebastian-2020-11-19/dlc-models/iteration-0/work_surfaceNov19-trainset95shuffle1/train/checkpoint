@@ -1,2 +1,0 @@
-model_checkpoint_path: "/home/sebastian/Projects/reconcycle/deeplabcut/work_surface-sebastian-2020-11-19/dlc-models/iteration-0/work_surfaceNov19-trainset95shuffle1/train/snapshot-250000"
-all_model_checkpoint_paths: "/home/sebastian/Projects/reconcycle/deeplabcut/work_surface-sebastian-2020-11-19/dlc-models/iteration-0/work_surfaceNov19-trainset95shuffle1/train/snapshot-250000"
