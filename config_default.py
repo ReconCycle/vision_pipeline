@@ -2,6 +2,7 @@ from pathlib import Path
 from config import Config
 
 config_overide_file = Path("data/config_override.py")
+cfg_override = None
 if config_overide_file.is_file():
     # override file exists. Import it.
     from data.config_override import cfg as cfg_override

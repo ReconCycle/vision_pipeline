@@ -13,7 +13,7 @@ from yolact.layers.output_utils import postprocess, undo_image_transformation
 from yolact.data import cfg
 import obb
 import numpy as np
-import config
+import config_default
 
 class ObjectDetection:
     def __init__(self):
@@ -21,11 +21,11 @@ class ObjectDetection:
 
         args.display=False
         args.display_lincomb=False
-        args.trained_model = config.cfg.yolact_trained_model
-        args.score_threshold = config.cfg.yolact_score_threshold
+        args.trained_model = config_default.cfg.yolact_trained_model
+        args.score_threshold = config_default.cfg.yolact_score_threshold
         args.top_k = 15
         args.mask_proto_debug = False
-        args.config= config.cfg.yolact_config_name
+        args.config= config_default.cfg.yolact_config_name
         args.crop=True
         args.cuda=True
         # eval.args = args

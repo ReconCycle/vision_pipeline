@@ -12,14 +12,15 @@ import numpy as np
 import json
 import argparse
 import time
+import helpers
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("publish_continuously", help="Publish labelled images and detections continuously otherwise create a service.", nargs='?', type=bool, default=False)
-    parser.add_argument("camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="/camera/image_color")
-    parser.add_argument("node_name", help="The name of the node", nargs='?', type=str, default="vision_pipeline")
+    parser.add_argument("--publish_continuously", help="Publish continuously otherwise create service.", nargs='?', type=helpers.str2bool, default=False)
+    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="/camera/image_color")
+    parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision_pipeline")
     args = parser.parse_args()
 
     print("\npublish_continuously:", args.publish_continuously)
@@ -40,26 +41,41 @@ if __name__ == '__main__':
     if not args.publish_continuously:
         ros_service = ROSService(pipeline, service_name="get_detection", camera_topic=args.camera_topic)
 
-    #? the following might need to run on a separate thread!
-    is_first_img = True
-    fps = None
-    t_prev = None
+    current_cam_img = None
+    img_id = 0
     def img_from_camera_callback(img):
-        rgb_img = CvBridge().imgmsg_to_cv2(img)
+        global current_cam_img # access variable from outside callback
+        global img_id
+        current_cam_img = CvBridge().imgmsg_to_cv2(img)
+        img_id += 1
 
-        global is_first_img, fps, t_prev
-        if args.publish_continuously or is_first_img:
-            is_first_img = False
-            t_now = time.time()
-            if t_prev is not None and t_now - t_prev > 0:
-                fps = 1 / (t_now - t_prev)
-            labelled_img, detections = pipeline.process_img(rgb_img, fps)
-            json_detections = json.dumps(detections)
-
-            labelled_img_publisher.publish_img(labelled_img)
-            data_publisher.publish_text(json_detections)
-            t_prev = t_now
-    
+    #? the following might need to run on a separate thread!    
     if args.publish_continuously:
         rospy.Subscriber(args.camera_topic, Image, img_from_camera_callback)
-    rospy.spin()
+    
+        # process the newest image from the camera
+        processed_img_id = 0 # don't keep processing the same image
+        t_prev = None
+        fps = None
+        while(True):
+            if current_cam_img is not None and processed_img_id < img_id:
+                processed_img_id = img_id
+                t_now = time.time()
+                if t_prev is not None and t_now - t_prev > 0:
+                    fps = 1 / (t_now - t_prev)
+                labelled_img, detections = pipeline.process_img(current_cam_img, fps)
+                json_detections = json.dumps(detections)
+                
+                labelled_img_publisher.publish_img(labelled_img)
+                data_publisher.publish_text(json_detections)
+                
+                t_prev = t_now
+            elif current_cam_img is None:
+                print("Waiting to receive image.")
+                time.sleep(0.1)
+
+            if img_id == sys.maxsize:
+                img_id = 0
+                processed_img_id = 0
+    else:
+        rospy.spin()
