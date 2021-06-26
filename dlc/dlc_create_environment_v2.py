@@ -1,7 +1,7 @@
 import deeplabcut
 import os
 import regex as re
-from config import *
+from config_default import *
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 

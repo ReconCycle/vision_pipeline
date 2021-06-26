@@ -1,5 +1,5 @@
 from dlclive import DLCLive, Processor, benchmark_videos
-from config import *
+from config_default import *
 from PIL import Image
 import numpy as np
 

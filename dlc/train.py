@@ -1,6 +1,6 @@
 import deeplabcut
 import os
-from config import *
+from config_default import *
 
 # os.environ["CUDA_VISIBLE_DEVICES"]="5"
 deeplabcut.train_network(config_path, 

@@ -28,11 +28,12 @@ if __name__ == '__main__':
     camera_publisher = ROSPublisher(topic_name=args.camera_topic)
 
     save_folder = "./camera_images"
-    if args.save and not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-    else:
-        shutil.rmtree(save_folder)
-        os.makedirs(save_folder)
+    if args.save:
+        if not os.path.exists(save_folder):
+            os.makedirs(save_folder)
+        else:
+            shutil.rmtree(save_folder)
+            os.makedirs(save_folder)
 
     img_count = 0
     def img_from_camera(img):

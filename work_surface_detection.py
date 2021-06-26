@@ -4,7 +4,7 @@ os.environ["DLClight"] = "True" # no gui
 from dlc.config import *
 import numpy as np
 from dlc.infer import Inference
-from config import *
+from config_default import *
 import cv2
 
 

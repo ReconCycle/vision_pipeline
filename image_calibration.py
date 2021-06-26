@@ -7,7 +7,7 @@ import yaml
 from glob import glob
 import time
 import regex as re
-from config import *
+from config_default import *
 
 
 class ImageCalibration:

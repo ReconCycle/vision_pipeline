@@ -17,7 +17,8 @@ class ROSPublisher:
     def publish_img(self, img):
         if not rospy.is_shutdown():
             if img is not None:
-                # print("publishing image")
+                print("publishing image")
+                print("number of connections:", self.pub.get_num_connections())
                 self.pub.publish(self.br.cv2_to_imgmsg(img))
 
     def publish_text(self, text):

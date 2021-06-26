@@ -1,6 +1,6 @@
 import deeplabcut
 import os
-from config import *
+from config_default import *
 import pandas as pd
 
 # deeplabcut.evaluate_network(config_path, Shuffles=[1], plotting=False)
