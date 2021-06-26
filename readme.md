@@ -4,9 +4,16 @@ Project to track heat cost allocators and the individual parts of the heat cost 
 
 ![Object Tracking](./readme_image.png)
 
+This project works best by using the [ros-vision-pipeline](https://github.com/ReconCycle/ros-vision-pipeline) Docker container.
+The camera part can be run separately in a ROS node using [ros-basler-camera](https://github.com/ReconCycle/ros-basler-camera).
+
+## Installation
+
+Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision-pipeline/data` folder.
+
 ## Camera Calibration
 
-TODO.
+Look at the documentation in [ros-basler-camera](https://github.com/ReconCycle/ros-basler-camera).
 
 ## Deeplabcut 
 
@@ -15,6 +22,7 @@ To install:
 cd dlc/DeepLabCut-2.2b8
 ./reinstall.sh
 ```
+Note: this is done automatically when using the [ros-vision-pipeline](https://github.com/ReconCycle/ros-vision-pipeline) Docker container.
 
 ### Deeplabcut Training
 
