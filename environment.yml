@@ -56,7 +56,7 @@ dependencies:
   ## yolact stuff
   - pytorch::torchvision
   - pytorch::pytorch >=1.0.1
-  - cudatoolkit
+  - cudatoolkit=10.2
   - cudnn
   - tensorboardx
   ## ndds-to-coco tools
