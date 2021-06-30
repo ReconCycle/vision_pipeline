@@ -27,15 +27,19 @@ if __name__ == '__main__':
     rospy.init_node(args.node_name)
     camera_publisher = ROSPublisher(topic_name=args.camera_topic)
 
-    save_folder = "./camera_images"
+    save_folder_name = "./camera_images"
+    save_folder = save_folder_name
     if args.save:
-        if not os.path.exists(save_folder):
-            os.makedirs(save_folder)
-        else:
-            shutil.rmtree(save_folder)
-            os.makedirs(save_folder)
+        folder_counter = 1
+        path_exists = os.path.exists(save_folder)
+        while(path_exists):
+            save_folder = save_folder_name + "_" +  str(folder_counter).zfill(2)
+            path_exists = os.path.exists(save_folder)
+            folder_counter += 1
 
-    img_count = 0
+        os.makedirs(save_folder)
+
+    img_count = 1
     def img_from_camera(img):
         global img_count
         print("image from camera received")
@@ -46,7 +50,7 @@ if __name__ == '__main__':
         camera_publisher.publish_img(img)
 
         if args.save:
-            save_file_path = os.path.join(save_folder, str(img_count) + ".png")
+            save_file_path = os.path.join(save_folder, str(img_count).zfill(3) + ".png")
             print("writing image:", save_file_path)
             cv2.imwrite(save_file_path, img)
         
