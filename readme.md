@@ -54,6 +54,8 @@ This must be done after generating images with NDDS. Make sure that instance seg
 
 ```
 git clone https://github.com/sebastian-ruiz/labelme.git
+git fetch
+git checkout feature_copy_paste
 cd labelme
 conda create --name=labelme python=3.6
 conda activate labelme
