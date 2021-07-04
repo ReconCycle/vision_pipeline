@@ -98,12 +98,14 @@ To check whether it worked properly, use the **coco-viewer** tool. Using `TESTIN
 4. To start training, replace num_gpus and run:
 ```
 $ export CUDA_VISIBLE_DEVICES=0,1,2 (or whichever GPUs to use, then)
-$ python -m yolact.train --config=coco_ndds_dataset --batch_size=8*num_gpus
+$ python -m yolact.train --config=coco_ndds_config --save_interval=2000 --batch_size=8*num_gpus
 ```
 To resume:
 ```
-$ python -m yolact.train --config=coco_ndds_dataset --resume=weights/****_interrupt.pth --start_iter=-1 --batch_size=8*num_gpus
+$ python -m yolact.train --config=coco_ndds_config --resume=weights/****_interrupt.pth --start_iter=-1 --save_interval=2000 --batch_size=8*num_gpus
 ```
+For training on less data, reduce the save_interval. On few real images use `--save_interval=200` instead.
+
 5. To view logs run: `tensorboard --logdir=yolact/runs`.
 First we train on synthetic data.
 
