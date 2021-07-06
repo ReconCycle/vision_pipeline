@@ -26,7 +26,13 @@ Note: this is done automatically when using the [ros-vision-pipeline](https://gi
 
 ### Deeplabcut Training
 
-TODO.
+1. Take a folder of images to annotate. Use the script in `tools/img-to-video/convert-png-to-avi.py` to convert the images to a video.
+2. Edit the script `dlc/dlc_create_environment.py` by commenting in each step on its own and then run:
+```
+cd vision-pipeline/
+python -m dlc.dlc_create_environment
+```
+
 
 ### Deeplabcut Inference
 
@@ -70,13 +76,14 @@ labelme
 ```
 __ignore__
 _background_
-front
-back
-side1
-side2
+hca_front
+hca_back
+hca_side1
+hca_side2
 battery
 pcb
-internals
+internals_back
+internals_front
 ```
 2. Run command:
 ```

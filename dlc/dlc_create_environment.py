@@ -6,10 +6,11 @@ from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # IMPORTANT: SET THE CONFIG PATH CORRECTLY HERE!
-config_path = config_path_work_surface
+config_path = "/home/reconcycle/reconcycle/vision-pipeline/data/dlc/dlc_work_surface_jsi_05-07-2021/config.yaml"
 print("config_path", config_path)
 print("deeplabcut.__version__", deeplabcut.__version__)
-video_dir = os.path.join(full_path, 'data/work_surface_videos')
+# video_dir = os.path.join(full_path, 'data/work_surface_videos')
+video_dir = "/home/reconcycle/reconcycle/vision-pipeline/data/dlc/raw_data_work_surface_jsi_05-07-2021"
 
 videos = [video for video in os.listdir(video_dir) if video.endswith(".avi")]
 videos.sort(key=lambda f: int(re.sub('\D', '', f)))
@@ -27,11 +28,12 @@ print("videos:", videos)
 #                           mode='automatic', algo='all', userfeedback=False, crop=False)
 
 # opens gui for labelling
-deeplabcut.label_frames(config_path)
+# deeplabcut.label_frames(config_path)
 
 # check the skeleton
 # deeplabcut.SkeletonBuilder(config_path)
 
+# check the labels
 # deeplabcut.check_labels(config_path)
 
 # crop images for better training
@@ -40,4 +42,10 @@ deeplabcut.label_frames(config_path)
 
 # deeplabcut.create_training_dataset(config_path)
 
+# os.environ["CUDA_VISIBLE_DEVICES"]="5"
+deeplabcut.train_network(config_path, 
+                            shuffle=1, 
+                            trainingsetindex=0, 
+                            gputouse=0, # titan X on rotterdam
+                            max_snapshots_to_keep=None) # keep all snapshots 
 
