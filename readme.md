@@ -36,8 +36,7 @@ python -m dlc.dlc_create_environment
 
 ### Deeplabcut Inference
 
-TODO.
-
+In the `data/config_override.py` set the config parameters. Set `dlc_config_file` to point to your dlc config `.yaml` file.
 
 ## NDDS
 
@@ -143,12 +142,19 @@ python train.py --config=real_config --resume=weights/training_15-01-2021-segmen
 
 ## Inference
 
-In the `config.py` set the config to use correctly: `cfg = real_config.copy()`
+In the `data/config_override.py` set the config parameters. Set `yolact_trained_model` to point to the `.yaml` file and `yolact_config_name` to point to the yolact config name that is found in `yolact/data/config.py`.
 
-In the `pipeline.py` script set the `trained_model` and the `config_name`.
+In `yolact/data/config.py` also make sure that this line is set correctly to point to your config:
+```
+cfg = real_config.copy()
+```
 
 ## PyPylon
 
 This is covered more in the ROS-vision-pipeline git container.
 
-export LD_LIBRARY_PATH=$HOME/.anaconda3/envs/pipeline-v2/lib:$LD_LIBRARY_PATH
+## TODOs
+
+- Use the GPU version of tensorflow in the `environment.yml` by installing: `conda install tensorflow-gpu=1.4`. Right now CPU version is used.
+- Try disabling mirror and or flip to improve training of side1/side2.
+- Automatically set `Pylon configuration set` instead of having to do this manually.
