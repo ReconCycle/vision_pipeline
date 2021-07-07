@@ -83,6 +83,7 @@ battery
 pcb
 internals_back
 internals_front
+internals
 ```
 2. Run command:
 ```
