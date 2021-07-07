@@ -95,6 +95,9 @@ For example:
 ./labelme2coco.py /Users/sebastian/datasets/labelme/kalo_v2_imgs_20-11-2020-selected /Users/sebastian/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco --labels /Users/sebastian/datasets/labelme/kalo_v2_imgs_20-11-2020-selected/labels.txt
 ```
 
+### Create Train Test Split from COCO .json file
+
+Use the script in `tools/coco-train-test-split/cocosplit.py` to split the COCO .json file into a train.json and test.json.
 
 ## How to Train Yolact
 
