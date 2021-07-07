@@ -25,12 +25,39 @@ class WorkSurfaceDetection:
 
         # these will be populated below...
         self.coord_transform = None
-        self.corners_in_pixels = None
-        self.corners_in_meters = None
+        self.corners_in_pixels = None #! depracate this
+        self.corners_in_meters = None #! depracate this
 
-        if len(corners_x) == 4 and len(corners_y) == 4 and len(corner_labels) == 4:
-            # all 4 corners have been detected
-            self.corners_in_pixels = np.hstack((corners_x, corners_y))
+        self.mounts_in_pixels = None #! depracate this
+
+        self.points_dict = {}
+
+        if len(corners_x) >= 4 and len(corners_y) >= 4 and len(corner_labels) >= 4:
+            self.points_dict = {
+                'corner1': None,
+                'corner2': None,
+                'corner3': None,
+                'corner4': None,
+                'calibrationmount1': None,
+                'calibrationmount2': None,
+            }
+
+            # populate the true_corner_labels dictionary with the [x, y] values
+            for true_corner_label in self.points_dict.keys():
+                if true_corner_label in corner_labels:
+                    index = corner_labels.index(true_corner_label)
+                    print(true_corner_label, index)
+                    self.points_dict[true_corner_label] = np.array([corners_x[index, 0], corners_y[index, 0]])
+
+
+            self.corners_in_pixels = np.array([self.points_dict["corner1"],
+                                                self.points_dict["corner2"],
+                                                self.points_dict["corner3"],
+                                                self.points_dict["corner4"]])
+
+            self.mounts_in_pixels = np.array([self.points_dict["calibrationmount1"],
+                                                self.points_dict["calibrationmount2"]])
+
             self.corners_in_meters = np.array([[0, 0], [0.6, 0], [0.6, 0.6], [0, 0.6]])
 
             self.pad = lambda x: np.hstack([x, np.ones((x.shape[0], 1))])
@@ -52,8 +79,9 @@ class WorkSurfaceDetection:
 
             # now convert pixels to ints
             self.corners_in_pixels = np.around(self.corners_in_pixels).astype(int)
+            self.mounts_in_pixels = np.around(self.mounts_in_pixels).astype(int)
         else:
-            raise ValueError("too many/few corners detected.")
+            raise ValueError("too few corners detected. Number of corners detected:", len(corners_x), len(corners_y), len(corner_labels))
 
     def pixels_to_meters(self, coords):
         if isinstance(coords, tuple) or len(coords.shape) == 1:

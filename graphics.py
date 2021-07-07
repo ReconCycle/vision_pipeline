@@ -24,7 +24,7 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
     args.display_scores=True
 
     font_face = cv2.FONT_HERSHEY_DUPLEX
-    font_scale = 0.6
+    font_scale = 1.0
     font_thickness = 1
 
     """
@@ -79,7 +79,9 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
     
     if args.display_fps and fps is not None:
         # Draw the box for the fps on the GPU
-        fps_text = str(round(fps, 1)) + " fps"
+        fps_text = fps
+        if isinstance(fps, float):
+            fps_text = str(round(fps, 1)) + " fps"
         text_w, text_h = cv2.getTextSize(fps_text, font_face, font_scale, font_thickness)[0]
         img_gpu[0:text_h+8, 0:text_w+8] *= 0.6 # 1 - Box alpha
 
@@ -90,15 +92,14 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
 
     # draw work surface corners
     if worksurface_detection is not None:
-        for i in range(len(worksurface_detection.corners_in_pixels)):
-            xc, yc = worksurface_detection.corners_in_pixels[i]
-            xc_meters, yc_m = worksurface_detection.corners_in_meters[i]
+        for label, coords_in_pixels in worksurface_detection.points_dict.items():
+            xc, yc = np.around(coords_in_pixels).astype(int)
+            xc_meters, yc_m = np.around(worksurface_detection.pixels_to_meters(coords_in_pixels), decimals=2)
             print("xc, yc", xc, yc)
             cv2.circle(img_numpy, (xc, yc), 5, (0, 255, 0), -1)
-            print(worksurface_detection.corner_labels[i] + ", (" + str(xc_meters) + ", " + str(yc_m) + ")")
-            cv2.putText(img_numpy, worksurface_detection.corner_labels[i] + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
+            print(label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")")
+            cv2.putText(img_numpy, label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
                         (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
-
 
     # draw oriented bounding boxes
     for i in np.arange(len(obb_centers)):

@@ -62,7 +62,7 @@ if __name__ == '__main__':
                 processed_img_id = img_id
                 t_now = time.time()
                 if t_prev is not None and t_now - t_prev > 0:
-                    fps = 1 / (t_now - t_prev)
+                    fps = str(round(1 / (t_now - t_prev), 1)) + " fps" # TODO: compute avg fps as well
                 labelled_img, detections = pipeline.process_img(current_cam_img, fps)
                 json_detections = json.dumps(detections)
                 
