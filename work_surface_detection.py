@@ -6,6 +6,7 @@ import numpy as np
 from dlc.infer import Inference
 from config_default import *
 import cv2
+import itertools
 
 
 class WorkSurfaceDetection:
@@ -49,6 +50,23 @@ class WorkSurfaceDetection:
                     print(true_corner_label, index)
                     self.points_dict[true_corner_label] = np.array([corners_x[index, 0], corners_y[index, 0]])
 
+            # count how many corners are detected
+            num_corners_detected = 0
+            corner_keys = ['corner1', 'corner2', 'corner3', 'corner4']
+            for dict_key in corner_keys:
+                if self.points_dict[dict_key] is not None:
+                    num_corners_detected += 1
+
+            for key_1, key_2 in itertools.combinations(corner_keys, 2):
+                print(key_1, key_2)
+                # check distance in pixels between corner points.
+                # If two of the corners are the same corner then the distance between the two corners will be less than 30 pixels.
+                if np.linalg.norm(self.points_dict[key_1]-self.points_dict[key_2]) < 30:
+                    print("Corners on top of each other!", key_1, key_2)
+            
+            print("corners detected:", num_corners_detected)
+
+            
 
             self.corners_in_pixels = np.array([self.points_dict["corner1"],
                                                 self.points_dict["corner2"],

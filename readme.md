@@ -162,3 +162,5 @@ This is covered more in the ROS-vision-pipeline git container.
 - Use the GPU version of tensorflow in the `environment.yml` by installing: `conda install tensorflow-gpu=1.4`. Right now CPU version is used.
 - Try disabling mirror and or flip to improve training of side1/side2.
 - Automatically set `Pylon configuration set` instead of having to do this manually.
+- Training for Yolact should also compute the loss for the validation step and make it viewable in tensorboard
+- Right now when importing images to train with DLC we are going from images to video and back to images which is really inefficient.
