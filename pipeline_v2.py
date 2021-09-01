@@ -35,7 +35,11 @@ class Pipeline:
             if isinstance(img, str):
                 print("img path:", img)
                 img = cv2.imread(img)
-            frame = torch.from_numpy(img).cuda().float()
+            
+            if torch.cuda.is_available():
+                frame = torch.from_numpy(img).cuda().float()
+            else:
+                frame = torch.from_numpy(img).float()
         
         if self.worksurface_detection is None:
             print("detecting work surface...")

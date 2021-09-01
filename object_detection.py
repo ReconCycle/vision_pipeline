@@ -27,7 +27,11 @@ class ObjectDetection:
         args.mask_proto_debug = False
         args.config= config_default.cfg.yolact_config_name
         args.crop=True
-        args.cuda=True
+        if torch.cuda.is_available():
+            args.cuda=True
+        else:
+            args.cuda=False
+
         # eval.args = args
         self.args = args
 
@@ -45,7 +49,8 @@ class ObjectDetection:
 
             print('Loading model...', end='')
             net = Yolact()
-            net.load_weights(args.trained_model)
+            map_location = None if args.cuda else 'cpu'
+            net.load_weights(args.trained_model, map_location=map_location)
             net.eval()
             print(' Done.')
 
@@ -55,11 +60,16 @@ class ObjectDetection:
             self.net = net
 
     def check_gpu(self):
-        cuda_device = torch.cuda.current_device()
-        print("current cuda device:", cuda_device)
-        print("device name:", torch.cuda.get_device_name(cuda_device))
-        print("device count:", torch.cuda.device_count())
-        print("cuda available:", torch.cuda.is_available())
+        if torch.cuda.is_available():
+            cuda_device = torch.cuda.current_device()
+            print("current cuda device:", cuda_device)
+            print("device name:", torch.cuda.get_device_name(cuda_device))
+            print("device count:", torch.cuda.device_count())
+            print("cuda available:", torch.cuda.is_available())
+        else:
+            print("\n********************************************")
+            print("****    WARNING: CUDA is unavailable!   ****")
+            print("********************************************\n")
 
     def get_prediction(self, frame):
 
