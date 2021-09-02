@@ -53,6 +53,9 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
             if on_gpu is not None:
                 color = torch.Tensor(color).to(on_gpu).float() / 255.
                 color_cache[on_gpu][color_idx] = color
+            else:
+                color = torch.Tensor(color).float() / 255.
+
             return color
 
     # First, draw the masks on the GPU where we can do it really fast
@@ -60,7 +63,10 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
     # I wish I had access to OpenGL or Vulkan but alas, I guess Pytorch tensor operations will have to suffice
     if args.display_masks and cfg.eval_mask_branch and num_dets_to_consider > 0:
         # Prepare the RGB images for each mask given their color (size [num_dets, h, w, 1])
-        colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
+        if torch.cuda.is_available():
+            colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
+        else:
+            colors = torch.cat([get_color(j).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
         masks_color = masks.repeat(1, 1, 1, 3) * colors * mask_alpha
 
         # This is 1 everywhere except for 1-mask_alpha where the mask is
@@ -92,14 +98,17 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
 
     # draw work surface corners
     if worksurface_detection is not None:
-        for label, coords_in_pixels in worksurface_detection.points_dict.items():
-            xc, yc = np.around(coords_in_pixels).astype(int)
-            xc_meters, yc_m = np.around(worksurface_detection.pixels_to_meters(coords_in_pixels), decimals=2)
-            print("xc, yc", xc, yc)
-            cv2.circle(img_numpy, (xc, yc), 5, (0, 255, 0), -1)
-            print(label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")")
-            cv2.putText(img_numpy, label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
-                        (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
+        for label, coords_in_pixels in worksurface_detection.points_px_dict.items():
+            if coords_in_pixels is not None:
+                xc, yc = np.around(coords_in_pixels).astype(int)
+                xc_meters, yc_m = np.around(worksurface_detection.pixels_to_meters(coords_in_pixels), decimals=2)
+                print("xc, yc", xc, yc)
+                cv2.circle(img_numpy, (xc, yc), 5, (0, 255, 0), -1)
+                print(label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")")
+                cv2.putText(img_numpy, label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
+                            (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
+            else:
+                print("label", label, "was not detected by worksurface_detection")
 
     # draw oriented bounding boxes
     for i in np.arange(len(obb_centers)):
@@ -121,7 +130,14 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
     if args.display_text or args.display_bboxes:
         for j in reversed(range(num_dets_to_consider)):
             x1, y1, x2, y2 = boxes[j, :]
-            color = get_color(j)
+            x1 = int(x1)
+            y1 = int(y1)
+            x2 = int(x2)
+            y2 = int(y2)
+            
+            color = get_color(j).detach().numpy() *255
+            color = [int(i) for i in color]
+
             score = scores[j]
 
             if args.display_bboxes:
@@ -140,9 +156,11 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
                 print(text_str)
 
                 text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
+                text_w = int(text_w)
+                text_h = int(text_h)
 
                 text_pt = (x1, y1 - 3)
-                text_color = [255, 255, 255]
+                text_color = (int(255), int(255), int(255))
 
                 cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
