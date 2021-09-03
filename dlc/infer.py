@@ -208,16 +208,16 @@ class Inference:
         ny, nx = img.shape[0], img.shape[1]
         index = 0 # always take the first frame, since nframes = 1
         image = img
-        if coords is not None:
-            for i in range(len(coords.corners_in_pixels)):
-                xc, yc = coords.corners_in_pixels[i]
-                xc_meters, yc_m = coords.corners_in_meters[i]
-                rr, cc = circle(yc, xc, dotsize, shape=(ny, nx))
-                image[rr, cc, :] = colors[0]
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                color = tuple([int(x) for x in colors[0]])
-                cv2.putText(image, coords.corner_labels[i] + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
-                            (xc, yc), font, 1, color, 2, cv2.LINE_AA)
+        # if coords is not None:
+        #     for i in range(len(coords.corners_in_pixels)):
+        #         xc, yc = coords.corners_in_pixels[i]
+        #         xc_meters, yc_m = coords.corners_in_meters[i]
+        #         rr, cc = circle(yc, xc, dotsize, shape=(ny, nx))
+        #         image[rr, cc, :] = colors[0]
+        #         font = cv2.FONT_HERSHEY_SIMPLEX
+        #         color = tuple([int(x) for x in colors[0]])
+        #         cv2.putText(image, coords.corner_labels[i] + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
+        #                     (xc, yc), font, 1, color, 2, cv2.LINE_AA)
 
         if len(body_parts) > 4 and calibration is not None:  # don't do this when detecting corners
 

@@ -22,19 +22,17 @@ class WorkSurfaceDetection:
         
         corners_x, corners_y, corners_likelihood, corner_labels, bpts2connect = inference.get_pose(img)
         self.corners_likelihood = corners_likelihood
-        self.corner_labels = corner_labels
+        self.corner_labels = corner_labels # ['corner1', 'corner2', 'corner3', 'corner4', 'calibrationmount1', 'calibrationmount2']
 
         # these will be populated below...
         self.coord_transform = None
-        self.corners_in_pixels = None #! depracate this
-        self.corners_in_meters = None #! depracate this
 
-        self.mounts_in_pixels = None #! depracate this
+        print("self.corner_labels", self.corner_labels, type(self.corner_labels))
 
-        self.points_dict = {}
+        self.points_in_pixels_dict = {}
 
-        if len(corners_x) >= 4 and len(corners_y) >= 4 and len(corner_labels) >= 4:
-            self.points_dict = {
+        if len(corners_x) >= 3 and len(corners_y) >= 3 and len(corner_labels) >= 3:
+            self.points_px_dict = {
                 'corner1': None,
                 'corner2': None,
                 'corner3': None,
@@ -42,62 +40,61 @@ class WorkSurfaceDetection:
                 'calibrationmount1': None,
                 'calibrationmount2': None,
             }
+            
+            self.points_m_dict = {
+                'corner1': [0, 0],
+                'corner2': [0.6, 0],
+                'corner3': [0.6, 0.6],
+                'corner4': [0, 0.6]
+            }
 
             # populate the true_corner_labels dictionary with the [x, y] values
-            for true_corner_label in self.points_dict.keys():
+            for true_corner_label in self.points_px_dict.keys():
                 if true_corner_label in corner_labels:
                     index = corner_labels.index(true_corner_label)
-                    print(true_corner_label, index)
-                    self.points_dict[true_corner_label] = np.array([corners_x[index, 0], corners_y[index, 0]])
+                    self.points_px_dict[true_corner_label] = np.array([corners_x[index, 0], corners_y[index, 0]])
+
+            # check distance in pixels between corner points.
+            # If two of the corners are the same corner (e.g. less than 30px apart) remove one of the corners
+            for key_1, key_2 in itertools.combinations(corner_keys, 2):
+                if np.linalg.norm(self.points_px_dict[key_1]-self.points_px_dict[key_2]) < 30:
+                    print("Corners on top of each other!", key_1, key_2)
+                    self.points_px_dict[key_2] = None
+
+            # create arrays for affine transform
+            corners_in_pixels = []
+            corners_in_meters = []
+            for key, value in self.points_px_dict.items():
+                if value is not None and key in self.points_m_dict and self.points_m_dict[key] is not None:
+                    corners_in_pixels.append(value)
+                    corners_in_meters.append(self.points_m_dict[key])
+
+            corners_in_pixels = np.array(corners_in_pixels)
+            corners_in_meters = np.array(corners_in_meters)
 
             # count how many corners are detected
-            num_corners_detected = 0
-            corner_keys = ['corner1', 'corner2', 'corner3', 'corner4']
-            for dict_key in corner_keys:
-                if self.points_dict[dict_key] is not None:
-                    num_corners_detected += 1
-
-            for key_1, key_2 in itertools.combinations(corner_keys, 2):
-                print(key_1, key_2)
-                # check distance in pixels between corner points.
-                # If two of the corners are the same corner then the distance between the two corners will be less than 30 pixels.
-                if np.linalg.norm(self.points_dict[key_1]-self.points_dict[key_2]) < 30:
-                    print("Corners on top of each other!", key_1, key_2)
-            
+            num_corners_detected = len(corners_in_pixels)
             print("corners detected:", num_corners_detected)
-
-            
-
-            self.corners_in_pixels = np.array([self.points_dict["corner1"],
-                                                self.points_dict["corner2"],
-                                                self.points_dict["corner3"],
-                                                self.points_dict["corner4"]])
-
-            self.mounts_in_pixels = np.array([self.points_dict["calibrationmount1"],
-                                                self.points_dict["calibrationmount2"]])
-
-            self.corners_in_meters = np.array([[0, 0], [0.6, 0], [0.6, 0.6], [0, 0.6]])
 
             self.pad = lambda x: np.hstack([x, np.ones((x.shape[0], 1))])
             self.unpad = lambda x: x[:, :-1]
 
-            X = self.pad(self.corners_in_pixels)
-            Y = self.pad(self.corners_in_meters)
+            X = self.pad(corners_in_pixels)
+            Y = self.pad(corners_in_meters)
 
             # Solve the least squares problem X * A = Y
             # to find our transformation matrix A
             A, res, rank, s = np.linalg.lstsq(X, Y, rcond=None)
             self.coord_transform = lambda x: self.unpad(np.dot(self.pad(x), A))
-            print("Target:", self.corners_in_meters)
-            print("Result:", self.coord_transform(self.corners_in_pixels))
-            print("Max error:", np.abs(self.corners_in_meters - self.coord_transform(self.corners_in_pixels)).max())
+            print("Target:", corners_in_meters)
+            print("Result:", self.coord_transform(corners_in_pixels))
+            print("Max error:", np.abs(corners_in_meters - self.coord_transform(corners_in_pixels)).max())
 
-            first_corner_pixels = np.array([self.corners_in_pixels[0]])
+            first_corner_pixels = np.array([corners_in_pixels[0]])
             print("first_corner_meters", self.coord_transform(first_corner_pixels))
 
             # now convert pixels to ints
-            self.corners_in_pixels = np.around(self.corners_in_pixels).astype(int)
-            self.mounts_in_pixels = np.around(self.mounts_in_pixels).astype(int)
+            # self.corners_in_pixels = np.around(self.corners_in_pixels).astype(int)
         else:
             raise ValueError("too few corners detected. Number of corners detected:", len(corners_x), len(corners_y), len(corner_labels))
 
