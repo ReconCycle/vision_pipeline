@@ -27,26 +27,29 @@ class WorkSurfaceDetection:
         # these will be populated below...
         self.coord_transform = None
 
+        print("self.corners_likelihood", self.corners_likelihood, type(self.corners_likelihood))
         print("self.corner_labels", self.corner_labels, type(self.corner_labels))
 
-        self.points_in_pixels_dict = {}
+        corners = ['corner1', 'corner2', 'corner3', 'corner4']
+        calibrationmounts = ['calibrationmount1', 'calibrationmount2']
+
+        self.points_px_dict = {
+            'corner1': None,
+            'corner2': None,
+            'corner3': None,
+            'corner4': None,
+            'calibrationmount1': None,
+            'calibrationmount2': None,
+        }
+        
+        self.points_m_dict = {
+            'corner1': [0, 0],
+            'corner2': [0.6, 0],
+            'corner3': [0.6, 0.6],
+            'corner4': [0, 0.6]
+        }
 
         if len(corners_x) >= 3 and len(corners_y) >= 3 and len(corner_labels) >= 3:
-            self.points_px_dict = {
-                'corner1': None,
-                'corner2': None,
-                'corner3': None,
-                'corner4': None,
-                'calibrationmount1': None,
-                'calibrationmount2': None,
-            }
-            
-            self.points_m_dict = {
-                'corner1': [0, 0],
-                'corner2': [0.6, 0],
-                'corner3': [0.6, 0.6],
-                'corner4': [0, 0.6]
-            }
 
             # populate the true_corner_labels dictionary with the [x, y] values
             for true_corner_label in self.points_px_dict.keys():
@@ -54,12 +57,29 @@ class WorkSurfaceDetection:
                     index = corner_labels.index(true_corner_label)
                     self.points_px_dict[true_corner_label] = np.array([corners_x[index, 0], corners_y[index, 0]])
 
+            print("self.points_px_dict", self.points_px_dict)
+
             # check distance in pixels between corner points.
             # If two of the corners are the same corner (e.g. less than 30px apart) remove one of the corners
-            for key_1, key_2 in itertools.combinations(corner_keys, 2):
-                if np.linalg.norm(self.points_px_dict[key_1]-self.points_px_dict[key_2]) < 30:
-                    print("Corners on top of each other!", key_1, key_2)
-                    self.points_px_dict[key_2] = None
+            for key_1, key_2 in itertools.combinations(self.points_px_dict.keys(), 2):
+                if (self.points_px_dict[key_1] is not None and 
+                    self.points_px_dict[key_2] is not None and 
+                    np.linalg.norm(self.points_px_dict[key_1]-self.points_px_dict[key_2]) < 30):
+                    print("Corners or calibration mount on top of each other!", key_1, key_2)
+
+                    # remove one of the detected points
+                    if (key_1 in corners and key_2 in corners) or (key_1 in calibrationmounts and key_2 in calibrationmounts):
+                        self.points_px_dict[key_2] = None
+                    elif key_1 in corners and key_2 in calibrationmounts:
+                        # something is quite wrong here.
+                        # assume that the corners are more likely to be detected correctly.
+                        self.points_px_dict[key_2] = None
+                    elif key_2 in corners and key_1 in calibrationmounts:
+                        # something is quite wrong here.
+                        # assume that the corners are more likely to be detected correctly.
+                        self.points_px_dict[key_1] = None    
+
+            print("new self.points_px_dict", self.points_px_dict)
 
             # create arrays for affine transform
             corners_in_pixels = []
