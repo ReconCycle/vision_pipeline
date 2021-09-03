@@ -28,14 +28,24 @@ COLORS = ((244,  67,  54),
 MEANS = (103.94, 116.78, 123.68)
 STD   = (57.38, 57.12, 58.40)
 
-NDDS_COCO_CLASSES = ('background', 'back', 'battery', 'front', 'internals', 'pcb', 'side2', 'side1')
-#                     1             2       3          4        5            6       7       8      # let these always be the corresponding class labels
+NDDS_COCO_CLASSES = ('background', 'battery', 'hca_back', 'hca_front', 'hca_side1', 'hca_side2', 'internals_back', 'internals_front', 'pcb', 'internals')
+#                     1             2          3           4            5            6            7                 8                  9      10  # let these always be the corresponding class labels
 # for YOLACT the labels need to start at 1
-NDDS_COCO_LABEL_MAP = {1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8,}
+NDDS_COCO_LABEL_MAP = {1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8, 9:  9, 10:  10,}
 
-# REAL_CLASSES = ('background', 'front', 'back', 'side1', 'side2', 'battery', 'pcb', 'internals') # This is the order of the classes in the real dataset
-#                0             1        2       3        4        5          6      7
-REAL_LABEL_MAP = {0: 1, 1: 4, 2: 2, 3: 8, 4: 7, 5: 3, 6: 6, 7: 5}
+# cocoviewer.py returns these categories on the real dataset:
+# {0: ['_background_', (0, 82, 255)], 1: ['hca_front', (184, 0, 255)], 2: ['hca_back', (70, 255, 0)], 3: ['hca_side1', (0, 63, 255)], 4: ['hca_side2', (0, 255, 63)], 5: ['battery', (31, 0, 255)], 6: ['pcb', (255, 153, 0)], 7: ['internals_back', (0, 140, 255)], 8: ['internals_front', (70, 0, 255)], 9: ['internals', (0, 255, 235)]}
+
+REAL_LABEL_MAP =   {0: 1, 
+                    1: 4, 
+                    2: 3, 
+                    3: 5, 
+                    4: 6, 
+                    5: 2, 
+                    6: 9, 
+                    7: 7,  
+                    8: 8, 
+                    9: 10,}
 # we set the labels so that they correspond to the NDDS_COCO_CLASSES. We therefore also use the order of the NDDS_COCO_CLASSES here.
 
 # ----------------------- CONFIG CLASS ----------------------- #
@@ -113,15 +123,15 @@ dataset_base = Config({
 coco_ndds_dataset = dataset_base.copy({
     'name': 'COCO_ndds',
 
-    'train_images': '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery',
-    'train_info': '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery/_coco.json',
+    'train_images': '/home/sruiz/datasets/ndds/01-07-2021-reconcycle',
+    'train_info': '/home/sruiz/datasets/ndds/01-07-2021-reconcycle/_coco.json',
 
-    'valid_images': '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery-val',
-    'valid_info': '/home/sruiz/datasets/ndds/15-01-2021-segmented-battery-val/_coco.json',
+    'valid_images': '/home/sruiz/datasets/ndds/01-07-2021-reconcycle-val',
+    'valid_info': '/home/sruiz/datasets/ndds/01-07-2021-reconcycle-val/_coco.json',
 
     # also validate on real data
-    'valid2_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
-    'valid2_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
+    # 'valid2_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
+    # 'valid2_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
     
 
     'class_names': NDDS_COCO_CLASSES,
@@ -131,11 +141,11 @@ coco_ndds_dataset = dataset_base.copy({
 real_dataset = dataset_base.copy({
     'name': 'COCO_ndds',
 
-    'train_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
-    'train_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
+    'train_images': '/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021',
+    'train_info': '/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021/train.json',
 
-    'valid_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
-    'valid_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
+    'valid_images': '/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021',
+    'valid_info': '/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021/test.json',
 
     'class_names': NDDS_COCO_CLASSES, # we set the label map so that we can use the same order of the class names here
     'label_map': REAL_LABEL_MAP

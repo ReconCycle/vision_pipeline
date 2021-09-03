@@ -3,6 +3,8 @@
 !readme_image.png
 output/
 data_full/
+data_limited/
+datasets_symlink
 camera_images/
 labelled_images/
 

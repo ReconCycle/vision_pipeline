@@ -29,6 +29,13 @@ import yolact.eval as eval_script
 def str2bool(v):
     return v.lower() in ("yes", "true", "t", "1")
 
+# create folder for training_output
+path_training_output = './yolact/training_out_' + datetime.datetime.today().strftime('%Y-%m-%d-%H:%M')
+if os.path.exists(path_training_output) and Path(path_training_output).is_dir():
+    print("training folder already exists")
+    sys.exit()
+else:
+    os.mkdir(path_training_output)
 
 parser = argparse.ArgumentParser(
     description='Yolact Training Script')
@@ -52,13 +59,13 @@ parser.add_argument('--decay', '--weight_decay', default=None, type=float,
                     help='Weight decay for SGD. Leave as None to read this from the config.')
 parser.add_argument('--gamma', default=None, type=float,
                     help='For each lr step, what to multiply the lr by. Leave as None to read this from the config.')
-parser.add_argument('--save_folder', default='weights/',
+parser.add_argument('--save_folder', default=os.path.join(path_training_output, 'weights/'),
                     help='Directory for saving checkpoint models.')
-parser.add_argument('--log_folder', default='logs/',
+parser.add_argument('--log_folder', default=os.path.join(path_training_output, 'logs/'),
                     help='Directory for saving logs.')
 parser.add_argument('--config', default=None,
                     help='The config object to use.')
-parser.add_argument('--save_interval', default=200, type=int,
+parser.add_argument('--save_interval', default=2000, type=int,
                     help='The number of iterations between saving the model.') #! Set to 2000 when training on NDDS
 parser.add_argument('--validation_size', default=5000, type=int,
                     help='The number of images to use for validation.')
@@ -200,7 +207,7 @@ def train():
     net.train()
 
     # tensorboardX
-    writer = SummaryWriter()
+    writer = SummaryWriter(log_dir=os.path.join(path_training_output, "runs"))
 
     if args.log:
         log = Log(cfg.name, args.log_folder, dict(args._get_kwargs()),
@@ -392,6 +399,7 @@ def train():
                     # compute validate loss
                     print("computing validation loss...")
                     compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
+                    # compute_validation_loss(yolact_net, val_data_loader, MultiBoxLoss) #! validation loss to be implemented
 
                     if args.keep_latest and latest is not None:
                         if args.keep_latest_interval <= 0 or iteration % args.keep_latest_interval != args.save_interval:
@@ -409,6 +417,9 @@ def train():
                         # if val2_dataset is not None:
                         #     compute_validation_map(epoch, iteration, yolact_net, val2_dataset, log if args.log else None, writer if args.log else None, is_val2_dataset=True)
         
+            # make sure tensorboardX is writing to file
+            writer.flush()
+            
         # Compute validation mAP after training is finished
         compute_validation_map(epoch, iteration, yolact_net, val_dataset, log if args.log else None, writer if args.log else None)
 
@@ -421,14 +432,14 @@ def train():
             
             yolact_net.save_weights(save_path(epoch, repr(iteration) + '_interrupt'))
 
-            writer.export_scalars_to_json("./runs/tensorboardx.json")
+            writer.export_scalars_to_json(os.path.join(path_training_output, "runs/tensorboardx.json"))
             writer.close()
 
         exit()
 
     yolact_net.save_weights(save_path(epoch, iteration))
 
-    writer.export_scalars_to_json("./runs/tensorboardx.json")
+    writer.export_scalars_to_json(os.path.join(path_training_output, "runs/tensorboardx.json"))
     writer.close()
 
 
