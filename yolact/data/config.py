@@ -1,6 +1,10 @@
 from ..backbone import ResNetBackbone, VGGBackbone, ResNetBackboneGN, DarkNetBackbone
 from math import sqrt
 import torch
+import config_default
+import os
+import commentjson
+
 
 # for making bounding boxes pretty
 COLORS = ((244,  67,  54),
@@ -28,25 +32,18 @@ COLORS = ((244,  67,  54),
 MEANS = (103.94, 116.78, 123.68)
 STD   = (57.38, 57.12, 58.40)
 
-NDDS_COCO_CLASSES = ('background', 'battery', 'hca_back', 'hca_front', 'hca_side1', 'hca_side2', 'internals_back', 'internals_front', 'pcb', 'internals')
-#                     1             2          3           4            5            6            7                 8                  9      10  # let these always be the corresponding class labels
-# for YOLACT the labels need to start at 1
-NDDS_COCO_LABEL_MAP = {1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8, 9:  9, 10:  10,}
 
-# cocoviewer.py returns these categories on the real dataset:
-# {0: ['_background_', (0, 82, 255)], 1: ['hca_front', (184, 0, 255)], 2: ['hca_back', (70, 255, 0)], 3: ['hca_side1', (0, 63, 255)], 4: ['hca_side2', (0, 255, 63)], 5: ['battery', (31, 0, 255)], 6: ['pcb', (255, 153, 0)], 7: ['internals_back', (0, 140, 255)], 8: ['internals_front', (70, 0, 255)], 9: ['internals', (0, 255, 235)]}
+# select config.json file in config_default.py
+# load config file
+yolact_config = None
+if os.path.isfile(config_default.cfg.yolact_config_file):
+    with open(config_default.cfg.yolact_config_file, "r") as read_file:
+        yolact_config = commentjson.load(read_file)
+        print("yolact_config", yolact_config)
 
-REAL_LABEL_MAP =   {0: 1, 
-                    1: 4, 
-                    2: 3, 
-                    3: 5, 
-                    4: 6, 
-                    5: 2, 
-                    6: 9, 
-                    7: 7,  
-                    8: 8, 
-                    9: 10,}
-# we set the labels so that they correspond to the NDDS_COCO_CLASSES. We therefore also use the order of the NDDS_COCO_CLASSES here.
+else:
+    print("Config file for yolact doesn't exist.")
+    sys.exit()
 
 # ----------------------- CONFIG CLASS ----------------------- #
 
@@ -92,9 +89,6 @@ class Config(object):
             print(k, ' = ', v)
 
 
-
-
-
 # ----------------------- DATASETS ----------------------- #
 
 dataset_base = Config({
@@ -120,40 +114,18 @@ dataset_base = Config({
     'label_map': None
 })
 
-coco_ndds_dataset = dataset_base.copy({
-    'name': 'COCO_ndds',
+my_dataset = dataset_base.copy({
+    'name': 'my_dataset',
 
-    'train_images': '/home/sruiz/datasets/ndds/01-07-2021-reconcycle',
-    'train_info': '/home/sruiz/datasets/ndds/01-07-2021-reconcycle/_coco.json',
+    'train_images': yolact_config["train_images"],
+    'train_info': yolact_config["train_info"],
 
-    'valid_images': '/home/sruiz/datasets/ndds/01-07-2021-reconcycle-val',
-    'valid_info': '/home/sruiz/datasets/ndds/01-07-2021-reconcycle-val/_coco.json',
+    'valid_images': yolact_config["valid_images"],
+    'valid_info': yolact_config["valid_info"],
 
-    # also validate on real data
-    # 'valid2_images': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco',
-    # 'valid2_info': '/home/sruiz/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco/_coco.json',
-    
-
-    'class_names': NDDS_COCO_CLASSES,
-    'label_map': NDDS_COCO_LABEL_MAP
+    'class_names': yolact_config["coco_classes"], # we set the label map so that we can use the same order of the class names here
+    'label_map': yolact_config["label_map"],
 })
-
-real_dataset = dataset_base.copy({
-    'name': 'COCO_ndds',
-
-    'train_images': '/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021',
-    'train_info': '/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021/train.json',
-
-    'valid_images': '/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021',
-    'valid_info': '/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021/test.json',
-
-    'class_names': NDDS_COCO_CLASSES, # we set the label map so that we can use the same order of the class names here
-    'label_map': REAL_LABEL_MAP
-})
-
-
-
-
 
 # ----------------------- TRANSFORMS ----------------------- #
 
@@ -682,23 +654,20 @@ yolact_base_config = coco_base_config.copy({
     'use_semantic_segmentation_loss': True,
 })
 
-real_config = yolact_base_config.copy({
-    'name': 'real',
-    'dataset': real_dataset,
-    'num_classes': len(real_dataset.class_names) + 1,
-})
+model_path = None
+if "model" in yolact_config:
+    model_path = os.path.join(os.path.dirname(config_default.cfg.yolact_config_file), yolact_config["model"])
 
-coco_ndds_config = yolact_base_config.copy({
-    'name': 'coco_ndds',
 
-    # Dataset stuff
-    'dataset': coco_ndds_dataset,
-    'num_classes': len(coco_ndds_dataset.class_names) + 1,
+my_config = yolact_base_config.copy({
+    'name': 'my_config',
+    'dataset': my_dataset,
+    'num_classes': len(my_dataset.class_names) + 1,
+    'trained_model': model_path # used only by object_detection.py and not by yolact
 })
 
 # Default config
-#! change this depending on which config you are using!
-cfg = real_config.copy()
+cfg = my_config.copy()
 
 yolact_im400_config = yolact_base_config.copy({
     'name': 'yolact_im400',

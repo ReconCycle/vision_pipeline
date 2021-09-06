@@ -59,6 +59,7 @@ dependencies:
   - cudatoolkit=10.2
   - cudnn
   - tensorboardx
+  - commentjson
   ## ndds-to-coco tools
   
   # - pytorch::cuda100
