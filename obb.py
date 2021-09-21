@@ -11,6 +11,8 @@ from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation
 import cv2
 
+global last_quat
+last_quat = Rotation([0,0,0,1]).as_quat()
 
 def get_obb_from_points(points, calcconvexhull=True):
     """ given a set of points, calculate the oriented bounding 
@@ -73,6 +75,12 @@ def get_obb_from_points(points, calcconvexhull=True):
 
     rotation_obj = Rotation.from_matrix(rot_matrix)
     rot_quat = rotation_obj.as_quat()
+    global last_quat
+    print(last_quat)
+    if np.dot(last_quat,rot_quat)<0:
+        print("rotate")
+        rot_quat = -rot_quat
+    last_quat = rot_quat
     # degrees = rotation_obj.as_euler('xyz', degrees=True)
     # print("degrees", degrees)
 
@@ -125,3 +133,4 @@ def get_obb_from_mask(mask_im):
     # print("contours", contours.shape, type(contours))
 
     return get_obb_from_points(boundary_points)
+
