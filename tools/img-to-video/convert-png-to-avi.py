@@ -71,8 +71,10 @@ def copy_imgs_into_batches(image_folder, output_folder, batch_size=10, starting_
 
 
 if __name__ == '__main__':
-    image_folder = '/home/sruiz/projects/reconcycle/pipeline-v2/output'
-    video_folder = '/home/sruiz/projects/reconcycle/pipeline-v2/output'
+    # image_folder = '/home/sruiz/projects/reconcycle/pipeline-v2/output'
+    # video_folder = '/home/sruiz/projects/reconcycle/pipeline-v2/output'
+    image_folder = '/home/reconcycle/reconcycle/datasets/dlc/raw_work_surface_jsi_08-07-2021'
+    video_folder = '/home/reconcycle/reconcycle/datasets/dlc/raw_work_surface_jsi_08-07-2021'
     convert_folder_to_avi_batches(image_folder, video_folder, batch_size=476, fps=5, starting_value=0)
     # copy_imgs_into_batches(image_folder, image_folder, starting_value=0)
 

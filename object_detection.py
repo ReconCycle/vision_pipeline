@@ -15,17 +15,19 @@ import obb
 import numpy as np
 import config_default
 
+
 class ObjectDetection:
     def __init__(self):
+
         args = types.SimpleNamespace()
 
         args.display=False
         args.display_lincomb=False
-        args.trained_model = config_default.cfg.yolact_trained_model
+        args.trained_model = cfg.trained_model
         args.score_threshold = config_default.cfg.yolact_score_threshold
         args.top_k = 15
         args.mask_proto_debug = False
-        args.config= config_default.cfg.yolact_config_name
+        args.config= "my_config"
         args.crop=True
         if torch.cuda.is_available():
             args.cuda=True
