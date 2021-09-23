@@ -72,44 +72,51 @@ def get_obb_from_points(points, calcconvexhull=True):
     ### Convert 2d rotation matrix to a 3d rotation matrix the rotation is around the z-axis
     ### the upper left corner of the 3d rotation matrix is the 2d rotation matrix
 
-    # rot_matrix = np.identity(3)
-    # rot_matrix[:2, :2] = tvect
+    rot_matrix = np.identity(3)
+    rot_matrix[:2, :2] = tvect
 
-    # rotation_obj = Rotation.from_matrix(rot_matrix)
-    # rot_quat = rotation_obj.as_quat()
-    # global last_quat
-    # print(last_quat)
-    # if np.dot(last_quat,rot_quat)<0:
-    #     print("rotate")
-    #     rot_quat = -rot_quat
-    # last_quat = rot_quat
-    # degrees = rotation_obj.as_euler('xyz', degrees=True)
-    # print("degrees", degrees)
+    rotation_obj = Rotation.from_matrix(rot_matrix)
+    rot_quat = rotation_obj.as_quat()
+    #global last_quat
+    #print(last_quat)
+    #if np.dot(last_quat,rot_quat)<0:
+    #    print("rotate")
+    #    rot_quat = -rot_quat
+    #last_quat = rot_quat
+    #degrees = rotation_obj.as_euler('xyz', degrees=True)
+    #print("degrees", degrees)
 
     ########## OR
 	
-    ### Do quaternion calculation directly using corners
-    distances = []
-    # Logger.loginfo("{}".format(corners))
-    first_corner = corners[0]
+    # ### Do quaternion calculation directly using corners
+    # distances = []
+    # # Logger.loginfo("{}".format(corners))
+    # first_corner = corners[0]
 
-    for ic, corner in enumerate(corners):
-        distances.append(np.linalg.norm(corner - first_corner))
-    # Logger.loginfo("Distances: {}".format(distances))
-    distances = np.array(distances)
-    idx_edge = distances.argsort()[-2]
-    # Logger.loginfo("Index of edge: {}".format(idx_edge))
-    second_corner = corners[idx_edge]
+    # for ic, corner in enumerate(corners):
+    #     distances.append(np.linalg.norm(corner - first_corner))
+    # # Logger.loginfo("Distances: {}".format(distances))
+    # distances = np.array(distances)
+    # idx_edge = distances.argsort()[-2]
+    # # Logger.loginfo("Index of edge: {}".format(idx_edge))
+    # second_corner = corners[idx_edge]
 
-    vector_1 = np.abs(second_corner - first_corner)
-    unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
-    unit_vector_2 = np.array([0, 1])
-    dot_product = np.dot(unit_vector_1, unit_vector_2)
-    angle = np.arccos(dot_product)
-    # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
+    # highest_y = np.argmax([first_corner[1], second_corner[1]])
+    # if highest_y == 0:
+    #     vector_1 = first_corner - second_corner
+    # elif highest_y == 1:
+    #     vector_1 = second_corner - first_corner
 
-    rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]), 
-                               np.array([np.cos(angle/2)])))
+    # unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
+    # unit_vector_2 = np.array([0, 1])
+    # # Logger.loginfo("Vectors: {}, {}".format(vector_1, unit_vector_2))
+
+    # angle = (np.arctan2(unit_vector_1[1], unit_vector_1[0]) -
+    #          np.arctan2(unit_vector_2[1], unit_vector_2[0]))
+    # # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
+
+    # rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]), 
+    #                            np.array([np.cos(angle/2)])))
     #############################################################
 
     return corners, center, rot_quat

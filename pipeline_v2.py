@@ -64,6 +64,37 @@ class Pipeline:
                 detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
                 detections.append(detection)
 
+                corners = np.array(detection["obb_corners"])
+                distances = []
+                # Logger.loginfo("{}".format(corners))
+                first_corner = corners[0]
+
+                for ic, corner in enumerate(corners):
+                    distances.append(np.linalg.norm(corner - first_corner))
+                # Logger.loginfo("Distances: {}".format(distances))
+                distances = np.array(distances)
+                idx_edge = distances.argsort()[-2]
+                # Logger.loginfo("Index of edge: {}".format(idx_edge))
+                second_corner = corners[idx_edge]
+
+                highest_y = np.argmax([first_corner[1], second_corner[1]])
+                if highest_y == 0:
+                    vector_1 = first_corner - second_corner
+                elif highest_y == 1:
+                    vector_1 = second_corner - first_corner
+
+                unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
+                unit_vector_2 = np.array([0, 1])
+                # Logger.loginfo("Vectors: {}, {}".format(vector_1, unit_vector_2))
+
+                angle = (np.arctan2(unit_vector_1[1], unit_vector_1[0]) -
+                         np.arctan2(unit_vector_2[1], unit_vector_2[0]))
+                # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
+
+                rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]), 
+                                           np.array([np.cos(angle/2)])))
+                detection["obb_rot_quat"] = rot_quat.tolist()
+
         return labelled_img, detections
 
 
