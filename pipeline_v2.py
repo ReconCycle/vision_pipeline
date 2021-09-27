@@ -89,6 +89,10 @@ class Pipeline:
 
                 angle = (np.arctan2(unit_vector_1[1], unit_vector_1[0]) -
                          np.arctan2(unit_vector_2[1], unit_vector_2[0]))
+
+                # If angle is too negative, add 180 degrees
+                if (angle * 180 / np.pi) < -30:
+                    angle = angle + np.pi
                 # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
 
                 rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]), 
