@@ -18,6 +18,7 @@ def camera_feed(undistort=True, fps=None, callback=None):
 
     # conecting to the first available camera
     camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+    #pylon.FeaturePersistence.Load("pylon/acA4600-7gc_22077911.pfs", camera.GetNodeMap(), True)
 
     # Grabing Continusely (video) with minimal delay
     camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)

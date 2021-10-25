@@ -50,6 +50,22 @@ class Pipeline:
         preds = self.object_detection.get_prediction(frame)
         classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats, num_dets_to_consider = self.object_detection.post_process(preds)
 
+        #### ONLY FOR DEMO ON EMO (BATTERY IS REMOVED) ####
+        # print('Classes:', classes)
+        # bad_indices = []
+        # for i in range(len(classes)):
+        #     if classes[i] == 1:
+        #         bad_indices.append(i)
+        # for bad in reversed(bad_indices):
+        #     classes = np.delete(classes, bad)
+        #     scores = np.delete(scores, bad)
+        #     boxes = np.delete(boxes, bad)
+        #     masks = np.delete(masks, bad)
+        #     obb_corners = np.delete(obb_corners, bad)
+        #     obb_centers = np.delete(obb_centers, bad)
+        #     obb_rot_quats = np.delete(obb_rot_quats, bad)
+        # print('Classes:', classes)
+                
         labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, fps=fps, worksurface_detection=self.worksurface_detection)
 
         # todo: the graphics part should accept a list of detections like this below instead of what it is doing now

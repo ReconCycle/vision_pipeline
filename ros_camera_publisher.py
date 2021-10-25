@@ -36,7 +36,7 @@ if __name__ == '__main__':
             save_folder = save_folder_name + "_" +  str(folder_counter).zfill(2)
             path_exists = os.path.exists(save_folder)
             folder_counter += 1
-
+        print("created folder", save_folder)
         os.makedirs(save_folder)
 
     img_count = 1
