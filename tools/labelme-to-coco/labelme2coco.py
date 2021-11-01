@@ -26,8 +26,8 @@ def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument("input_dir", help="input annotated directory")
-    parser.add_argument("output_dir", help="output dataset directory")
+    parser.add_argument("--input_dir", nargs='*', help="input annotated directory")
+    parser.add_argument("--output_dir", help="output dataset directory")
     parser.add_argument("--labels", help="labels file", required=True)
     parser.add_argument(
         "--noviz", help="no visualization", action="store_true"
@@ -80,7 +80,16 @@ def main():
         )
 
     out_ann_file = osp.join(args.output_dir, "annotations.json")
-    label_files = glob.glob(osp.join(args.input_dir, "*.json"))
+    
+    label_files = []
+    if isinstance(args.input_dir, list):
+        for dir in args.input_dir:
+            label_files.extend(glob.glob(osp.join(dir, "*.json")))
+    else:
+        label_files = glob.glob(osp.join(args.input_dir, "*.json"))
+    
+    #! todo: if multiple dirs, then iterate over all of them.
+    
     for image_id, filename in enumerate(label_files):
         print("Generating dataset from:", filename)
 
