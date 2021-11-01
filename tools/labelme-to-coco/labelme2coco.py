@@ -88,8 +88,6 @@ def main():
     else:
         label_files = glob.glob(osp.join(args.input_dir, "*.json"))
     
-    #! todo: if multiple dirs, then iterate over all of them.
-    
     for image_id, filename in enumerate(label_files):
         print("Generating dataset from:", filename)
 
