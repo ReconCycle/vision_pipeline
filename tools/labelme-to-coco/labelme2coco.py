@@ -14,6 +14,7 @@ import imgviz
 import numpy as np
 from sklearn.model_selection import train_test_split
 import regex
+import copy
 
 import labelme
 
@@ -32,7 +33,7 @@ def main():
     parser.add_argument("--output_dir", help="output dataset directory")
     parser.add_argument("--labels", help="labels file", required=True)
     parser.add_argument("--noviz", help="no visualization", action="store_true")
-    parser.add_argument('--split', type=float, nargs='?', default=0.8, help="Train set size; a number in (0, 1)")
+    parser.add_argument('--split', type=float, nargs='?', default=0.9, help="Train set size; a number in (0, 1)")
     args = parser.parse_args()
 
     if osp.exists(args.output_dir):
@@ -81,8 +82,8 @@ def main():
         )
 
     out_ann_file_all = osp.join(args.output_dir, "_coco.json")
-    out_ann_file_train = osp.join(args.output_dir, "_test.json")
-    out_ann_file_test = osp.join(args.output_dir, "_train.json")
+    out_ann_file_train = osp.join(args.output_dir, "_train.json")
+    out_ann_file_test = osp.join(args.output_dir, "_test.json")
     
     print("working directory is:", os.getcwd())
     
@@ -100,10 +101,8 @@ def main():
     else:
         label_files_per_dir = [glob.glob(osp.join(args.input_dir, "*.json"))]
     
-    # TODO: implement training-test split where the split is done proportionally over all the input dirs.
-    
-    data_train = data.copy()
-    data_test = data.copy()
+    data_train = copy.deepcopy(data)
+    data_test = copy.deepcopy(data)
     
     image_id = 0
     for label_files in label_files_per_dir:
