@@ -100,12 +100,13 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
     if worksurface_detection is not None:
         for label, coords_in_pixels in worksurface_detection.points_px_dict.items():
             if coords_in_pixels is not None:
-                xc, yc = np.around(coords_in_pixels).astype(int)
-                xc_meters, yc_m = np.around(worksurface_detection.pixels_to_meters(coords_in_pixels), decimals=2)
+                xc, yc = np.around(coords_in_pixels[:2]).astype(int)
+                xc_m, yc_m, *_= worksurface_detection.points_m_dict[label]
+                # xc_m, yc_m = np.around(worksurface_detection.pixels_to_meters(coords_in_pixels), decimals=2)
                 print("xc, yc", xc, yc)
                 cv2.circle(img_numpy, (xc, yc), 5, (0, 255, 0), -1)
-                print(label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")")
-                cv2.putText(img_numpy, label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
+                print(label + ", (" + str(xc_m) + ", " + str(yc_m) + ")")
+                cv2.putText(img_numpy, label + ", (" + str(xc_m) + ", " + str(yc_m) + ")",
                             (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
             else:
                 print("label", label, "was not detected by worksurface_detection")

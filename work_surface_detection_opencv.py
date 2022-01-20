@@ -63,7 +63,7 @@ def get_corner_bolts(pts):
     return corners
 
 
-class WorkSurfaceDetection2:
+class WorkSurfaceDetection:
     def __init__(self, img, debug=False):
         
         self.debug = debug
@@ -377,5 +377,5 @@ class WorkSurfaceDetection2:
         
 if __name__ == '__main__':
     img = cv2.imread("data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021/img000.png")
-    work_surface_det2 = WorkSurfaceDetection2(img, debug=True)
+    work_surface_det2 = WorkSurfaceDetection(img, debug=True)
     

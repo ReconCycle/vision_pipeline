@@ -4,7 +4,8 @@ os.environ['KMP_WARNINGS'] = 'off' # some info about KMP_AFFINITY
 from dlc.config import *
 # from infer import Inference
 from image_calibration import ImageCalibration
-from work_surface_detection import WorkSurfaceDetection
+# from work_surface_detection import WorkSurfaceDetection # old
+from work_surface_detection_opencv import WorkSurfaceDetection
 import numpy as np
 from object_detection import ObjectDetection
 from helpers import *
@@ -75,8 +76,8 @@ if __name__ == '__main__':
     show_imgs = False
 
     # Iterate over images and run:
-    img_path = "./camera_images_3"  # we can use a directory here or a single image /163.png
-    save_path = './labelled_images_3' # set to None to not save
+    img_path = "data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021"  # we can use a directory here or a single image /163.png
+    save_path = None # set to None to not save
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     imgs = get_images(img_path)
