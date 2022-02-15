@@ -132,7 +132,7 @@ class WorkSurfaceDetection:
         self.estimate_corners_using_transform()
         
         # 2nd estimate for affine transformation using also corners
-        self.improve_corner_estimate_using_corner_detection()
+        self.improve_corner_estimate_using_corner_detection(img)
         self.compute_affine_transform()
         
         # for debugging, draw everything
@@ -201,7 +201,7 @@ class WorkSurfaceDetection:
                 
         self.circles = circles
             
-    def improve_corner_estimate_using_corner_detection(self):
+    def improve_corner_estimate_using_corner_detection(self, img):
         
         """in the neighbourhood of the corner estimation, use Harris corner
         detection to find a better approximation for the corner
@@ -354,6 +354,7 @@ class WorkSurfaceDetection:
                         line_type=8)
 
             # cv2.imshow("0", scale_img(blur))
+            # cv2.imwrite('./example_work_sufrace_detection_opencv.jpg', img)
             cv2.imshow("1", scale_img(img))
             cv2.waitKey(0)
 
