@@ -1,119 +1,109 @@
-import sys, os
-from yolact.yolact import Yolact
-import yolact.eval
-import torch
-import torch.backends.cudnn as cudnn
-import types
-import cv2
-from yolact.utils.augmentations import BaseTransform, FastBaseTransform, Resize
-
-# post process function
-from yolact.utils import timer
-from yolact.layers.output_utils import postprocess, undo_image_transformation
-from yolact.data import cfg
-import obb
+import os
 import numpy as np
+import commentjson
+from rich import print
+
 import config_default
+
+# from yolact_pkg.data.config import cfg
+from yolact_pkg.data.config import Config
+from yolact_pkg.yolact import Yolact
+from yolact_pkg.eval import infer, annotate_img
+
+import obb
 
 
 class ObjectDetection:
     def __init__(self):
+        yolact_dataset = None
+        
+        if os.path.isfile(config_default.cfg.yolact_dataset_file):
+            print("loading", config_default.cfg.yolact_dataset_file)
+            with open(config_default.cfg.yolact_dataset_file, "r") as read_file:
+                yolact_dataset = commentjson.load(read_file)
+                print("yolact_dataset", yolact_dataset)
+                
+        self.dataset = Config(yolact_dataset)    
+        # dataset = Config({
+        #     'name': 'Base Dataset',
 
-        args = types.SimpleNamespace()
+        #     # Training images and annotations
+        #     'train_images': './data/coco/train_images/',
+        #     'train_info':   './data/coco/_train.json',
 
-        args.display=False
-        args.display_lincomb=False
-        args.trained_model = cfg.trained_model
-        args.score_threshold = config_default.cfg.yolact_score_threshold
-        args.top_k = 15
-        args.mask_proto_debug = False
-        args.config= "my_config"
-        args.crop=True
-        if torch.cuda.is_available():
-            args.cuda=True
-        else:
-            args.cuda=False
+        #     # Validation images and annotations.
+        #     'valid_images': './data/coco/test_images/',
+        #     'valid_info':   './data/coco/_test.json',
 
-        # eval.args = args
-        self.args = args
+        #     # Whether or not to load GT. If this is False, eval.py quantitative evaluation won't work.
+        #     'has_gt': True,
 
-        self.h = None
-        self.w = None
+        #     # A list of names for each of you classes.
+        #     'class_names': ('person', 'bicycle', 'car', 'motorcycle'),
 
-        self.check_gpu()
+        #     # COCO class ids aren't sequential, so this is a bandage fix. If your ids aren't sequential,
+        #     # provide a map from category_id -> index in class_names + 1 (the +1 is there because it's 1-indexed).
+        #     # If not specified, this just assumes category ids start at 1 and increase sequentially.
+        #     'label_map': None
+        # })
+        
+        # ! for testing only
+        self.dataset = Config({
+            'name': 'Base Dataset',
+            "model": "real_857_36000.pth",
+            "class_names": ("background", "battery", "hca_back", "hca_front", "hca_side1", "hca_side2", "internals_back", "internals_front", "pcb", "internals"),
 
-        with torch.no_grad():
-            if args.cuda:
-                cudnn.fastest = True
-                torch.set_default_tensor_type('torch.cuda.FloatTensor')
-            else:
-                torch.set_default_tensor_type('torch.FloatTensor')
+            "label_map":
+            {
+                "0": 1,
+                "1": 4,
+                "2": 3,
+                "3": 5,
+                "4": 6,
+                "5": 2,
+                "6": 9,
+                "7": 7,
+                "8": 8,
+                "9": 10
+            },
+            'has_gt': True,
+            "train_images": "/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021",
+            "train_info": "/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021/train.json",
 
-            print('Loading model...', end='')
-            net = Yolact()
-            map_location = None if args.cuda else 'cpu'
-            net.load_weights(args.trained_model, map_location=map_location)
-            net.eval()
-            print(' Done.')
+            "valid_images": "/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021",
+            "valid_info": "/home/sruiz/datasets/labelme/kalo_jsi_goe_combined_coco-07-07-2021/test.json"
 
-            if args.cuda:
-                net = net.cuda()
+        })
+        
+        config_override = {
+            'name': 'yolact_base',
 
-            self.net = net
+            # Dataset stuff
+            'dataset': self.dataset,
+            'num_classes': len(self.dataset.class_names) + 1,
 
-    def check_gpu(self):
-        if torch.cuda.is_available():
-            cuda_device = torch.cuda.current_device()
-            print("current cuda device:", cuda_device)
-            print("device name:", torch.cuda.get_device_name(cuda_device))
-            print("device count:", torch.cuda.device_count())
-            print("cuda available:", torch.cuda.is_available())
-        else:
-            print("\n********************************************")
-            print("****    WARNING: CUDA is unavailable!   ****")
-            print("********************************************\n")
-
-    def get_prediction(self, frame):
-
-        self.h, self.w, _ = frame.shape
-        with torch.no_grad():
-            batch = FastBaseTransform()(frame.unsqueeze(0))
-            preds = self.net(batch)
-
-        return preds
-
-    def post_process(self, preds, w=None, h=None):
-
-        with timer.env('Postprocess'):
-            cfg.mask_proto_debug = self.args.mask_proto_debug
-
-            if w is None and h is None:
-                w = self.w
-                h = self.h
-
-            t = postprocess(preds, w, h, visualize_lincomb = self.args.display_lincomb,
-                                            crop_masks        = self.args.crop,
-                                            score_threshold   = self.args.score_threshold)
-            # cfg.rescore_bbox = save
-
-        with timer.env('Copy'):
-            idx = t[1].argsort(0, descending=True)[:self.args.top_k]
+            # Image Size
+            'max_size': 550,
             
-            if cfg.eval_mask_branch:
-                # Masks are drawn on the GPU, so don't copy
-                masks = t[3][idx]
-            classes, scores, boxes = [x[idx].cpu().numpy() for x in t[:3]]
+            'save_path': './data_limited/yolact/',
+        }
+        
+        model_path = None
+        if "model" in yolact_dataset:
+            model_path = os.path.join(os.path.dirname(config_default.cfg.yolact_dataset_file), yolact_dataset["model"])
+            
+        print("model_path", model_path)
+        
+        self.yolact = Yolact(config_override)
+        self.yolact.eval()
+        # self.yolact.load_weights("./yolact_weights/training_2021-11-05-13꞉09/yolact_base_36_2200.pth")
+        self.yolact.load_weights(model_path)
 
-        num_dets_to_consider = min(self.args.top_k, classes.shape[0])
-        for j in range(num_dets_to_consider):
-            if scores[j] < self.args.score_threshold:
-                num_dets_to_consider = j
-                break
 
-        if cfg.eval_mask_branch and num_dets_to_consider > 0:
-            # After this, mask is of size [num_dets, h, w, 1]
-            masks = masks[:num_dets_to_consider, :, :, None]
-
+    def get_prediction(self, img_path):
+        
+        frame, classes, scores, boxes, masks = infer(self.yolact, img_path)
+        
         # calculate the oriented bounding boxes
         obb_corners = []
         obb_centers = []
@@ -124,13 +114,6 @@ class ObjectDetection:
             obb_corners.append(corners)
             obb_centers.append(center)
             obb_rot_quats.append(rot_quat)
-
-        return classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats, num_dets_to_consider
-
-    def test(self):
-        with torch.no_grad():
-            eval.evaluate(self.net, dataset=None) # This works :)
-
-if __name__ == '__main__':
-    object_detection = ObjectDetection(trained_model="yolact/weights/yolact_base_47_60000.pth")
-    object_detection.test()
+        
+        # return classes, scores, boxes, masks
+        return frame, classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats
