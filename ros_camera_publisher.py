@@ -2,9 +2,15 @@ import sys
 import os
 import shutil
 import cv2
-import rospy
+ros_available = True
+try:
+    import rospy
+    from ros_publisher import ROSPublisher
+except ModuleNotFoundError:
+    ros_available = False
+    pass
+
 from camera_feed import camera_feed
-from ros_publisher import ROSPublisher
 import argparse
 import helpers
 
@@ -24,8 +30,9 @@ if __name__ == '__main__':
     print("undistort:", args.undistort)
     print("fps:", args.fps, "\n")
 
-    rospy.init_node(args.node_name)
-    camera_publisher = ROSPublisher(topic_name=args.camera_topic)
+    if ros_available:
+        rospy.init_node(args.node_name)
+        camera_publisher = ROSPublisher(topic_name=args.camera_topic)
 
     save_folder_name = "./camera_images"
     save_folder = save_folder_name
@@ -47,7 +54,8 @@ if __name__ == '__main__':
         if img is None:
             print("img is none")
 
-        camera_publisher.publish_img(img)
+        if ros_available:
+            camera_publisher.publish_img(img)
 
         if args.save:
             save_file_path = os.path.join(save_folder, str(img_count).zfill(3) + ".png")

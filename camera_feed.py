@@ -12,12 +12,79 @@ def signal_handler(signal, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 
+def load_userset1(camera):
+    """https://docs.baslerweb.com/user-sets"""
+    # Load the User Set 1 user set
+    camera.UserSetSelector.SetValue(pylon.UserSetSelector_UserSet1)
+    camera.UserSetLoad.Execute()
+
+def set_width_height(camera):
+    # https://docs.baslerweb.com/center-x-and-center-y
+    width = 2900
+    height = 2900
+    camera.Width.SetValue(width)
+    camera.Height.SetValue(height)
+
+    # Center the image
+    camera.CenterX.SetValue(True)
+    camera.CenterY.SetValue(True)
+
+def auto_exposure(camera):
+    """https://docs.baslerweb.com/exposure-auto"""
+    # Set the Exposure Auto auto function to its minimum lower limit
+    # and its maximum upper limit
+    minLowerLimit = camera.AutoExposureTimeLowerLimitRaw.GetMin()
+    maxUpperLimit = camera.AutoExposureTimeUpperLimitRaw.GetMax()
+    camera.AutoExposureTimeLowerLimitRaw.SetValue(minLowerLimit)
+    camera.AutoExposureTimeUpperLimitRaw.SetValue(maxUpperLimit)
+    # Set the target brightness value to 128
+    camera.AutoTargetValue.SetValue(128)
+    # Select auto function ROI 1
+    camera.AutoFunctionAOISelector.SetValue(pylon.AutoFunctionAOISelector_AOI1)
+    # Enable the 'Intensity' auto function (Gain Auto + Exposure Auto)
+    # for the auto function ROI selected
+    camera.AutoFunctionAOIUsageIntensity.SetValue(True)
+    # Enable Exposure Auto by setting the operating mode to Continuous
+    camera.ExposureAuto.SetValue(pylon.ExposureAuto_Continuous)
+
+def auto_gain(camera):
+    # Set the the Gain Auto auto function to its minimum lower limit
+    # and its maximum upper limit
+    minLowerLimit = camera.AutoGainRawLowerLimit.GetMin()
+    maxUpperLimit = camera.AutoGainRawUpperLimit.GetMax()
+    camera.AutoGainRawLowerLimit.SetValue(minLowerLimit)
+    camera.AutoGainRawUpperLimit.SetValue(maxUpperLimit)
+    # Specify the target value
+    camera.AutoTargetValue.SetValue(150)
+    # Select auto function ROI 1
+    camera.AutoFunctionAOISelector.SetValue(pylon.AutoFunctionAOISelector_AOI1)
+    # Enable the 'Intensity' auto function (Gain Auto + Exposure Auto)
+    # for the auto function ROI selected
+    camera.AutoFunctionAOIUsageIntensity.SetValue(True)
+    # Enable Gain Auto by setting the operating mode to Continuous
+    camera.GainAuto.SetValue(pylon.GainAuto_Continuous)
+
+def auto_white_balance(camera):
+    """https://docs.baslerweb.com/balance-white-auto"""
+    # Select auto function ROI 2
+    camera.AutoFunctionAOISelector.SetValue(pylon.AutoFunctionAOISelector_AOI2)
+    # Enable the Balance White Auto auto function
+    # for the auto function ROI selected
+    camera.AutoFunctionAOIUsageWhiteBalance.SetValue(True)
+    # Enable Balance White Auto by setting the operating mode to Continuous
+    camera.BalanceWhiteAuto.SetValue(pylon.BalanceWhiteAuto_Continuous)
+
+
 def camera_feed(undistort=True, fps=None, callback=None):
 
     calibration = ImageCalibration()
 
     # conecting to the first available camera
     camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+    # camera.Open() # ? do I need to do this?
+
+    # Print the model name of the camera.
+    print("Using device ", camera.GetDeviceInfo().GetModelName())
 
     # Grabing Continusely (video) with minimal delay
     camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
