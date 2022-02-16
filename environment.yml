@@ -60,6 +60,7 @@ dependencies:
   - cudnn
   - tensorboardx
   - commentjson
+  - rich
   ## ndds-to-coco tools
   
   # - pytorch::cuda100
@@ -76,3 +77,5 @@ dependencies:
   - pip:
     - pycocotools 
     # - pypylon # Basler camera api # not working, using the wheel instead
+    - lap # for bytetrack
+    - cython-bbox # for bytetrack

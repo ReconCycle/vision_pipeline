@@ -14,7 +14,7 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corners, obb_centers, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
+def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corners, obb_centers, online_tlbrs, online_ids, online_scores, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
 
     args = types.SimpleNamespace()
     args.display_masks=True
@@ -165,5 +165,30 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
 
                 cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+    
+    # show tracking obbs
+    for j in np.arange(len(online_tlbrs)):
+        x1, y1, x2, y2 = online_tlbrs[j]
+        x1 = int(x1)
+        x2 = int(x2)
+        y1 = int(y1)
+        y2 = int(y2)
+        
+        print("x1, y1, x2, y2", x1, y1, x2, y2)
+        
+        cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1)
+        
+        text_str = 'tracking: %.2f, %.2f' % (online_ids[j], online_scores[j])
+
+        text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
+        text_w = int(text_w)
+        text_h = int(text_h)
+
+        text_pt = (x1, y1 - 3)
+        text_color = (int(255), int(255), int(255))
+
+        cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
+        cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        
             
     return img_numpy

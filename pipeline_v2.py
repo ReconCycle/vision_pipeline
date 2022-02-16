@@ -9,7 +9,6 @@ from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
 
 from helpers import *
-import graphics
 
 
 class Pipeline:
@@ -22,7 +21,7 @@ class Pipeline:
 
         # 3. object detection
         self.object_detection = ObjectDetection()
-        self.class_names = self.object_detection.dataset.class_names
+        # self.class_names = self.object_detection.dataset.class_names
 
 
     def process_img(self, img, fps=None):
@@ -36,20 +35,7 @@ class Pipeline:
 
         print("img.shape", img.shape)
         
-        frame, classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats = self.object_detection.get_prediction(img)
-
-        labelled_img = graphics.get_labelled_img(frame, self.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, fps=fps, worksurface_detection=self.worksurface_detection)
-
-        detections = []
-        for i in np.arange(len(classes)):
-            if obb_corners[i] is not None:
-                detection = {}
-                detection["class_name"] = self.class_names[classes[i]]
-                detection["score"] = float(scores[i])
-                detection["obb_corners"] = self.worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
-                detection["obb_center"] = self.worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
-                detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
-                detections.append(detection)
+        labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection, fps=fps)
 
         return labelled_img, detections
 
