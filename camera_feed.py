@@ -7,17 +7,19 @@ import time
 
 # adding this signal handler to handle CTRL+C to quit. Doesn't work sometimes otherwise
 def signal_handler(signal, frame):
+    print("Exiting... (from CTRL+C)")
     sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
 
-
+#! untested
 def load_userset1(camera):
     """https://docs.baslerweb.com/user-sets"""
     # Load the User Set 1 user set
     camera.UserSetSelector.SetValue(pylon.UserSetSelector_UserSet1)
     camera.UserSetLoad.Execute()
 
+#! untested
 def set_width_height(camera):
     # https://docs.baslerweb.com/center-x-and-center-y
     width = 2900
@@ -29,6 +31,7 @@ def set_width_height(camera):
     camera.CenterX.SetValue(True)
     camera.CenterY.SetValue(True)
 
+#! untested
 def auto_exposure(camera):
     """https://docs.baslerweb.com/exposure-auto"""
     # Set the Exposure Auto auto function to its minimum lower limit
@@ -47,6 +50,7 @@ def auto_exposure(camera):
     # Enable Exposure Auto by setting the operating mode to Continuous
     camera.ExposureAuto.SetValue(pylon.ExposureAuto_Continuous)
 
+#! untested
 def auto_gain(camera):
     # Set the the Gain Auto auto function to its minimum lower limit
     # and its maximum upper limit
@@ -64,6 +68,7 @@ def auto_gain(camera):
     # Enable Gain Auto by setting the operating mode to Continuous
     camera.GainAuto.SetValue(pylon.GainAuto_Continuous)
 
+#! untested
 def auto_white_balance(camera):
     """https://docs.baslerweb.com/balance-white-auto"""
     # Select auto function ROI 2
@@ -74,7 +79,7 @@ def auto_white_balance(camera):
     # Enable Balance White Auto by setting the operating mode to Continuous
     camera.BalanceWhiteAuto.SetValue(pylon.BalanceWhiteAuto_Continuous)
 
-
+#! untested
 def camera_feed(undistort=True, fps=None, callback=None):
 
     calibration = ImageCalibration()

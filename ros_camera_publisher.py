@@ -2,6 +2,7 @@ import sys
 import os
 import shutil
 import cv2
+
 ros_available = True
 try:
     import rospy
@@ -65,5 +66,3 @@ if __name__ == '__main__':
         img_count += 1
 
     camera_feed(undistort=args.undistort, fps=args.fps, callback=img_from_camera)
-
-
