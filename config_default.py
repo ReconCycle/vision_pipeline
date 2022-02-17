@@ -32,7 +32,7 @@ main_config = Config({
 
     "dlc_config_file": "data_limited/dlc/work_surface_jsi_05-07-2021/config.yaml",
     
-    "yolact_config_file": "data_limited/yolact/real_from_synthetic_2021-07-07/config.json",
+    "yolact_dataset_file": "data_limited/yolact/real_from_synthetic_2021-07-07/dataset.json",
     "yolact_score_threshold": 0.2,
 })
 

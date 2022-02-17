@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 import torch
 # from utils import timer
 import types
-from yolact.layers.output_utils import postprocess, undo_image_transformation
-from yolact.data import cfg, set_cfg, set_dataset
-from yolact.data import COCODetection, get_label_map, MEANS, COLORS
+from yolact_pkg.layers.output_utils import postprocess, undo_image_transformation
+from yolact_pkg.data.config import cfg, set_cfg, set_dataset, MEANS, COLORS
+from yolact_pkg.data.coco import COCODetection, get_label_map
 from collections import defaultdict
 
 iou_thresholds = [x / 100 for x in range(50, 100, 5)]
@@ -14,7 +14,7 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
+def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corners, obb_centers, online_tlbrs, online_ids, online_scores, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
 
     args = types.SimpleNamespace()
     args.display_masks=True
@@ -26,6 +26,8 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
     font_face = cv2.FONT_HERSHEY_DUPLEX
     font_scale = 1.0
     font_thickness = 1
+
+    num_dets_to_consider = classes.shape[0]
 
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
@@ -100,15 +102,14 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
     if worksurface_detection is not None:
         for label, coords_in_pixels in worksurface_detection.points_px_dict.items():
             if coords_in_pixels is not None:
-                xc, yc = np.around(coords_in_pixels).astype(int)
-                xc_meters, yc_m = np.around(worksurface_detection.pixels_to_meters(coords_in_pixels), decimals=2)
-                print("xc, yc", xc, yc)
+                xc, yc = np.around(coords_in_pixels[:2]).astype(int)
+                xc_m, yc_m, *_= worksurface_detection.points_m_dict[label]
+                # xc_m, yc_m = np.around(worksurface_detection.pixels_to_meters(coords_in_pixels), decimals=2)
+                # print("xc, yc", xc, yc)
                 cv2.circle(img_numpy, (xc, yc), 5, (0, 255, 0), -1)
-                print(label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")")
-                cv2.putText(img_numpy, label + ", (" + str(xc_meters) + ", " + str(yc_m) + ")",
+                # print(label + ", (" + str(xc_m) + ", " + str(yc_m) + ")")
+                cv2.putText(img_numpy, label + ", (" + str(xc_m) + ", " + str(yc_m) + ")",
                             (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
-            else:
-                print("label", label, "was not detected by worksurface_detection")
 
     # draw oriented bounding boxes
     for i in np.arange(len(obb_centers)):
@@ -135,7 +136,7 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
             x2 = int(x2)
             y2 = int(y2)
             
-            color = get_color(j).detach().numpy() *255
+            color = get_color(j).cpu().detach().numpy() *255
             color = [int(i) for i in color]
 
             score = scores[j]
@@ -144,7 +145,7 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
                 cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1)
 
             if args.display_text:
-                _class = cfg.dataset.class_names[classes[j]]
+                _class = class_names[classes[j]]
 
                 if  obb_centers[j] is not None:
                     x1_center, y1_center = obb_centers[j]
@@ -164,5 +165,30 @@ def get_labelled_img(img, classes, scores, boxes, masks, obb_corners, obb_center
 
                 cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+    
+    # show tracking obbs
+    for j in np.arange(len(online_tlbrs)):
+        x1, y1, x2, y2 = online_tlbrs[j]
+        x1 = int(x1)
+        x2 = int(x2)
+        y1 = int(y1)
+        y2 = int(y2)
+        
+        print("x1, y1, x2, y2", x1, y1, x2, y2)
+        
+        cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1)
+        
+        text_str = 'tracking: %.2f, %.2f' % (online_ids[j], online_scores[j])
+
+        text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
+        text_w = int(text_w)
+        text_h = int(text_h)
+
+        text_pt = (x1, y1 - 3)
+        text_color = (int(255), int(255), int(255))
+
+        cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
+        cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        
             
     return img_numpy

@@ -1,22 +1,15 @@
-import sys, os
-os.environ["DLClight"] = "True" # no gui
-os.environ['KMP_WARNINGS'] = 'off' # some info about KMP_AFFINITY
-from dlc.config import *
-# from infer import Inference
-from image_calibration import ImageCalibration
-from work_surface_detection import WorkSurfaceDetection
+import os
 import numpy as np
-from object_detection import ObjectDetection
-from helpers import *
-import graphics
-import cv2
-import torch
 import time
+import cv2
+# import commentjson
 
-from yolact.data import cfg
+from image_calibration import ImageCalibration
+from work_surface_detection_opencv import WorkSurfaceDetection
+from object_detection import ObjectDetection
 
+from helpers import *
 
-import json
 
 def quaternion_multiply(quaternion1, quaternion0):
         x0, y0, z0, w0 = quaternion0
@@ -42,108 +35,73 @@ class Pipeline:
 
         # 3. object detection
         self.object_detection = ObjectDetection()
-    
+        # self.class_names = self.object_detection.dataset.class_names
+
 
     def process_img(self, img, fps=None):
-        with torch.no_grad():
-            if isinstance(img, str):
-                print("img path:", img)
-                img = cv2.imread(img)
-            
-            if torch.cuda.is_available():
-                frame = torch.from_numpy(img).cuda().float()
-            else:
-                frame = torch.from_numpy(img).float()
+        if isinstance(img, str):
+            print("img path:", img)
+            img = cv2.imread(img)
         
         if self.worksurface_detection is None:
             print("detecting work surface...")
             self.worksurface_detection = WorkSurfaceDetection(img)
 
-        print("frame.shape", frame.shape)
+        print("img.shape", img.shape)
+        
+        labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection, fps=fps)
 
-        preds = self.object_detection.get_prediction(frame)
-        classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats, num_dets_to_consider = self.object_detection.post_process(preds)
+        for detection in detections:
+            corners = np.array(detection["obb_corners"])
+            distances = []
+            # Logger.loginfo("{}".format(corners))
+            first_corner = corners[0]
 
-        #### ONLY FOR DEMO ON EMO (BATTERY IS REMOVED) ####
-        # print('Classes:', classes)
-        # bad_indices = []
-        # for i in range(len(classes)):
-        #     if classes[i] == 1:
-        #         bad_indices.append(i)
-        # for bad in reversed(bad_indices):
-        #     classes = np.delete(classes, bad)
-        #     scores = np.delete(scores, bad)
-        #     boxes = np.delete(boxes, bad)
-        #     masks = np.delete(masks, bad)
-        #     obb_corners = np.delete(obb_corners, bad)
-        #     obb_centers = np.delete(obb_centers, bad)
-        #     obb_rot_quats = np.delete(obb_rot_quats, bad)
-        # print('Classes:', classes)
-                
-        labelled_img = graphics.get_labelled_img(frame, classes, scores, boxes, masks, obb_corners, obb_centers, num_dets_to_consider, fps=fps, worksurface_detection=self.worksurface_detection)
+            for ic, corner in enumerate(corners):
+                distances.append(np.linalg.norm(corner - first_corner))
+            # Logger.loginfo("Distances: {}".format(distances))
+            distances = np.array(distances)
+            idx_edge = distances.argsort()[-2]
+            # Logger.loginfo("Index of edge: {}".format(idx_edge))
+            second_corner = corners[idx_edge]
 
-        # todo: the graphics part should accept a list of detections like this below instead of what it is doing now
-        detections = []
-        for i in np.arange(len(classes)):
-            if obb_corners[i] is not None:
-                detection = {}
-                detection["class_name"] = cfg.dataset.class_names[classes[i]]
-                detection["score"] = float(scores[i])
-                detection["obb_corners"] = self.worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
-                detection["obb_center"] = self.worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
-                detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
-                detections.append(detection)
+            highest_y = np.argmax([first_corner[1], second_corner[1]])
+            if highest_y == 0:
+                vector_1 = first_corner - second_corner
+            elif highest_y == 1:
+                vector_1 = second_corner - first_corner
 
-                corners = np.array(detection["obb_corners"])
-                distances = []
-                # Logger.loginfo("{}".format(corners))
-                first_corner = corners[0]
+            unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
+            unit_vector_2 = np.array([0, 1])
+            # Logger.loginfo("Vectors: {}, {}".format(vector_1, unit_vector_2))
 
-                for ic, corner in enumerate(corners):
-                    distances.append(np.linalg.norm(corner - first_corner))
-                # Logger.loginfo("Distances: {}".format(distances))
-                distances = np.array(distances)
-                idx_edge = distances.argsort()[-2]
-                # Logger.loginfo("Index of edge: {}".format(idx_edge))
-                second_corner = corners[idx_edge]
-
-                highest_y = np.argmax([first_corner[1], second_corner[1]])
-                if highest_y == 0:
-                    vector_1 = first_corner - second_corner
-                elif highest_y == 1:
-                    vector_1 = second_corner - first_corner
-
-                unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
-                unit_vector_2 = np.array([0, 1])
-                # Logger.loginfo("Vectors: {}, {}".format(vector_1, unit_vector_2))
-
-                angle = (np.arctan2(unit_vector_1[1], unit_vector_1[0]) -
-                         np.arctan2(unit_vector_2[1], unit_vector_2[0]))
+            angle = (np.arctan2(unit_vector_1[1], unit_vector_1[0]) -
+                        np.arctan2(unit_vector_2[1], unit_vector_2[0]))
 
 
-                # If angle is too negative, add 180 degrees
-                if (angle * 180 / np.pi) < -30:
-                    angle = angle + np.pi
-                # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
+            # If angle is too negative, add 180 degrees
+            if (angle * 180 / np.pi) < -30:
+                angle = angle + np.pi
+            # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
 
-                # Below code works but z-axis is incorrect, should be rotated by 180 degs
-                angle = -angle
+            # Below code works but z-axis is incorrect, should be rotated by 180 degs
+            angle = -angle
 
-                rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]), 
-                                           np.array([np.cos(angle/2)])))
+            rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]), 
+                                        np.array([np.cos(angle/2)])))
 
-                #rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,-1]), 
-                #                           np.array([-np.cos(angle/2)])))
+            #rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,-1]), 
+            #                           np.array([-np.cos(angle/2)])))
 
-                #Rotate around x-axis by 180 degs
-                rot_quat = quaternion_multiply(np.array([0,1,0,0]), rot_quat)
-                
-               
-                #Rotate around z-axis by 180 degs
-                #rot_quat = quaternion_multiply(np.array([0,0,1,0]), rot_quat)
+            #Rotate around x-axis by 180 degs
+            rot_quat = quaternion_multiply(np.array([0,1,0,0]), rot_quat)
+            
+            
+            #Rotate around z-axis by 180 degs
+            #rot_quat = quaternion_multiply(np.array([0,0,1,0]), rot_quat)
 
-                detection["obb_rot_quat"] = rot_quat.tolist()
-                # detection["obb_rot_quat"] = np.array([[1,0,0,0]]).tolist()
+            detection["obb_rot_quat"] = rot_quat.tolist()
+            # detection["obb_rot_quat"] = np.array([[1,0,0,0]]).tolist()
 
         return labelled_img, detections
 
@@ -153,12 +111,12 @@ if __name__ == '__main__':
     pipeline = Pipeline()
 
     # pipeline
-    show_imgs = False
+    show_imgs = True
 
     # Iterate over images and run:
-    img_path = "./camera_images_3"  # we can use a directory here or a single image /163.png
-    save_path = './labelled_images_3' # set to None to not save
-    if not os.path.exists(save_path):
+    img_path = "data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021"  # we can use a directory here or a single image /163.png
+    save_path = None # set to None to not save
+    if save_path is not None and not os.path.exists(save_path):
         os.makedirs(save_path)
     imgs = get_images(img_path)
     if show_imgs:
@@ -195,9 +153,3 @@ if __name__ == '__main__':
             save_file_path = os.path.join(save_path, os.path.basename(img_p))
             print("saving!", save_file_path)
             cv2.imwrite(save_file_path, labeled_img)
-
-
-
-
-    
-

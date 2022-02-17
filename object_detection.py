@@ -1,119 +1,107 @@
-import sys, os
-from yolact.yolact import Yolact
-import yolact.eval
-import torch
-import torch.backends.cudnn as cudnn
-import types
-import cv2
-from yolact.utils.augmentations import BaseTransform, FastBaseTransform, Resize
-
-# post process function
-from yolact.utils import timer
-from yolact.layers.output_utils import postprocess, undo_image_transformation
-from yolact.data import cfg
-import obb
+import os
+from types import SimpleNamespace
 import numpy as np
+import commentjson
+from rich import print
+
 import config_default
+
+from yolact_pkg.data.config import Config
+from yolact_pkg.yolact import Yolact
+from yolact_pkg.eval import infer, annotate_img
+
+from tracker.byte_tracker import BYTETracker
+
+import obb
+import graphics
 
 
 class ObjectDetection:
     def __init__(self):
+        yolact_dataset = None
+        
+        if os.path.isfile(config_default.cfg.yolact_dataset_file):
+            print("loading", config_default.cfg.yolact_dataset_file)
+            with open(config_default.cfg.yolact_dataset_file, "r") as read_file:
+                yolact_dataset = commentjson.load(read_file)
+                print("yolact_dataset", yolact_dataset)
+                
+        self.dataset = Config(yolact_dataset)
+        
+        config_override = {
+            'name': 'yolact_base',
 
-        args = types.SimpleNamespace()
+            # Dataset stuff
+            'dataset': self.dataset,
+            'num_classes': len(self.dataset.class_names) + 1,
 
-        args.display=False
-        args.display_lincomb=False
-        args.trained_model = cfg.trained_model
-        args.score_threshold = config_default.cfg.yolact_score_threshold
-        args.top_k = 15
-        args.mask_proto_debug = False
-        args.config= "my_config"
-        args.crop=True
-        if torch.cuda.is_available():
-            args.cuda=True
-        else:
-            args.cuda=False
-
-        # eval.args = args
-        self.args = args
-
-        self.h = None
-        self.w = None
-
-        self.check_gpu()
-
-        with torch.no_grad():
-            if args.cuda:
-                cudnn.fastest = True
-                torch.set_default_tensor_type('torch.cuda.FloatTensor')
-            else:
-                torch.set_default_tensor_type('torch.FloatTensor')
-
-            print('Loading model...', end='')
-            net = Yolact()
-            map_location = None if args.cuda else 'cpu'
-            net.load_weights(args.trained_model, map_location=map_location)
-            net.eval()
-            print(' Done.')
-
-            if args.cuda:
-                net = net.cuda()
-
-            self.net = net
-
-    def check_gpu(self):
-        if torch.cuda.is_available():
-            cuda_device = torch.cuda.current_device()
-            print("current cuda device:", cuda_device)
-            print("device name:", torch.cuda.get_device_name(cuda_device))
-            print("device count:", torch.cuda.device_count())
-            print("cuda available:", torch.cuda.is_available())
-        else:
-            print("\n********************************************")
-            print("****    WARNING: CUDA is unavailable!   ****")
-            print("********************************************\n")
-
-    def get_prediction(self, frame):
-
-        self.h, self.w, _ = frame.shape
-        with torch.no_grad():
-            batch = FastBaseTransform()(frame.unsqueeze(0))
-            preds = self.net(batch)
-
-        return preds
-
-    def post_process(self, preds, w=None, h=None):
-
-        with timer.env('Postprocess'):
-            cfg.mask_proto_debug = self.args.mask_proto_debug
-
-            if w is None and h is None:
-                w = self.w
-                h = self.h
-
-            t = postprocess(preds, w, h, visualize_lincomb = self.args.display_lincomb,
-                                            crop_masks        = self.args.crop,
-                                            score_threshold   = self.args.score_threshold)
-            # cfg.rescore_bbox = save
-
-        with timer.env('Copy'):
-            idx = t[1].argsort(0, descending=True)[:self.args.top_k]
+            # Image Size
+            'max_size': 550,
             
-            if cfg.eval_mask_branch:
-                # Masks are drawn on the GPU, so don't copy
-                masks = t[3][idx]
-            classes, scores, boxes = [x[idx].cpu().numpy() for x in t[:3]]
+            # the save path should contain resnet101_reducedfc.pth
+            'save_path': './data_limited/yolact/',
+        }
+        
+        model_path = None
+        if "model" in yolact_dataset:
+            model_path = os.path.join(os.path.dirname(config_default.cfg.yolact_dataset_file), yolact_dataset["model"])
+            
+        print("model_path", model_path)
+        
+        self.yolact = Yolact(config_override)
+        self.yolact.eval()
+        self.yolact.load_weights(model_path)
 
-        num_dets_to_consider = min(self.args.top_k, classes.shape[0])
-        for j in range(num_dets_to_consider):
-            if scores[j] < self.args.score_threshold:
-                num_dets_to_consider = j
-                break
 
-        if cfg.eval_mask_branch and num_dets_to_consider > 0:
-            # After this, mask is of size [num_dets, h, w, 1]
-            masks = masks[:num_dets_to_consider, :, :, None]
+        # parser.add_argument("--track_thresh", type=float, default=0.6, help="tracking confidence threshold")
+        # parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
+        # parser.add_argument("--match_thresh", type=float, default=0.9, help="matching threshold for tracking")
+        # parser.add_argument("--min-box-area", type=float, default=100, help='filter out tiny boxes')
+        # parser.add_argument("--mot20", dest="mot20", default=False, action="store_true", help="test mot20.")
 
+        self.tracker_args = SimpleNamespace()
+        self.tracker_args.track_thresh = 0.6
+        self.tracker_args.track_buffer = 30
+        self.tracker_args.match_thresh = 0.9
+        self.tracker_args.min_box_area = 100
+        self.tracker_args.mot20 = False
+        
+        self.tracker = BYTETracker(self.tracker_args)
+
+    def get_prediction(self, img_path, worksurface_detection=None, fps=None):
+        
+        frame, classes, scores, boxes, masks = infer(self.yolact, img_path)
+        
+        print("boxes", boxes.shape, boxes)
+        print("scores", scores.shape, scores)
+        
+        # dets = np.concatenate((boxes, [scores]), axis=0)
+        # print("dets.shape", dets)
+        
+        # apply tracker
+        # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
+        # for help
+        # 'dets' (x1, y1, x2, y2, score)
+        online_targets = self.tracker.update(boxes, scores)
+        
+        online_tlwhs = []
+        online_tlbrs = [] # top, left, bottom, right
+        online_ids = []
+        online_scores = []
+        for t in online_targets:
+            tlwh = t.tlwh
+            tlbr = t.tlbr
+            tid = t.track_id
+            vertical = tlwh[2] / tlwh[3] > 1.6
+            if tlwh[2] * tlwh[3] > self.tracker_args.min_box_area and not vertical:
+                online_tlwhs.append(tlwh)
+                online_tlbrs.append(tlbr)
+                online_ids.append(tid)
+                online_scores.append(t.score)
+        
+            print("t.track_id", t.track_id)
+            print("t.tlwh", t.tlwh)
+        
         # calculate the oriented bounding boxes
         obb_corners = []
         obb_centers = []
@@ -124,13 +112,21 @@ class ObjectDetection:
             obb_corners.append(corners)
             obb_centers.append(center)
             obb_rot_quats.append(rot_quat)
+            
+            
+        labelled_img = graphics.get_labelled_img(frame, self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, online_tlbrs, online_ids, online_scores, fps=fps, worksurface_detection=worksurface_detection)
 
-        return classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats, num_dets_to_consider
-
-    def test(self):
-        with torch.no_grad():
-            eval.evaluate(self.net, dataset=None) # This works :)
-
-if __name__ == '__main__':
-    object_detection = ObjectDetection(trained_model="yolact/weights/yolact_base_47_60000.pth")
-    object_detection.test()
+        detections = []
+        for i in np.arange(len(classes)):
+            if obb_corners[i] is not None:
+                detection = {}
+                detection["class_name"] = self.dataset.class_names[classes[i]]
+                detection["score"] = float(scores[i])
+                detection["obb_corners"] = worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
+                detection["obb_center"] = worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
+                detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
+                detections.append(detection)
+        
+        # return classes, scores, boxes, masks
+        # return frame, classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats
+        return labelled_img, detections
