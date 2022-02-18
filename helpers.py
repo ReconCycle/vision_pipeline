@@ -1,6 +1,7 @@
 import os
 import regex
 import argparse
+import cv2
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -22,3 +23,12 @@ def get_images(input_dir):
     else:
         images = None
     return images
+
+def scale_img(img, scale_percent=50):
+    width = int(img.shape[1] * scale_percent / 100)
+    height = int(img.shape[0] * scale_percent / 100)
+    dim = (width, height)
+    
+    # resize image
+    resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
+    return resized
