@@ -7,16 +7,7 @@ from scipy import spatial
 from config_default import *
 import cv2
 import itertools
-
-
-def scale_img(img, scale_percent=50):
-    width = int(img.shape[1] * scale_percent / 100)
-    height = int(img.shape[0] * scale_percent / 100)
-    dim = (width, height)
-    
-    # resize image
-    resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
-    return resized
+from helpers import scale_img
 
 
 def get_corner_bolts(pts):

@@ -198,7 +198,7 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
             x2 = int(x2)
             y1 = int(y1)
             y2 = int(y2)
-            color = [168, 168, 168]
+            color = [190, 77, 37]
             
             # bbox
             cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)

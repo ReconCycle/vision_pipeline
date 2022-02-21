@@ -41,6 +41,8 @@ class ObjectDetection:
             
             # the save path should contain resnet101_reducedfc.pth
             'save_path': './data_limited/yolact/',
+            'score_threshold': 0.1,
+            'top_k': 10
         }
         
         model_path = None
@@ -50,6 +52,7 @@ class ObjectDetection:
         print("model_path", model_path)
         
         self.yolact = Yolact(config_override)
+        self.yolact.cfg.print()
         self.yolact.eval()
         self.yolact.load_weights(model_path)
 
@@ -61,9 +64,9 @@ class ObjectDetection:
         # parser.add_argument("--mot20", dest="mot20", default=False, action="store_true", help="test mot20.")
 
         self.tracker_args = SimpleNamespace()
-        self.tracker_args.track_thresh = 0.6
-        self.tracker_args.track_buffer = 30
-        self.tracker_args.match_thresh = 0.7 # default: 0.9
+        self.tracker_args.track_thresh = 0.1
+        self.tracker_args.track_buffer = 10 # num of frames to remember lost tracks
+        self.tracker_args.match_thresh = 20.5 # default: 0.9 # higher number is more lenient
         self.tracker_args.min_box_area = 10
         self.tracker_args.mot20 = False
         
@@ -74,7 +77,7 @@ class ObjectDetection:
     def get_prediction(self, img_path, worksurface_detection=None):
         t_start = time.time()
         
-        frame, classes, scores, boxes, masks = infer(self.yolact, img_path)
+        frame, classes, scores, boxes, masks = self.yolact.infer(img_path)
         fps_nn = 1.0 / (time.time() - t_start)
         
         # apply tracker
