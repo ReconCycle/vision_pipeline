@@ -42,7 +42,7 @@ class ObjectDetection:
             # the save path should contain resnet101_reducedfc.pth
             'save_path': './data_limited/yolact/',
             'score_threshold': 0.1,
-            'top_k': 10
+            'top_k': len(self.dataset.class_names)
         }
         
         model_path = None
@@ -71,8 +71,8 @@ class ObjectDetection:
         self.tracker_args.mot20 = False
         
         self.tracker = BYTETracker(self.tracker_args)
+        self.fps_graphics = -1.
         
-        self.fps_total = -1
 
     def get_prediction(self, img_path, worksurface_detection=None):
         t_start = time.time()
@@ -80,6 +80,7 @@ class ObjectDetection:
         frame, classes, scores, boxes, masks = self.yolact.infer(img_path)
         fps_nn = 1.0 / (time.time() - t_start)
         
+        tracker_start = time.time()
         # apply tracker
         # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
         online_targets = self.tracker.update(boxes, scores)
@@ -93,7 +94,9 @@ class ObjectDetection:
             tracking_boxes[t.input_id] = t.tlbr
             tracking_scores[t.input_id] = t.score
 
+        fps_tracker = 1.0 / (time.time() - tracker_start)
         
+        obb_start = time.time()
         # calculate the oriented bounding boxes
         obb_corners = []
         obb_centers = []
@@ -104,8 +107,10 @@ class ObjectDetection:
             obb_corners.append(corners)
             obb_centers.append(center)
             obb_rot_quats.append(rot_quat)
-            
-        fps_str = "fps_nn: " + str(round(fps_nn, 1)) + ", fps_total: " + str(round(self.fps_total, 1)) 
+        fps_obb = 1.0 / (time.time() - obb_start)
+        
+        graphics_start = time.time()
+        fps_str = "fps_nn: " + str(round(fps_nn, 1)) + ", fps_tracker: " + str(round(fps_tracker, 1)) + ", fps_obb: " + str(round(fps_obb, 1)) + ", fps_graphics: " + str(round(self.fps_graphics, 1))
         labelled_img = graphics.get_labelled_img(frame, self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores, fps=fps_str, worksurface_detection=worksurface_detection)
 
         detections = []
@@ -120,9 +125,7 @@ class ObjectDetection:
                 detection["tracking_id"] = tracking_ids[i]
                 detection["tracking_score"] = tracking_scores[i]
                 detections.append(detection)
-                
-        self.fps_total = 1.0 / (time.time() - t_start)
         
-        # return classes, scores, boxes, masks
-        # return frame, classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats
+        self.fps_graphics = 1.0 / (time.time() - graphics_start)
+        
         return labelled_img, detections

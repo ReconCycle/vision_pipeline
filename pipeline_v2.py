@@ -55,15 +55,11 @@ if __name__ == '__main__':
     if save_path is not None and not os.path.exists(save_path):
         os.makedirs(save_path)
     imgs = get_images(img_path)
-    if show_imgs:
-        pass
-        # cv2.namedWindow("labeled_img", cv2.WINDOW_NORMAL)
-    # frame_count = 0
-    # fps = None
-    # t_prev = None
+
     for img_p in imgs:
         labeled_img, detections = pipeline.process_img(img_p)
         
+        t_start = time.time()
         if show_imgs:
             cv2.imshow('labeled_img', scale_img(labeled_img))
 
@@ -75,19 +71,10 @@ if __name__ == '__main__':
         elif waitkey == ord('p'): # pause
             cv2.waitKey(-1)  # wait until any key is pressed
 
-        # t_now = time.time()
-        # # only start calculating avg fps after the first frame
-        # if frame_count == 0:
-        #     t_start = time.time()
-        # else:
-        #     if t_prev is not None and t_now - t_prev > 0:
-        #         fps = 1 / (t_now - t_prev)
-        #     avg_fps = frame_count / (t_now - t_start)
-        #     print("avg. FPS:", avg_fps)
-        # frame_count += 1
-        # t_prev = t_now
-
         if save_path is not None:
             save_file_path = os.path.join(save_path, os.path.basename(img_p))
             print("saving!", save_file_path)
             cv2.imwrite(save_file_path, labeled_img)
+            
+        fps_imshow = 1.0 / (time.time() - t_start)
+        print("fps_imshow", fps_imshow)
