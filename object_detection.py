@@ -66,7 +66,7 @@ class ObjectDetection:
         self.tracker_args = SimpleNamespace()
         self.tracker_args.track_thresh = 0.1
         self.tracker_args.track_buffer = 10 # num of frames to remember lost tracks
-        self.tracker_args.match_thresh = 20.5 # default: 0.9 # higher number is more lenient
+        self.tracker_args.match_thresh = 2.5 # default: 0.9 # higher number is more lenient
         self.tracker_args.min_box_area = 10
         self.tracker_args.mot20 = False
         

@@ -76,11 +76,11 @@ class KalmanFilter(object):
         std = [
             2 * self._std_weight_position * measurement[3],
             2 * self._std_weight_position * measurement[3],
-            1e-2,
+            10 * self._std_weight_velocity * measurement[3], # was: 1e-2,
             2 * self._std_weight_position * measurement[3],
             10 * self._std_weight_velocity * measurement[3],
             10 * self._std_weight_velocity * measurement[3],
-            1e-5,
+            10 * self._std_weight_velocity * measurement[3], # was: 1e-5,
             10 * self._std_weight_velocity * measurement[3]]
         covariance = np.diag(np.square(std))
         return mean, covariance
@@ -107,12 +107,12 @@ class KalmanFilter(object):
         std_pos = [
             self._std_weight_position * mean[3],
             self._std_weight_position * mean[3],
-            1e-2,
+            self._std_weight_position * mean[3],# was: 1e-2,
             self._std_weight_position * mean[3]]
         std_vel = [
             self._std_weight_velocity * mean[3],
             self._std_weight_velocity * mean[3],
-            1e-5,
+            self._std_weight_velocity * mean[3],# was: 1e-5,
             self._std_weight_velocity * mean[3]]
         motion_cov = np.diag(np.square(np.r_[std_pos, std_vel]))
 
@@ -143,7 +143,7 @@ class KalmanFilter(object):
         std = [
             self._std_weight_position * mean[3],
             self._std_weight_position * mean[3],
-            1e-1,
+            self._std_weight_position * mean[3],# was: 1e-1,
             self._std_weight_position * mean[3]]
         innovation_cov = np.diag(np.square(std))
 
@@ -171,12 +171,12 @@ class KalmanFilter(object):
         std_pos = [
             self._std_weight_position * mean[:, 3],
             self._std_weight_position * mean[:, 3],
-            1e-2 * np.ones_like(mean[:, 3]),
+            self._std_weight_position * mean[:, 3], # was: 1e-2 * np.ones_like(mean[:, 3]),
             self._std_weight_position * mean[:, 3]]
         std_vel = [
             self._std_weight_velocity * mean[:, 3],
             self._std_weight_velocity * mean[:, 3],
-            1e-5 * np.ones_like(mean[:, 3]),
+            self._std_weight_velocity * mean[:, 3], # was: 1e-5 * np.ones_like(mean[:, 3]),
             self._std_weight_velocity * mean[:, 3]]
         sqr = np.square(np.r_[std_pos, std_vel]).T
 
