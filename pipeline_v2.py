@@ -2,26 +2,28 @@ import os
 import numpy as np
 import time
 import cv2
-# import commentjson
+from rich import print
 
 from image_calibration import ImageCalibration
 from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
 
-from helpers import *
-
+from helpers import scale_img, get_images
+from config import load_config
 
 class Pipeline:
     def __init__(self):
+        self.config = load_config()
+        print("config", self.config)
+        
         # 1. load camera calibration files
-        self.calibration = ImageCalibration()
+        self.calibration = ImageCalibration(self.config.camera)
 
         # 2. work surface coordinates, will be initialised on first received image
         self.worksurface_detection = None
 
         # 3. object detection
-        self.object_detection = ObjectDetection()
-        # self.class_names = self.object_detection.dataset.class_names
+        self.object_detection = ObjectDetection(self.config.obj_detection)
 
 
     def process_img(self, img):
@@ -32,13 +34,14 @@ class Pipeline:
         if self.worksurface_detection is None:
             print("detecting work surface...")
             self.worksurface_detection = WorkSurfaceDetection(img)
+            # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
 
         # print("img.shape", img.shape)
         
         labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection)
 
         return labelled_img, detections
-
+    
 
 if __name__ == '__main__':
 

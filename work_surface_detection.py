@@ -1,19 +1,22 @@
 import sys, os
 os.environ["DLClight"] = "True" # no gui
-
-from dlc.config import *
-import numpy as np
-from dlc.infer import Inference
-from config_default import *
 import cv2
 import itertools
+import numpy as np
 
+from dlc.config import *
+from dlc.infer import Inference
+
+from config import load_config
 
 class WorkSurfaceDetection:
-    def __init__(self, img):
+    def __init__(self, img, config=None):
+
+        if config is None:
+            config = load_config().dlc
 
         # get corners of work surface
-        inference = Inference(cfg.dlc_config_file)
+        inference = Inference(config.dlc_config_file)
 
         if isinstance(img, str):
             img = np.array(cv2.imread(img))
