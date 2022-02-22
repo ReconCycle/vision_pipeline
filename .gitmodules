@@ -1,3 +1,6 @@
 [submodule "yolact_pkg"]
 	path = yolact_pkg
 	url = git@github.com:sebastian-ruiz/yolact.git
+[submodule "yolact"]
+	path = yolact
+	url = https://github.com/sebastian-ruiz/yolact.git
