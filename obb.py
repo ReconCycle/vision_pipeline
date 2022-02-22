@@ -10,6 +10,8 @@ import skimage.morphology
 from scipy.spatial import ConvexHull
 from scipy.spatial.transform import Rotation
 import cv2
+import os
+import time
 
 
 def get_obb_from_points(points, calcconvexhull=True):
@@ -30,6 +32,8 @@ def get_obb_from_points(points, calcconvexhull=True):
     if points.size == 0 or len(points) < 4:
         return None, None, None
 
+    # start_convexhull = time.time()
+
     if calcconvexhull:
         try:
             _ch = ConvexHull(points)
@@ -37,7 +41,14 @@ def get_obb_from_points(points, calcconvexhull=True):
             # something went wrong
             return None, None, None
         points = _ch.points[_ch.vertices]
+        
+    # fps_convexhull = 1.0 / (time.time() - start_convexhull)
+    # print("fps_convexhull", fps_convexhull)
+    
+    #? could we somehow use max and min points instead?
+    # start_maths = time.time()
 
+    #? maybe we can use an approximation for eig instead.
     cov_points = np.cov(points,y = None,rowvar = 0,bias = 1)
     v, vect = np.linalg.eig(cov_points)
     tvect = np.transpose(vect)
@@ -63,8 +74,8 @@ def get_obb_from_points(points, calcconvexhull=True):
     # change to ints, and change order
     corners = np.round(corners).astype(int)
     center = np.round(center).astype(int)
-    corners[:, 0], corners[:, 1] = corners[:, 1], corners[:, 0].copy()
-    center[0], center[1] = center[1], center[0].copy()
+    # corners[:, 0], corners[:, 1] = corners[:, 1], corners[:, 0].copy()
+    # center[0], center[1] = center[1], center[0].copy()
 
     # convert 2d rotation matrix to a 3d rotation matrix the rotation is around the z-axis
     # the upper left corner of the 3d rotation matrix is the 2d rotation matrix
@@ -75,6 +86,9 @@ def get_obb_from_points(points, calcconvexhull=True):
     rot_quat = rotation_obj.as_quat()
     # degrees = rotation_obj.as_euler('xyz', degrees=True)
     # print("degrees", degrees)
+    
+    # fps_maths = 1.0 / (time.time() - start_maths)
+    # print("fps_maths", fps_maths)
 
     return corners, center, rot_quat
 
@@ -109,19 +123,22 @@ def get_obb_from_mask(mask_im):
         mask_im: binary numpy array
 
     """
-    eroded = skimage.morphology.erosion(mask_im)
-    outline = mask_im ^ eroded
-    boundary_points = np.argwhere(outline > 0)
+    
+    mask = (mask_im[:,:, 0] == 1).astype("uint8")
+    
+    # start_dilate = time.time()
+    # kernel = np.ones((5,5),np.uint8)
+    # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel) # erosion followed by dilation
+    # fps_dilate = 1.0 / (time.time() - start_dilate)
+    # print("fps_dilate", fps_dilate)
 
-    # I seem to be getting problems with the above when the mask is really small.
-    # Sometimes the mask contains only one point or points on a single line only.
-    # The problems lie with the mask.
-    # print("boundary_points", boundary_points.shape)
-    # int_mask_im = mask_im.astype("uint8")
-    # print("mask_im", np.count_nonzero(int_mask_im), int_mask_im.shape)
-    # ret, thresh = cv2.threshold(int_mask_im, 0.1, 1, cv2.THRESH_BINARY)
+    # start_contours = time.time()
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     # contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) # try using cv2.CHAIN_APPROX_SIMPLE
-    # contours = np.asarray(contours).squeeze()
-    # print("contours", contours.shape, type(contours))
-
-    return get_obb_from_points(boundary_points)
+    main_contour = contours[0].squeeze()
+    
+    # fps_contours = 1.0 / (time.time() - start_contours)
+    # print("fps_contours", fps_contours)
+    
+    return get_obb_from_points(main_contour)
