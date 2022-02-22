@@ -12,7 +12,7 @@ from .base_track import BaseTrack, TrackState
 
 class STrack(BaseTrack):
     shared_kalman = KalmanFilter()
-    def __init__(self, tlwh, score):
+    def __init__(self, tlwh, score, input_id):
 
         # wait activate
         self._tlwh = np.asarray(tlwh, dtype=np.float)
@@ -22,6 +22,8 @@ class STrack(BaseTrack):
 
         self.score = score
         self.tracklet_len = 0
+        
+        self.input_id = input_id # which input this track refers to
 
     def predict(self):
         mean_state = self.mean.copy()
@@ -67,6 +69,7 @@ class STrack(BaseTrack):
         if new_id:
             self.track_id = self.next_id()
         self.score = new_track.score
+        self.input_id = new_track.input_id
 
     def update(self, new_track, frame_id):
         """
@@ -86,6 +89,7 @@ class STrack(BaseTrack):
         self.is_activated = True
 
         self.score = new_track.score
+        self.input_id = new_track.input_id
 
     @property
     # @jit(nopython=True)
@@ -152,7 +156,8 @@ class BYTETracker(object):
         self.args = args
         #self.det_thresh = args.track_thresh
         self.det_thresh = args.track_thresh + 0.1
-        self.buffer_size = int(frame_rate / 30.0 * args.track_buffer)
+        # self.buffer_size = int(frame_rate / 30.0 * args.track_buffer)
+        self.buffer_size = int(args.track_buffer)
         self.max_time_lost = self.buffer_size
         self.kalman_filter = KalmanFilter()
 
@@ -173,6 +178,9 @@ class BYTETracker(object):
         # img_h, img_w = img_info[0], img_info[1]
         # scale = min(img_size[0] / float(img_h), img_size[1] / float(img_w))
         # bboxes /= scale
+        
+        # input_ids reference which input the tracked object refers to
+        input_ids = np.arange(len(scores))
 
         remain_inds = scores > self.args.track_thresh
         inds_low = scores > 0.1
@@ -183,11 +191,14 @@ class BYTETracker(object):
         dets = bboxes[remain_inds]
         scores_keep = scores[remain_inds]
         scores_second = scores[inds_second]
+        input_ids_keep = input_ids[remain_inds]
+        input_ids_second = input_ids[inds_second]
 
         if len(dets) > 0:
             '''Detections'''
-            detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s) for
-                          (tlbr, s) in zip(dets, scores_keep)]
+            #! Seb: here we lose which detection corresponds to which input.
+            detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s, input_id) for
+                          (tlbr, s, input_id) in zip(dets, scores_keep, input_ids_keep)]
         else:
             detections = []
 
@@ -223,13 +234,13 @@ class BYTETracker(object):
         # association the untrack to the low score detections
         if len(dets_second) > 0:
             '''Detections'''
-            detections_second = [STrack(STrack.tlbr_to_tlwh(tlbr), s) for
-                          (tlbr, s) in zip(dets_second, scores_second)]
+            detections_second = [STrack(STrack.tlbr_to_tlwh(tlbr), s, input_id) for
+                          (tlbr, s, input_id) in zip(dets_second, scores_second, input_ids_second)]
         else:
             detections_second = []
         r_tracked_stracks = [strack_pool[i] for i in u_track if strack_pool[i].state == TrackState.Tracked]
         dists = matching.iou_distance(r_tracked_stracks, detections_second)
-        matches, u_track, u_detection_second = matching.linear_assignment(dists, thresh=0.5)
+        matches, u_track, u_detection_second = matching.linear_assignment(dists, thresh=2.5) # was 0.5
         for itracked, idet in matches:
             track = r_tracked_stracks[itracked]
             det = detections_second[idet]
@@ -251,7 +262,7 @@ class BYTETracker(object):
         dists = matching.iou_distance(unconfirmed, detections)
         if not self.args.mot20:
             dists = matching.fuse_score(dists, detections)
-        matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=0.7)
+        matches, u_unconfirmed, u_detection = matching.linear_assignment(dists, thresh=2.5) # was 0.7
         for itracked, idet in matches:
             unconfirmed[itracked].update(detections[idet], self.frame_id)
             activated_starcks.append(unconfirmed[itracked])

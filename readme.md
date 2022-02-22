@@ -15,7 +15,7 @@ Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pip
 
 Look at the documentation in [ros-basler-camera](https://github.com/ReconCycle/ros-basler-camera).
 
-## Deeplabcut 
+## Deeplabcut - DEPRECATED (using OpenCV instead for corner detection)
 
 To install:
 ```

@@ -14,7 +14,7 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corners, obb_centers, online_tlbrs, online_ids, online_scores, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
+def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
 
     args = types.SimpleNamespace()
     args.display_masks=True
@@ -28,6 +28,15 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
     font_thickness = 1
 
     num_dets_to_consider = classes.shape[0]
+    
+    info_text = ""
+    
+    info_text += "detections: " + str(len(classes))
+    
+    for i in np.arange(len(classes)):
+        tracking_id = "t_id " + str(tracking_ids[i]) + ", " if tracking_ids[i] is not None else ""
+        tracking_score = "t_score " + str(np.round(tracking_scores[i], 1)) if tracking_scores[i] is not None else ""
+        info_text += "\n" + class_names[classes[i]] + ", " + tracking_id + tracking_score
 
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
@@ -92,7 +101,15 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
             fps_text = str(round(fps, 1)) + " fps"
         text_w, text_h = cv2.getTextSize(fps_text, font_face, font_scale, font_thickness)[0]
         img_gpu[0:text_h+8, 0:text_w+8] *= 0.6 # 1 - Box alpha
+    else:
+        text_h = 0
 
+    if info_text is not None and info_text != "":
+        prev_height = text_h + 8
+        for i, line in enumerate(info_text.split('\n')):
+            info_text_w, info_text_h = cv2.getTextSize(line, font_face, font_scale, font_thickness)[0]
+            img_gpu[prev_height:prev_height+info_text_h+8, 0:info_text_w+8] *= 0.6 # 1 - Box alpha
+            prev_height += info_text_h+8
 
     # Then draw the stuff that needs to be done on the cpu
     # Note, make sure this is a uint8 tensor or opencv will not anti alias text for whatever reason
@@ -125,6 +142,12 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
 
         cv2.putText(img_numpy, fps_text, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
     
+    if info_text is not None and info_text != "":
+        text_color = [0, 255, 0]
+        for i, line in enumerate(info_text.split('\n')):
+            text_pt = (4, (text_h+8)+(info_text_h+8)*i +info_text_h+2)
+            cv2.putText(img_numpy, line, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+    
     if num_dets_to_consider == 0:
         return img_numpy
 
@@ -142,7 +165,7 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
             score = scores[j]
 
             if args.display_bboxes:
-                cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1)
+                cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
 
             if args.display_text:
                 _class = class_names[classes[j]]
@@ -153,8 +176,9 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
                 else:
                     x1_m, y1_m = (-1, -1)
 
-                text_str = '%s: %.2f, (%.2f, %.2f)' % (_class, score, x1_m, y1_m) if args.display_scores else _class
-                print(text_str)
+                tracking_id = "t_id " + str(tracking_ids[j]) + ", " if tracking_ids[j] is not None else ""
+                tracking_score = "t_score " + str(np.round(tracking_scores[j], 1)) + ", " if tracking_scores[j] is not None else ""
+                text_str = '%s: %s %sscore %.2f, (%.2f, %.2f)' % (_class, tracking_id, tracking_score, score, x1_m, y1_m) if args.display_scores else _class
 
                 text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
                 text_w = int(text_w)
@@ -167,28 +191,29 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
     
     # show tracking obbs
-    for j in np.arange(len(online_tlbrs)):
-        x1, y1, x2, y2 = online_tlbrs[j]
-        x1 = int(x1)
-        x2 = int(x2)
-        y1 = int(y1)
-        y2 = int(y2)
-        
-        print("x1, y1, x2, y2", x1, y1, x2, y2)
-        
-        cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1)
-        
-        text_str = 'tracking: %.2f, %.2f' % (online_ids[j], online_scores[j])
+    for j in np.arange(len(classes)):
+        if tracking_boxes[j] is not None:
+            x1, y1, x2, y2 = tracking_boxes[j]
+            x1 = int(x1)
+            x2 = int(x2)
+            y1 = int(y1)
+            y2 = int(y2)
+            color = [190, 77, 37]
+            
+            # bbox
+            cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
+            
+            # text_str = 'tracking: %d, %.2f' % (online_ids[j], online_scores[j])
 
-        text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
-        text_w = int(text_w)
-        text_h = int(text_h)
+            # text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
+            # text_w = int(text_w)
+            # text_h = int(text_h)
 
-        text_pt = (x1, y1 - 3)
-        text_color = (int(255), int(255), int(255))
+            # text_pt = (x1, y1 - 3)
+            # text_color = (int(255), int(255), int(255))
 
-        cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
-        cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+            # cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
+            # cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
         
             
     return img_numpy

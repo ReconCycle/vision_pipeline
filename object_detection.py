@@ -1,6 +1,7 @@
 import os
 from types import SimpleNamespace
 import numpy as np
+import time
 import commentjson
 from rich import print
 
@@ -40,6 +41,8 @@ class ObjectDetection:
             
             # the save path should contain resnet101_reducedfc.pth
             'save_path': './data_limited/yolact/',
+            'score_threshold': 0.1,
+            'top_k': len(self.dataset.class_names)
         }
         
         model_path = None
@@ -49,6 +52,7 @@ class ObjectDetection:
         print("model_path", model_path)
         
         self.yolact = Yolact(config_override)
+        self.yolact.cfg.print()
         self.yolact.eval()
         self.yolact.load_weights(model_path)
 
@@ -60,48 +64,39 @@ class ObjectDetection:
         # parser.add_argument("--mot20", dest="mot20", default=False, action="store_true", help="test mot20.")
 
         self.tracker_args = SimpleNamespace()
-        self.tracker_args.track_thresh = 0.6
-        self.tracker_args.track_buffer = 30
-        self.tracker_args.match_thresh = 0.9
-        self.tracker_args.min_box_area = 100
+        self.tracker_args.track_thresh = 0.1
+        self.tracker_args.track_buffer = 10 # num of frames to remember lost tracks
+        self.tracker_args.match_thresh = 2.5 # default: 0.9 # higher number is more lenient
+        self.tracker_args.min_box_area = 10
         self.tracker_args.mot20 = False
         
         self.tracker = BYTETracker(self.tracker_args)
+        self.fps_graphics = -1.
+        
 
-    def get_prediction(self, img_path, worksurface_detection=None, fps=None):
+    def get_prediction(self, img_path, worksurface_detection=None):
+        t_start = time.time()
         
-        frame, classes, scores, boxes, masks = infer(self.yolact, img_path)
+        frame, classes, scores, boxes, masks = self.yolact.infer(img_path)
+        fps_nn = 1.0 / (time.time() - t_start)
         
-        print("boxes", boxes.shape, boxes)
-        print("scores", scores.shape, scores)
-        
-        # dets = np.concatenate((boxes, [scores]), axis=0)
-        # print("dets.shape", dets)
-        
+        tracker_start = time.time()
         # apply tracker
         # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
-        # for help
-        # 'dets' (x1, y1, x2, y2, score)
         online_targets = self.tracker.update(boxes, scores)
         
-        online_tlwhs = []
-        online_tlbrs = [] # top, left, bottom, right
-        online_ids = []
-        online_scores = []
+        tracking_ids = np.full(len(classes), None)
+        tracking_boxes = np.full(len(classes), None)
+        tracking_scores = np.full(len(classes), None)
+        
         for t in online_targets:
-            tlwh = t.tlwh
-            tlbr = t.tlbr
-            tid = t.track_id
-            vertical = tlwh[2] / tlwh[3] > 1.6
-            if tlwh[2] * tlwh[3] > self.tracker_args.min_box_area and not vertical:
-                online_tlwhs.append(tlwh)
-                online_tlbrs.append(tlbr)
-                online_ids.append(tid)
-                online_scores.append(t.score)
+            tracking_ids[t.input_id] = t.track_id # add the tracking id to the detections
+            tracking_boxes[t.input_id] = t.tlbr
+            tracking_scores[t.input_id] = t.score
+
+        fps_tracker = 1.0 / (time.time() - tracker_start)
         
-            print("t.track_id", t.track_id)
-            print("t.tlwh", t.tlwh)
-        
+        obb_start = time.time()
         # calculate the oriented bounding boxes
         obb_corners = []
         obb_centers = []
@@ -112,9 +107,11 @@ class ObjectDetection:
             obb_corners.append(corners)
             obb_centers.append(center)
             obb_rot_quats.append(rot_quat)
-            
-            
-        labelled_img = graphics.get_labelled_img(frame, self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, online_tlbrs, online_ids, online_scores, fps=fps, worksurface_detection=worksurface_detection)
+        fps_obb = 1.0 / (time.time() - obb_start)
+        
+        graphics_start = time.time()
+        fps_str = "fps_nn: " + str(round(fps_nn, 1)) + ", fps_tracker: " + str(round(fps_tracker, 1)) + ", fps_obb: " + str(round(fps_obb, 1)) + ", fps_graphics: " + str(round(self.fps_graphics, 1))
+        labelled_img = graphics.get_labelled_img(frame, self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores, fps=fps_str, worksurface_detection=worksurface_detection)
 
         detections = []
         for i in np.arange(len(classes)):
@@ -125,8 +122,10 @@ class ObjectDetection:
                 detection["obb_corners"] = worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
                 detection["obb_center"] = worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
                 detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
+                detection["tracking_id"] = tracking_ids[i]
+                detection["tracking_score"] = tracking_scores[i]
                 detections.append(detection)
         
-        # return classes, scores, boxes, masks
-        # return frame, classes, scores, boxes, masks, obb_corners, obb_centers, obb_rot_quats
+        self.fps_graphics = 1.0 / (time.time() - graphics_start)
+        
         return labelled_img, detections
