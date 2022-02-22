@@ -157,6 +157,24 @@ cfg = real_config.copy()
 
 This is covered more in the ROS-vision-pipeline git container.
 
+## Exporting/Importing Conda environment
+
+Export with:
+```
+conda env export > environment.yml
+```
+Import with:
+```
+conda env create -f environment.yml --debug
+```
+or possibly faster, with:
+```
+conda create -y -n pipeline-v2
+conda activate pipeline-v2
+conda install mamba -n base -c conda-forge
+mamba env update -n pipeline-v2 --file environment.yml
+```
+
 ## TODOs
 
 - Use the GPU version of tensorflow in the `environment.yml` by installing: `conda install tensorflow-gpu=1.4`. Right now CPU version is used.
