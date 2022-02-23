@@ -7,30 +7,31 @@ import yaml
 from glob import glob
 import time
 import regex as re
-from config_default import *
+
+from config import load_config
 
 
 class ImageCalibration:
-    def __init__(self, calibration_file=None):
+    def __init__(self, config=None):
         self.calibration = {}
+
+        if config is None:
+            config = load_config().camera
+            
+        self.load_calibration_file(config.camera_calibration_file)
+
+        self.undistort = config.undistort
+
+        self.resize = config.resize
+        self.resized_resolution = config.resized_resolution
+
+        self.add_borders = config.add_borders
+        self.camera_new_resolution = config.camera_new_resolution
+        self.camera_offsets = config.camera_offsets
+
+        self.crop = config.crop
+        self.crop_margins = config.crop_margins
     
-        if calibration_file is None:
-            print("cfg.camera_calibration_file", cfg.camera_calibration_file)
-            calibration_file = cfg.camera_calibration_file
-    
-        self.load_calibration_file(calibration_file)
-
-        self.undistort = cfg.camera_parameters.undistort
-
-        self.resize = cfg.camera_parameters.resize
-        self.resized_resolution = cfg.camera_parameters.resized_resolution
-
-        self.add_borders = cfg.camera_parameters.add_borders
-        self.camera_new_resolution = cfg.camera_parameters.camera_new_resolution
-        self.camera_offsets = cfg.camera_parameters.camera_offsets
-
-        self.crop = cfg.camera_parameters.crop
-        self.crop_margins = cfg.camera_parameters.crop_margins
 
     def load_calibration_file(self, calibration_file):
         if calibration_file is not None:

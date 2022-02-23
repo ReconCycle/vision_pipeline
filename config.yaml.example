@@ -1,0 +1,23 @@
+# camera config
+camera:
+  camera_calibration_file: data_limited/camera_calibration/calibration_jsi_f1.3_1450x1450_28-06-2021.yaml
+  resize: True
+  resized_resolution: [1450, 1450]
+
+  undistort: True
+
+  add_borders: False
+  camera_new_resolution: [4608, 3288]
+  camera_offsets: [1000, 100]  # x-offset, y-offset
+
+  crop: False
+  crop_margins: [50, 400, 50, 50] # top, right, bottom, left
+
+# DLC config
+dlc:
+  dlc_config_file: data_limited/dlc/work_surface_jsi_05-07-2021/config.yaml
+
+# yolact config
+obj_detection:
+  yolact_dataset_file: data_limited/yolact/real_from_synthetic_2021-07-07/dataset.json
+  yolact_score_threshold: 0.2

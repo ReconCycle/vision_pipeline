@@ -1,12 +1,8 @@
-import sys, os
-# os.environ["DLClight"] = "True" # no gui
-# from dlc.config import *
-# from dlc.infer import Inference
 import numpy as np
 from scipy import spatial
-from config_default import *
 import cv2
-import itertools
+from rich import print
+
 from helpers import scale_img
 
 

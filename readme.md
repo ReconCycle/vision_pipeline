@@ -9,58 +9,39 @@ The camera part can be run separately in a ROS node using [ros-basler-camera](ht
 
 ## Installation
 
-Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision-pipeline/data` folder.
+Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision-pipeline/data_limited` folder.
+
+<!-- ## Camera Calibration
+
+Look at the documentation in [ros-basler-camera](https://github.com/ReconCycle/ros-basler-camera). -->
+
 
 ## Camera Calibration
 
-Look at the documentation in [ros-basler-camera](https://github.com/ReconCycle/ros-basler-camera).
-
-## Deeplabcut - DEPRECATED (using OpenCV instead for corner detection)
-
-To install:
+To calibrate the camera put a checkerboard in the view of the camera, and move the checkerboard around while taking images. The images should be of size 2900 x 2900 pixels.
+To take the images for calibration run the following in the container:
+```yaml
+command: python ros_camera_publisher.py --save=True --undistort=False --fps=1.0
 ```
-cd dlc/DeepLabCut-2.2b8
-./reinstall.sh
+Rename the saved folder to something like "calibration_23-06-2021" and move it to the data folder.
+Then run the calibration by running:
+```yaml
+command: python image_calibration.py --input="data/calibration_23-06-2021" --board_h=9 --board_w=6
 ```
-Note: this is done automatically when using the [ros-vision-pipeline](https://github.com/ReconCycle/ros-vision-pipeline) Docker container.
+This will output the file: `calibration_file.yaml` and some `temp_*` folders to check it performed correctly. 
 
-### Deeplabcut Training
+Set the new `calibration_file.yaml` path in `config.yaml`.
 
-1. Take a folder of images to annotate. Use the script in `tools/img-to-video/convert-png-to-avi.py` to convert the images to a video.
-2. Edit the script `dlc/dlc_create_environment.py` by commenting in each step on its own and then run:
-```
-cd vision-pipeline/
-python -m dlc.dlc_create_environment
-```
+The `image_calibration.py` can take the following parameters:
 
+- `--board_h` (default 8) the board height
+- `--board_w` (default 6) the board width
+- `--input` (default data/calibration) input directory of images
 
-### Deeplabcut Inference
+## Labelling Images with Segmentation for use with Yolact
 
-In the `data/config_override.py` set the config parameters. Set `dlc_config_file` to point to your dlc config `.yaml` file.
-
-## NDDS
-
-### Changelog
-
-- 15/01/2021: Changed the all_internals to have label pcb on the side where the pcb is visible and internals on the side where the white plastic is visible
-
-### Convert NDDS to COCO dataset format
-
-This must be done after generating images with NDDS. Make sure that instance segmentation and class segmentation masks are produced by NDDS.
-
-1. Open `tools/ndds-to-coco/ndds-to-coco-multiprocessing.py`.
-2. Set `DATA_DIR` directory and set your class labels in `CATEGORIES`.
-3. Run  `ndds-to-coco-multiprocessing.py` with `TESTING_STAGE = True`.
-4. Open `tools/coco-viewer/cocoviewer.py` and set the `DATA_DIR` directory correctly. Run and check that the mask labels are correct.
-5. Run  `ndds-to-coco-multiprocessing.py` with `TESTING_STAGE = False`. Wait an hour or so to do it's thing...
-
-
-## How to use Labelme
-
-```
-git clone https://github.com/sebastian-ruiz/labelme.git
-git fetch
-git checkout feature_copy_paste
+```bash
+git clone https://github.com/wkentaro/labelme
 cd labelme
 conda create --name=labelme python=3.6
 conda activate labelme
@@ -86,12 +67,12 @@ internals_front
 internals
 ```
 2. Run command:
-```
+```bash
 cd labelme/examples/instance_segmentation
 ./labelme2coco.py data_annotated data_dataset_coco --labels labels.txt
 ```
 For example:
-```
+```bash
 ./labelme2coco.py /Users/sebastian/datasets/labelme/kalo_v2_imgs_20-11-2020-selected /Users/sebastian/datasets/labelme/kalo_v2_imgs_20-11-2020-selected-coco --labels /Users/sebastian/datasets/labelme/kalo_v2_imgs_20-11-2020-selected/labels.txt
 ```
 
@@ -100,6 +81,10 @@ For example:
 Use the script in `tools/coco-train-test-split/cocosplit.py` to split the COCO .json file into a train.json and test.json.
 
 ## How to Train Yolact
+
+In this project this [Yolact API](https://github.com/sebastian-ruiz/yolact) is used.
+
+**These instructions are no longer valid.**
 
 1. Create dataset with NDDS. Make sure instance segmentations and class segmentations are produced.
 2. Generate COCO format using the **ndds-to-coco** tool. First test wether it's producing what you want by setting `TESTING_STAGE=True`.
@@ -117,7 +102,23 @@ $ python -m yolact.train --config=coco_ndds_config --resume=weights/****_interru
 For training on less data, reduce the save_interval. On few real images use `--save_interval=200` instead.
 
 5. To view logs run: `tensorboard --logdir=yolact/runs`.
-First we train on synthetic data.
+
+<!-- First we train on synthetic data.
+
+1. Create dataset with NDDS. Make sure instance segmentations and class segmentations are produced.
+2. Generate COCO format using the **ndds-to-coco** tool. First test wether it's producing what you want by setting `TESTING_STAGE=True`.
+To check whether it worked properly, use the **coco-viewer** tool. Using `TESTING_STAGE=True` set `CATEGORIES` correctly.
+3. Open `yolact/data/config.py` and set the following correctly: `NDDS_COCO_CLASSES`, `NDDS_COCO_LABEL_MAP` and the paths in `coco_ndds_dataset`.
+4. To start training, replace num_gpus and run:
+```
+$ export CUDA_VISIBLE_DEVICES=0,1,2 (or whichever GPUs to use, then)
+$ python -m yolact.train --config=coco_ndds_config --save_interval=2000 --batch_size=8*num_gpus
+```
+To resume:
+```
+$ python -m yolact.train --config=coco_ndds_config --resume=weights/****_interrupt.pth --start_iter=-1 --save_interval=2000 --batch_size=8*num_gpus
+```
+For training on less data, reduce the save_interval. On few real images use `--save_interval=200` instead.
 
 6. After training on synthetic data, train using the synthetic weights, but on real data.
 
@@ -142,25 +143,75 @@ Train on real data:
 python train.py --config=real_config --resume=weights/training_15-01-2021-segmented-battery/coco_ndds_57_36000.pth --start_iter=0
 ```
 
-7. Done!
+7. Done! -->
 
 ## Inference
 
-In the `data/config_override.py` set the config parameters. Set `yolact_trained_model` to point to the `.yaml` file and `yolact_config_name` to point to the yolact config name that is found in `yolact/data/config.py`.
-
-In `yolact/data/config.py` also make sure that this line is set correctly to point to your config:
-```
-cfg = real_config.copy()
-```
+Todo.
 
 ## PyPylon
 
 This is covered more in the ROS-vision-pipeline git container.
 
+## Exporting/Importing Conda environment
+
+Export with:
+```
+conda env export > environment.yml
+```
+Import with:
+```
+conda env create -f environment.yml --debug
+```
+or possibly faster, with:
+```
+conda create -y -n pipeline-v2
+conda activate pipeline-v2
+conda install mamba -n base -c conda-forge
+mamba env update -n pipeline-v2 --file environment.yml
+```
+
 ## TODOs
 
-- Use the GPU version of tensorflow in the `environment.yml` by installing: `conda install tensorflow-gpu=1.4`. Right now CPU version is used.
-- Try disabling mirror and or flip to improve training of side1/side2.
-- Automatically set `Pylon configuration set` instead of having to do this manually.
-- Training for Yolact should also compute the loss for the validation step and make it viewable in tensorboard
-- Right now when importing images to train with DLC we are going from images to video and back to images which is really inefficient.
+- [ ] Try disabling mirror and or flip to improve training of side1/side2.
+- [ ] Automatically set `Pylon configuration set` instead of having to do this manually.
+- [ ] Training for Yolact should also compute the loss for the validation step and make it viewable in tensorboard
+
+<!-- ## Deeplabcut - DEPRECATED (using OpenCV instead for corner detection)
+
+To install:
+```
+cd dlc/DeepLabCut-2.2b8
+./reinstall.sh
+```
+Note: this is done automatically when using the [ros-vision-pipeline](https://github.com/ReconCycle/ros-vision-pipeline) Docker container.
+
+### Deeplabcut Training
+
+1. Take a folder of images to annotate. Use the script in `tools/img-to-video/convert-png-to-avi.py` to convert the images to a video.
+2. Edit the script `dlc/dlc_create_environment.py` by commenting in each step on its own and then run:
+```
+cd vision-pipeline/
+python -m dlc.dlc_create_environment
+```
+
+
+### Deeplabcut Inference
+
+In the `data/config_override.py` set the config parameters. Set `dlc_config_file` to point to your dlc config `.yaml` file. -->
+
+<!-- ## NDDS
+
+### Changelog
+
+- 15/01/2021: Changed the all_internals to have label pcb on the side where the pcb is visible and internals on the side where the white plastic is visible
+
+### Convert NDDS to COCO dataset format
+
+This must be done after generating images with NDDS. Make sure that instance segmentation and class segmentation masks are produced by NDDS.
+
+1. Open `tools/ndds-to-coco/ndds-to-coco-multiprocessing.py`.
+2. Set `DATA_DIR` directory and set your class labels in `CATEGORIES`.
+3. Run  `ndds-to-coco-multiprocessing.py` with `TESTING_STAGE = True`.
+4. Open `tools/coco-viewer/cocoviewer.py` and set the `DATA_DIR` directory correctly. Run and check that the mask labels are correct.
+5. Run  `ndds-to-coco-multiprocessing.py` with `TESTING_STAGE = False`. Wait an hour or so to do it's thing... -->

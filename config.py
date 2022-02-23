@@ -1,46 +1,34 @@
+import os
+import yaml
+
+def load_config(filepath="./config.yaml"):
+    if os.path.isfile(filepath):
+        with open(filepath, "r") as stream:
+            try:
+                yaml_parsed = yaml.safe_load(stream)
+                return Config(yaml_parsed)
+            except yaml.YAMLError as exc:
+                print("yaml error", exc)
+    return None
+
+
 class Config(object):
     """
     Holds the configuration for anything you want it to.
-    To get the currently active config, call get_cfg().
-
     To use, just do cfg.x instead of cfg['x'].
     I made this because doing cfg['x'] all the time is dumb.
     """
 
-    def __init__(self, config_dict):
-        for key, val in config_dict.items():
-            self.__setattr__(key, val)
+    def __init__(self, data):
+        for name, value in data.items():
+            setattr(self, name, self._wrap(value))
 
-    def copy(self, new_config_dict={}):
-        """
-        Copies this config into a new config object, making
-        the changes given by new_config_dict.
-        """
-
-        ret = Config(vars(self))
-        
-        for key, val in new_config_dict.items():
-            ret.__setattr__(key, val)
-
-        return ret
-
-    def replace(self, new_config_dict):
-        """
-        Copies new_config_dict into this config object.
-        Note: new_config_dict can also be a config object.
-        """
-        if isinstance(new_config_dict, Config):
-            new_config_dict = vars(new_config_dict)
-
-        for key, val in new_config_dict.items():
-            self.__setattr__(key, val)
+    def _wrap(self, value):
+        if isinstance(value, (tuple, list, set, frozenset)): 
+            return type(value)([self._wrap(v) for v in value])
+        else:
+            return Config(value) if isinstance(value, dict) else value
     
     def print(self):
         for k, v in vars(self).items():
             print(k, ' = ', v)
-
-
-
-# def set_dataset(dataset_name:str):
-#     """ Sets the dataset of the current config. """
-#     cfg.dataset = eval(dataset_name)

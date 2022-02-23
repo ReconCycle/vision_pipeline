@@ -2,14 +2,14 @@ import os
 import numpy as np
 import time
 import cv2
-# import commentjson
+from rich import print
 
 from image_calibration import ImageCalibration
 from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
 
-from helpers import *
-
+from helpers import scale_img, get_images
+from config import load_config
 
 def quaternion_multiply(quaternion1, quaternion0):
         x0, y0, z0, w0 = quaternion0
@@ -27,15 +27,17 @@ def quaternion_multiply(quaternion1, quaternion0):
 
 class Pipeline:
     def __init__(self):
+        self.config = load_config()
+        print("config", self.config)
+        
         # 1. load camera calibration files
-        self.calibration = ImageCalibration()
+        self.calibration = ImageCalibration(self.config.camera)
 
         # 2. work surface coordinates, will be initialised on first received image
         self.worksurface_detection = None
 
         # 3. object detection
-        self.object_detection = ObjectDetection()
-        # self.class_names = self.object_detection.dataset.class_names
+        self.object_detection = ObjectDetection(self.config.obj_detection)
 
 
     def process_img(self, img):
@@ -46,8 +48,7 @@ class Pipeline:
         if self.worksurface_detection is None:
             print("detecting work surface...")
             self.worksurface_detection = WorkSurfaceDetection(img)
-
-        # print("img.shape", img.shape)
+            # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
         
         labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection)
 
@@ -104,7 +105,7 @@ class Pipeline:
             # detection["obb_rot_quat"] = np.array([[1,0,0,0]]).tolist()
 
         return labelled_img, detections
-
+    
 
 if __name__ == '__main__':
 
@@ -143,4 +144,4 @@ if __name__ == '__main__':
             cv2.imwrite(save_file_path, labeled_img)
             
         fps_imshow = 1.0 / (time.time() - t_start)
-        print("fps_imshow", fps_imshow)
+        print("fps_imshow", str(np.int(round(fps_imshow, 0))))

@@ -132,8 +132,7 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
     for i in np.arange(len(obb_centers)):
         if obb_centers[i] is not None:
             cv2.circle(img_numpy, tuple(obb_centers[i]), 5, (0, 255, 0), -1)
-            for j in np.arange(4):
-                cv2.line(img_numpy, tuple(obb_corners[i][j]), tuple(obb_corners[i][j+1]), (0, 255, 0), thickness=2)
+            cv2.drawContours(img_numpy, [obb_corners[i]], 0, (0, 255, 0), 2)
 
     if args.display_fps and fps is not None:
         # Draw the text on the CPU
