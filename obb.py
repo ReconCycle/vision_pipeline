@@ -14,7 +14,7 @@ import os
 import time
 
 
-def get_obb_from_points(points, calcconvexhull=True):
+def get_obb_using_eig(contour, calcconvexhull=True):
     """ given a set of points, calculate the oriented bounding 
     box. 
     
@@ -28,6 +28,8 @@ def get_obb_from_points(points, calcconvexhull=True):
     Output:
         tuple of corners, centre
     """
+
+    points = contour.squeeze()
 
     if points.size == 0 or len(points) < 4:
         return None, None, None
@@ -64,8 +66,7 @@ def get_obb_from_points(points, calcconvexhull=True):
     center = mina + diff
 
     # get the 4 corners by subtracting and adding half the bounding boxes height and width to the center
-    # TODO this can be made nicer
-    corners = np.array([center+[-diff[0],-diff[1]],center+[diff[0],-diff[1]],center+[diff[0],diff[1]],center+[-diff[0],diff[1]],center+[-diff[0],-diff[1]]])
+    corners = np.array([center+[-diff[0],-diff[1]],center+[diff[0],-diff[1]],center+[diff[0],diff[1]],center+[-diff[0],diff[1]]])
     # use the the eigenvectors as a rotation matrix and
     # rotate the corners and the center back
     corners = np.dot(corners,tvect)
@@ -92,25 +93,17 @@ def get_obb_from_points(points, calcconvexhull=True):
 
     return corners, center, rot_quat
 
-def get_obb_from_labelim(label_im, labels=None):
-    """ given a label image, calculate the oriented 
-    bounding box of each connected component with 
-    label in labels. If labels is None, all labels > 0
-    will be analyzed.
 
-    Parameters:
-        label_im: numpy array with labelled connected components (integer)
-
-    Output:
-        obbs: dictionary of oriented bounding boxes. The dictionary 
-        keys correspond to the respective labels
-    """
-    if labels is None:
-        labels = set(np.unique(label_im)) - {0}
-    results = {}
-    for label in labels:
-        results[label] = get_obb_from_mask(label_im == label)
-    return results
+def get_obb_using_cv(contour):
+    
+    # https://stackoverflow.com/questions/18207181/opencv-python-draw-minarearect-rotatedrect-not-implemented
+    rect = cv2.minAreaRect(contour)
+    box = np.int0(cv2.boxPoints(rect))
+    center = np.int0(rect[0])
+    rot = rect[2]
+    rot_quat = Rotation.from_euler('z', rot, degrees=True).as_quat()
+    
+    return box, center, rot_quat
 
 def get_obb_from_mask(mask_im):
     """ given a binary mask, calculate the oriented 
@@ -124,21 +117,15 @@ def get_obb_from_mask(mask_im):
 
     """
     
-    mask = (mask_im[:,:, 0] == 1).astype("uint8")
+    # mask = (mask_im[:,:, 0] == 1).astype("uint8")
+    mask = mask_im.astype("uint8")
     
-    # start_dilate = time.time()
     # kernel = np.ones((5,5),np.uint8)
     # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel) # erosion followed by dilation
-    # fps_dilate = 1.0 / (time.time() - start_dilate)
-    # print("fps_dilate", fps_dilate)
-
-    # start_contours = time.time()
-
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    # contours, hierarchy = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) # try using cv2.CHAIN_APPROX_SIMPLE
-    main_contour = contours[0].squeeze()
     
-    # fps_contours = 1.0 / (time.time() - start_contours)
-    # print("fps_contours", fps_contours)
+    # https://stackoverflow.com/questions/13542855/algorithm-to-find-the-minimum-area-rectangle-for-given-points-in-order-to-comput/33619018#33619018
+
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1) # maybe applying approximation is good? was: cv2.CHAIN_APPROX_SIMPLE
     
-    return get_obb_from_points(main_contour)
+    return get_obb_using_cv(cnts[0])
+    # return get_obb_using_eig(cnts[0])

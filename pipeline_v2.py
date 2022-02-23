@@ -35,8 +35,6 @@ class Pipeline:
             print("detecting work surface...")
             self.worksurface_detection = WorkSurfaceDetection(img)
             # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
-
-        # print("img.shape", img.shape)
         
         labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection)
 
@@ -80,4 +78,4 @@ if __name__ == '__main__':
             cv2.imwrite(save_file_path, labeled_img)
             
         fps_imshow = 1.0 / (time.time() - t_start)
-        print("fps_imshow", fps_imshow)
+        print("fps_imshow", str(np.int(round(fps_imshow, 0))))

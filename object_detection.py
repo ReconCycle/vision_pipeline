@@ -74,6 +74,7 @@ class ObjectDetection:
         
         self.tracker = BYTETracker(self.tracker_args)
         self.fps_graphics = -1.
+        self.fps_total = -1.
         
 
     def get_prediction(self, img_path, worksurface_detection=None):
@@ -112,7 +113,7 @@ class ObjectDetection:
         fps_obb = 1.0 / (time.time() - obb_start)
         
         graphics_start = time.time()
-        fps_str = "fps_nn: " + str(round(fps_nn, 1)) + ", fps_tracker: " + str(round(fps_tracker, 1)) + ", fps_obb: " + str(round(fps_obb, 1)) + ", fps_graphics: " + str(round(self.fps_graphics, 1))
+        fps_str = "fps_total: " + str(np.int(round(self.fps_total, 0))) + ", fps_nn: " + str(np.int(round(fps_nn, 0))) + ", fps_tracker: " + str(np.int(round(fps_tracker, 0))) + ", fps_obb: " + str(np.int(round(fps_obb, 0))) + ", fps_graphics: " + str(np.int(round(self.fps_graphics, 0)))
         labelled_img = graphics.get_labelled_img(frame, self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores, fps=fps_str, worksurface_detection=worksurface_detection)
 
         detections = []
@@ -129,5 +130,6 @@ class ObjectDetection:
                 detections.append(detection)
         
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
+        self.fps_total = 1.0 / (time.time() - t_start)
         
         return labelled_img, detections
