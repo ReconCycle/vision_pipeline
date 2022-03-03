@@ -32,3 +32,25 @@ def scale_img(img, scale_percent=50):
     # resize image
     resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
     return resized
+
+
+class Struct(object):
+    """
+    Holds the configuration for anything you want it to.
+    To use, just do cfg.x instead of cfg['x'].
+    I made this because doing cfg['x'] all the time is dumb.
+    """
+
+    def __init__(self, data):
+        for name, value in data.items():
+            setattr(self, name, self._wrap(value))
+
+    def _wrap(self, value):
+        if isinstance(value, (tuple, list, set, frozenset)): 
+            return type(value)([self._wrap(v) for v in value])
+        else:
+            return Struct(value) if isinstance(value, dict) else value
+    
+    def print(self):
+        for k, v in vars(self).items():
+            print(k, ' = ', v)

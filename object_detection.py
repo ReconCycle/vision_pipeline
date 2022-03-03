@@ -7,13 +7,14 @@ from rich import print
 
 from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
-from yolact_pkg.eval import infer, annotate_img
 
 from tracker.byte_tracker import BYTETracker
+# from graph_relations import GraphRelations
 
 import obb
 import graphics
 from config import load_config
+from helpers import Struct
 
 
 class ObjectDetection:
@@ -77,7 +78,7 @@ class ObjectDetection:
         self.fps_total = -1.
         
 
-    def get_prediction(self, img_path, worksurface_detection=None):
+    def get_prediction(self, img_path, worksurface_detection=None, extra_text=None):
         t_start = time.time()
         
         frame, classes, scores, boxes, masks = self.yolact.infer(img_path)
@@ -113,7 +114,11 @@ class ObjectDetection:
         fps_obb = 1.0 / (time.time() - obb_start)
         
         graphics_start = time.time()
-        fps_str = "fps_total: " + str(np.int(round(self.fps_total, 0))) + ", fps_nn: " + str(np.int(round(fps_nn, 0))) + ", fps_tracker: " + str(np.int(round(fps_tracker, 0))) + ", fps_obb: " + str(np.int(round(fps_obb, 0))) + ", fps_graphics: " + str(np.int(round(self.fps_graphics, 0)))
+        if extra_text is not None:
+            extra_text + ", "
+        else:
+            extra_text = ""
+        fps_str = extra_text + "fps_total: " + str(np.int(round(self.fps_total, 0))) + ", fps_nn: " + str(np.int(round(fps_nn, 0))) + ", fps_tracker: " + str(np.int(round(fps_tracker, 0))) + ", fps_obb: " + str(np.int(round(fps_obb, 0))) + ", fps_graphics: " + str(np.int(round(self.fps_graphics, 0)))
         labelled_img = graphics.get_labelled_img(frame, self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores, fps=fps_str, worksurface_detection=worksurface_detection)
 
         detections = []
@@ -125,11 +130,14 @@ class ObjectDetection:
                 detection["obb_corners"] = worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
                 detection["obb_center"] = worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
                 detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
-                detection["tracking_id"] = tracking_ids[i]
-                detection["tracking_score"] = tracking_scores[i]
+                detection["tracking_id"] = tracking_ids[i] if tracking_ids[i] is not None else -1
+                detection["tracking_score"] = float(tracking_scores[i]) if tracking_scores[i] is not None else float(-1)
                 detections.append(detection)
         
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
         self.fps_total = 1.0 / (time.time() - t_start)
+        
+        # graphRelations = GraphRelations(self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores)
+        
         
         return labelled_img, detections

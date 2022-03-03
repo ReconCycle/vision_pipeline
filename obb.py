@@ -127,5 +127,8 @@ def get_obb_from_mask(mask_im):
 
     cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1) # maybe applying approximation is good? was: cv2.CHAIN_APPROX_SIMPLE
     
-    return get_obb_using_cv(cnts[0])
-    # return get_obb_using_eig(cnts[0])
+    if len(cnts) > 0:
+        return get_obb_using_cv(cnts[0])
+        # return get_obb_using_eig(cnts[0])
+
+    return None, None, None

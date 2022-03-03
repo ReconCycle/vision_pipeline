@@ -26,7 +26,7 @@ class Pipeline:
         self.object_detection = ObjectDetection(self.config.obj_detection)
 
 
-    def process_img(self, img):
+    def process_img(self, img, fps=None):
         if isinstance(img, str):
             print("img path:", img)
             img = cv2.imread(img)
@@ -36,7 +36,7 @@ class Pipeline:
             self.worksurface_detection = WorkSurfaceDetection(img)
             # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
         
-        labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection)
+        labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection, fps)
 
         return labelled_img, detections
     
@@ -51,8 +51,9 @@ if __name__ == '__main__':
     # Iterate over images and run:
     # we can use a directory here or a single image /163.png
     # img_path = "data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021"
-    img_path = "/home/sruiz/datasets/labelme/2022-02-17_kalo_tracking_2"
-    save_path = None # set to None to not save
+    # img_path = "/home/sruiz/datasets/labelme/2022-02-17_kalo_tracking_2"
+    img_path = "/home/sruiz/datasets/labelme/2022-02-17_kalo_tracking/760.png"
+    save_path = "./save_images" # set to None to not save
     if save_path is not None and not os.path.exists(save_path):
         os.makedirs(save_path)
     imgs = get_images(img_path)
