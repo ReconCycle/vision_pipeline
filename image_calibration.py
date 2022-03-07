@@ -25,6 +25,7 @@ class ImageCalibration:
         self.resize = config.resize
         self.resized_resolution = config.resized_resolution
 
+
         self.add_borders = config.add_borders
         self.camera_new_resolution = config.camera_new_resolution
         self.camera_offsets = config.camera_offsets
@@ -54,7 +55,8 @@ class ImageCalibration:
 
             if self.resize:
                 # img is now at self.camera_native_resolution resolution
-                img = cv2.resize(img, self.resized_resolution, interpolation=cv2.INTER_AREA)
+                
+                img = cv2.resize(img, tuple(self.resized_resolution), interpolation=cv2.INTER_AREA)
                 print("resized:", img.shape)
                 # img is now at self.resized_resolution resolution
 
