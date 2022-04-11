@@ -31,12 +31,12 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
     
     info_text = ""
     
-    info_text += "detections: " + str(len(classes))
+    # info_text += "detections: " + str(len(classes))
     
     for i in np.arange(len(classes)):
         tracking_id = "t_id " + str(tracking_ids[i]) + ", " if tracking_ids[i] is not None else ""
         tracking_score = "t_score " + str(np.round(tracking_scores[i], 1)) if tracking_scores[i] is not None else ""
-        info_text += "\n" + class_names[classes[i]] + ", " + tracking_id + tracking_score
+        info_text +=  class_names[classes[i]] + ", " + tracking_id + tracking_score + "\n"
 
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
@@ -143,9 +143,13 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
     
     if info_text is not None and info_text != "":
         text_color = [0, 255, 0]
-        for i, line in enumerate(info_text.split('\n')):
-            text_pt = (4, (text_h+8)+(info_text_h+8)*i +info_text_h+2)
-            cv2.putText(img_numpy, line, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        for j, line in enumerate(info_text.split('\n')):
+            if line != "":
+                color = get_color(j).cpu().detach().numpy() *255
+                color = [int(i) for i in color]
+                
+                text_pt = (4, (text_h+8)+(info_text_h+8)*j +info_text_h+2)
+                cv2.putText(img_numpy, line, text_pt, font_face, font_scale, color, font_thickness, cv2.LINE_AA)
     
     if num_dets_to_consider == 0:
         return img_numpy
@@ -200,7 +204,8 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
             color = [190, 77, 37]
             
             # bbox
-            cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
+            #! not showing this right now because it makes visualisation messy
+            # cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1) 
             
             # text_str = 'tracking: %d, %.2f' % (online_ids[j], online_scores[j])
 
