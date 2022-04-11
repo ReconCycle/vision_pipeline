@@ -9,7 +9,7 @@ from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
 
 from tracker.byte_tracker import BYTETracker
-# from graph_relations import GraphRelations
+from graph_relations import GraphRelations
 
 import obb
 import graphics
@@ -40,7 +40,7 @@ class ObjectDetection:
             'num_classes': len(self.dataset.class_names) + 1,
 
             # Image Size
-            'max_size': 550,
+            'max_size': 1100,
             
             # the save path should contain resnet101_reducedfc.pth
             'save_path': './data_limited/yolact/',
@@ -137,7 +137,20 @@ class ObjectDetection:
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
         self.fps_total = 1.0 / (time.time() - t_start)
         
-        # graphRelations = GraphRelations(self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores)
+        graph_relations = GraphRelations(self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores)
+        graph_img = graph_relations.using_network_x()
+
+        print("graph_img", graph_img.shape)
         
+        joined_img_size = [labelled_img.shape[0], labelled_img.shape[1] + graph_img.shape[1], labelled_img.shape[2]]
         
-        return labelled_img, detections
+        joined_img = np.zeros(joined_img_size, dtype=np.uint8)
+        joined_img.fill(255)
+        joined_img[:labelled_img.shape[0], :labelled_img.shape[1]] = labelled_img
+        
+        joined_img[:graph_img.shape[0], labelled_img.shape[1]:labelled_img.shape[1]+graph_img.shape[1]] = graph_img
+        
+        # y_offset = labelled_img.shape[0] - graph_img.shape[0]
+        # labelled_img[y_offset:y_offset+graph_img.shape[0], 0:graph_img.shape[1]] = graph_img
+        
+        return joined_img, detections

@@ -12,11 +12,11 @@ from yolact_pkg.eval import infer, annotate_img
 from yolact_pkg.train import train
 import torch
 
-from tracker.byte_tracker import BYTETracker
-from graph_relations import GraphRelations
+# from tracker.byte_tracker import BYTETracker
+# from graph_relations import GraphRelations
 
-import obb
-import graphics
+# import obb
+# import graphics
 from config import load_config
 from helpers import Struct
 
@@ -30,18 +30,18 @@ if __name__ == '__main__':
         'name': 'Base Dataset',
 
         # Training images and annotations
-        'train_images': '/home/sruiz/datasets/labelme/2022-02-25_kalo_jsi_goe_combined/coco',
-        'train_info':   '/home/sruiz/datasets/labelme/2022-02-25_kalo_jsi_goe_combined/coco/_train.json',
+        'train_images': '/home/sruiz/datasets/reconcycle/2022-03-29_kalo_qundis/coco',
+        'train_info':   '/home/sruiz/datasets/reconcycle/2022-03-29_kalo_qundis/coco/_train.json',
 
         # Validation images and annotations.
-        'valid_images': '/home/sruiz/datasets/labelme/2022-02-25_kalo_jsi_goe_combined/coco',
-        'valid_info':   '/home/sruiz/datasets/labelme/2022-02-25_kalo_jsi_goe_combined/coco/_test.json',
+        'valid_images': '/home/sruiz/datasets/reconcycle/2022-03-29_kalo_qundis/coco',
+        'valid_info':   '/home/sruiz/datasets/reconcycle/2022-03-29_kalo_qundis/coco/_test.json',
 
         # Whether or not to load GT. If this is False, eval.py quantitative evaluation won't work.
         'has_gt': True,
 
         # A list of names for each of you classes.
-        'class_names': ('hca_front', 'hca_back', 'hca_side1', 'hca_side2', 'battery', 'pcb', 'pcb_covered', 'internals'),
+        'class_names': ("hca_front", "hca_back", "hca_side1", "hca_side2", "battery", "pcb", "internals", "pcb_covered", "plastic_clip"),
 
         # COCO class ids aren't sequential, so this is a bandage fix. If your ids aren't sequential,
         # provide a map from category_id -> index in class_names + 1 (the +1 is there because it's 1-indexed).
@@ -59,9 +59,9 @@ if __name__ == '__main__':
         # Image Size
         'max_size': 1100, #! I changed this, was 550
         
-        'save_path': 'data_full/yolact/2022-03-02_kalo/',
+        'save_path': 'data_full/yolact/2022-03-29_kalo_qundis/',
         
-        # we can override args used in eval.py:        
+        # we can override args used in eval.py:
         'score_threshold': 0.1,
         'top_k': 10
     }
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     # we can override training args here:
     training_args_override = {
         "batch_size": 2, #! I changed this, was 8
-        "save_interval": 100,
+        "save_interval": -1, # -1 for saving only at end of the epoch
         # "resume": 
         "validation_size": 100,
     }
