@@ -15,6 +15,27 @@ import obb
 import graphics
 from config import load_config
 from helpers import Struct
+from dataclasses import dataclass
+from typing import List
+import enum
+
+
+@dataclass
+class Detection:
+    id = None
+    class_name = None
+    
+    score = None
+    box = None
+    mask = None
+    
+    obb_corners = None
+    obb_center = None
+    obb_rot_quat = None
+    
+    tracking_id = None
+    tracking_score = None
+    tracking_box = None
 
 
 class ObjectDetection:
@@ -76,6 +97,17 @@ class ObjectDetection:
         self.tracker = BYTETracker(self.tracker_args)
         self.fps_graphics = -1.
         self.fps_total = -1.
+        
+        label = enum.IntEnum('label', self.dataset.class_names)
+        
+        
+        
+        self.label = label
+        
+        print("label", label)
+        print("label.battery", label.battery, repr(label.battery), label.battery==5)
+        import sys
+        sys.exit(0)
         
 
     def get_prediction(self, img_path, worksurface_detection=None, extra_text=None):
@@ -145,7 +177,7 @@ class ObjectDetection:
         joined_img_size = [labelled_img.shape[0], labelled_img.shape[1] + graph_img.shape[1], labelled_img.shape[2]]
         
         joined_img = np.zeros(joined_img_size, dtype=np.uint8)
-        joined_img.fill(255)
+        joined_img.fill(200)
         joined_img[:labelled_img.shape[0], :labelled_img.shape[1]] = labelled_img
         
         joined_img[:graph_img.shape[0], labelled_img.shape[1]:labelled_img.shape[1]+graph_img.shape[1]] = graph_img

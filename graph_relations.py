@@ -1,4 +1,6 @@
 import os
+from telnetlib import GA
+from matplotlib.pyplot import tight_layout
 import numpy as np
 import time
 import cv2
@@ -13,7 +15,17 @@ from graph_tool.all import *
 import matplotlib.pylab as plt
 import networkx as nx
 
-def is_inside(poly1, poly2):
+
+from enum import IntEnum
+
+class Action(IntEnum):
+    move = 0
+    cut = 1
+    lever = 2
+    turn_over = 3
+    remove_clip = 4
+
+def compute_is_inside(poly1, poly2):
     """ is box1 inside box2? """
     
     intersect = poly1.intersection(poly2).area
@@ -37,9 +49,9 @@ def is_inside(poly1, poly2):
     return ratio_p1_inside_p2 > 0.9
 
 
-def is_next_to(poly1, poly2):
+def compute_is_next_to(poly1, poly2):
     dist = poly1.distance(poly2)
-    if dist == 0 and (is_inside(poly1, poly2) or is_inside(poly2, poly1)):
+    if dist == 0 and (compute_is_inside(poly1, poly2) or compute_is_inside(poly2, poly1)):
         return False
 
     if dist < 10: # pixels
@@ -52,10 +64,17 @@ class GraphRelations:
         self.classes = classes
         self.obb_boxes = obb_boxes
         
+
+        
     def using_network_x(self, save_file_path=None):
         class_names = self.class_names
         classes = self.classes
         obb_boxes = self.obb_boxes
+        
+        # class_objs = []
+        # for a_class in classes:
+            # a_class 
+        # ! todo create objects for each node in graph
         
         ids = np.arange(len(classes))
         my_class_names = [class_names[i] for i in classes]
@@ -68,7 +87,7 @@ class GraphRelations:
             poly1 = Polygon(obb_boxes[id1])
             poly2 = Polygon(obb_boxes[id2])
             inside = is_inside(poly1, poly2)
-            next_to = is_next_to(poly1, poly2)
+            next_to = compute_is_next_to(poly1, poly2)
 
             if inside:
                 print(class_names[classes[id1]], id1, "inside", class_names[classes[id2]], id2)
@@ -81,16 +100,9 @@ class GraphRelations:
 
         G = nx.DiGraph()
         
-        # plt.rcParams["figure.figsize"] = [7.50, 3.50]
-        # plt.rcParams["figure.autolayout"] = True
-        fig = plt.figure(1, figsize=(12, 9))
+        plt.rcParams["figure.autolayout"] = True
+        fig = plt.figure(1, figsize=(12, 9)) # , tight_layout={"pad": 20 }
         fig.clear(True)
-        # fig = plt.figure()
-        # fig.add_subplot(111)
-        # fig.tight_layout(pad=0)
-        # plt.figure()
-        
-        
         
         G.add_nodes_from(ids)
         G.add_edges_from(inside_edges + next_to_edges)
@@ -106,8 +118,13 @@ class GraphRelations:
             else:
                 node_colors.append("pink")
         
+        
+        # add a margin
+        ax1 = plt.subplot(111)
+        ax1.margins(0.12)
+        
         nx.draw(
-            G, pos, edge_color='black', width=1, linewidths=1,
+            G, pos, ax=ax1, edge_color='black', width=1, linewidths=1,
             node_size=500, node_color=node_colors,
             labels={node: class_names[classes[node]] for node in G.nodes()},
             font_size=32
@@ -142,6 +159,74 @@ class GraphRelations:
                             #newshape=(int(480), int(640), -1))
         io_buf.flush()
         io_buf.close()
+        
+        
+        # ! todo, AI logic
+        # if battery not connected to anything: pick up battery
+        
+        # def get_ids_with_class_name(class_name):
+        #     ids_with_class_name = []
+        #     for id in ids:
+        #         if class_names[classes[id]] == "battery":
+        #             ids_with_class_name.append(id)
+        #     return ids_with_class_name
+        
+        for id in ids:
+            if class_names[classes[id]] == "battery":
+                descendents = nx.descendants(G, id)
+                neighbours = nx.neighbors(G, id) # direct descendents
+                if len(neighbours) == 0:
+                    print("action: battery put in bin.")
+                else:
+                    for neighbour_id in neighbours:
+                        class_name = class_names[classes[neighbour_id]]
+                        
+                        # todo: differentiate between in and next to.
+                        if class_name == "hca_front":
+                            print("action: turn over ", descendents)
+                        if class_name == "pcb":
+                            print("action: battery cut away from pcb")
+                            
+                        
+                    print("action: separate battery from ...")
+                    pass
+                
+        
+        # if battery in graph:
+        #     if battery is not connected to anything:
+        #         print("action: put battery in bin.")
+        
+        # todo: define action(obj1, obj2, action_type)
+        label = self.label
+        
+        def do_action(obj1, obj2, action_type):
+            pass
+        
+        def is_inside(obj1, obj2):
+            pass
+            
+        def is_next_to(obj1, obj2):
+            pass
+        
+        def exists(obj):
+            pass
+        
+        if is_inside(label.plastic_clip, label.hca_back):
+            do_action(label.plastic_clip, label.hca_back, Action.remove_clip)
+            
+        elif is_next_to(label.battery, label.pcb):
+            do_action(label.battery, label.pcb, Action.cut)
+        
+        elif is_inside(label.pcb, label.hca_back):
+            do_action(label.pcb, label.hca_back, Action.lever)
+            
+        elif is_inside(label.pcb_covered, label.hca_back):
+            do_action(label.pcb_covered, label.hca_back, Action.lever)
+            
+        elif exists(label.hca_front):
+            do_action(label.hca_front, None, Action.turn_over)
+        
+
         
         
         return img_arr[:, :, :3]

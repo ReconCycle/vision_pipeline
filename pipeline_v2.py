@@ -116,10 +116,10 @@ if __name__ == '__main__':
     # Iterate over images and run:
     # we can use a directory here or a single image /163.png
     # img_path = "data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021"
-    img_path = "/home/sruiz/datasets/reconcycle/2022-02-17_kalo_tracking_2"
+    # img_path = "/home/sruiz/datasets/reconcycle/2022-02-17_kalo_tracking_2"
     # img_path = "/home/sruiz/datasets/reconcycle/2022-02-17_kalo_tracking/"
-    # img_path = "/home/sruiz/datasets/reconcycle/2022-04-04_qundis_disassembly/"
-    save_path = "./save_images3" # set to None to not save
+    img_path = "/home/sruiz/datasets/reconcycle/2022-04-04_qundis_disassembly/"
+    save_path = "./save_images" # set to None to not save
     if save_path is not None and not os.path.exists(save_path):
         os.makedirs(save_path)
     imgs = get_images(img_path)
