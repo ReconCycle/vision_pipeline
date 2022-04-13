@@ -26,31 +26,7 @@ class Action(IntEnum):
     lever = 2
     turn_over = 3
     remove_clip = 4
-    
-    
-# def compute_is_inside_mask(mask1, mask2):
-#     intersection = np.logical_and(mask1, mask2)
-#     intersection_area = cv2.countNonZero(intersection)
-#     mask1_area = cv2.countNonZero(mask1)
-    
-#     # stop division by 0
-#     if intersection_area < 0.001:
-#         return False
-    
-#     ratio_m1_inside_m2 = intersection_area / mask1_area
-    
-#     # union = np.logical_or(mask1, mask2)
-#     # iou_score = np.sum(intersection) / np.sum(union)
-    
-#     return ratio_m1_inside_m2 > 0.9
 
-# def compute_is_next_to_mask(mask1, mask2):
-#     contours1, _ = cv2.findContours(mask1, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-#     contours2, _ = cv2.findContours(mask2, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-#     cnt1 = contours1[0]
-#     cnt2 = contours2[0]
-    
-#     return compute_is_next_to(cnt1, cnt2)
 
 def compute_is_inside(poly1, poly2):
     """ is box1 inside box2? """
@@ -127,8 +103,6 @@ class GraphRelations:
         for next_to_edge in next_to_edges:
             edge_labels_dict[next_to_edge] = "next to" #nextto
 
-        print("edge_labels_dict", edge_labels_dict)
-
         node_colors = []
         for detection in self.detections:
             if detection.label == self.labels.battery:
@@ -136,8 +110,8 @@ class GraphRelations:
             else:
                 node_colors.append("pink")
 
+        # BEGIN graph drawing
         G = nx.DiGraph()
-        
         plt.rcParams["figure.autolayout"] = True
         fig = plt.figure(1, figsize=(12, 9)) # , tight_layout={"pad": 20 }
         fig.clear(True)
@@ -147,7 +121,8 @@ class GraphRelations:
 
         pos = nx.spring_layout(G, k=2)
         
-        print("node labels", {id: self.detections[id].label.name for id in G.nodes()})
+        # print("edge_labels_dict", edge_labels_dict)
+        # print("node labels", {id: self.detections[id].label.name for id in G.nodes()})
         
         # add a margin
         ax1 = plt.subplot(111)
@@ -172,69 +147,87 @@ class GraphRelations:
                              newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
         io_buf.flush()
         io_buf.close()
+        # END graph drawing
         
         
-        def do_action(label1=None, label2=None, action_type=None):
+        def do_action(det1=None, det2=None, action_type=None):
             sentence = ""
-            if action_type == Action.move and label2 is None:
-                sentence = "action: move " + label1.name
+            def label(det):
+                return det.label.name + " (" + str(det.tracking_id) + ")"
+            
+            if action_type == Action.move and det2 is None:
+                sentence = "action: move " + label(det1)
+            elif action_type == Action.turn_over and det2 is None:
+                sentence = "action: turn over " + label(det1)
             elif action_type == Action.cut:
-                sentence = "action: cut " + label1.name + "away from" + label2.name
+                sentence = "action: cut " + label(det1) + " away from " + label(det2)
             elif action_type == Action.lever:
-                sentence = "action: lever" + label1.name + "away from" + label2.name
-            elif action_type == Action.turn_over and label2 is None:
-                sentence = "action: turn over" + label1.name
+                sentence = "action: lever " + label(det1) + " away from " + label(det2)
             elif action_type == Action.remove_clip:
-                sentence = "action: remove clip" + label1.name + "from" + label2.name
-            elif label1 == None and label2 == None and action_type == None:
+                sentence = "action: remove clip " + label(det1) + " from " + label(det2)
+            elif det1 == None and det2 == None and action_type == None:
                 sentence = "action: undefined"
             else:
                 sentence = "action: unknown"
                 
-            return label1, label2, action_type, sentence
+            return det1, det2, action_type, sentence
         
         def is_inside(label1, label2):
             for key, val in edge_labels_dict.items():
                 a, b = key
                 detection_pair = (self.detections[a].label.value, self.detections[b].label.value)
                 if detection_pair == (label1.value, label2.value) and val == "in":
-                    return True
+                    return True, self.detections[a], self.detections[b]
                 
-            return False            
+            return False, None, None
             
         def is_next_to(label1, label2):
             for key, val in edge_labels_dict.items():
                 a, b = key
                 detection_pair = (self.detections[a].label.value, self.detections[b].label.value)
-                if (detection_pair == (label1.value, label2.value) or \
-                    detection_pair == (label2.value, label1.value)) and val == "next to":
-                    return True
+                if detection_pair == (label1.value, label2.value) and val == "next to":
+                    return True, self.detections[a], self.detections[b]
 
-            return False
+            return False, None, None
         
         def exists(label):
             for detection in self.detections:
                 if detection.label == label:
-                    return True
+                    return True, detection
             
-            return False
+            return False, None
         
         # AI logic
-        action = do_action()
-        if is_inside(labels.plastic_clip, labels.hca_back):
-            action = do_action(labels.plastic_clip, labels.hca_back, Action.remove_clip)
-        
-        elif is_inside(labels.pcb, labels.hca_back):
-            action = do_action(labels.pcb, labels.hca_back, Action.lever)
+        # todo: if a battery is present, remove all other connected subgraphs
+        def ai():
             
-        elif is_inside(labels.pcb_covered, labels.hca_back):
-            action = do_action(labels.pcb_covered, labels.hca_back, Action.lever)
-        
-        elif is_next_to(labels.battery, labels.pcb):
-            action = do_action(labels.battery, labels.pcb, Action.cut)    
+            is_inside_bool, det1, det2 = is_inside(labels.plastic_clip, labels.hca_back)
+            if is_inside_bool:
+                return do_action(det1, det2, Action.remove_clip)
             
-        elif exists(labels.hca_front):
-            action = do_action(labels.hca_front, None, Action.turn_over)
+            is_inside_bool, det1, det2 = is_inside(labels.pcb, labels.hca_back)
+            if is_inside_bool:
+                return do_action(det1, det2, Action.lever)
+                
+            is_inside_bool, det1, det2 = is_inside(labels.pcb_covered, labels.hca_back)
+            if is_inside_bool:
+                return do_action(det1, det2, Action.lever)
+            
+            is_next_to_bool, det1, det2 = is_next_to(labels.battery, labels.pcb)
+            if is_next_to_bool:
+                return do_action(det1, det2, Action.cut)
+            
+            is_next_to_bool, det1, det2 = is_next_to(labels.battery, labels.pcb_covered)
+            if is_next_to_bool:
+                return do_action(det1, det2, Action.cut)
+            
+            exists_bool, det = exists(labels.hca_front)
+            if exists_bool:
+                return do_action(det, None, Action.turn_over)
+            
+            return do_action()
+        
+        action = ai()
         
         return img_arr[:, :, :3], action
     

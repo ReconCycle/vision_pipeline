@@ -167,4 +167,14 @@ class ObjectDetection:
         
         joined_img[:graph_img.shape[0], labelled_img.shape[1]:labelled_img.shape[1]+graph_img.shape[1]] = graph_img
         
+        font_face = cv2.FONT_HERSHEY_DUPLEX
+        font_scale = 1.0
+        font_thickness = 1
+        text_color = (int(0), int(0), int(0))
+        text_pt = (labelled_img.shape[1] + 30, graph_img.shape[0] + 50)
+        print("text_pt", text_pt)
+        cv2.putText(joined_img, action[3], text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        
+        print(action[3])
+        
         return joined_img, detections
