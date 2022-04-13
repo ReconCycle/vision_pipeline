@@ -93,27 +93,24 @@ class GraphRelations:
         
     def using_network_x(self, save_file_path=None):
         labels = self.labels
-
-        inside_edges = []
-        next_to_edges = []
         
-        # compute polygon for each mask
-        # ! I think we do this calculation elsewhere as well. We should only do it once because it is slow
         for detection in self.detections:
-            contours, _ = cv2.findContours(np.squeeze(detection.mask).astype(int), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-            cnt = np.squeeze(contours[0])
-            poly = Polygon(cnt)
-            detection.mask_poly = poly
+            
+            poly = None
+            if len(detection.mask_contour) > 2:
+                poly = Polygon(detection.mask_contour)
+                
+            if poly is None or not poly.is_valid:
+                poly = Polygon(detection.obb_corners)
+
+            detection.mask_polygon = poly
         
-        for detection1, detection2 in permutations(self.detections, 2): # we use permutations instead because not always associative
+        inside_edges = []
+        next_to_edges = []        
+        for detection1, detection2 in permutations(self.detections, 2):
             
-            # poly1 = Polygon(detection1.obb_corners)
-            # poly2 = Polygon(detection2.obb_corners)
-            inside = compute_is_inside(detection1.mask_poly, detection2.mask_poly)
-            next_to = compute_is_next_to(detection1.mask_poly, detection2.mask_poly)
-            
-            # inside = compute_is_inside_mask(detection1.mask, detection2.mask)
-            # next_to = compute_is_next_to_mask(detection1.mask, detection2.mask)
+            inside = compute_is_inside(detection1.mask_polygon, detection2.mask_polygon) # not associative
+            next_to = compute_is_next_to(detection1.mask_polygon, detection2.mask_polygon) # associative
 
             if inside:
                 # print(detection1.label, "inside", detection2.label)
@@ -212,8 +209,6 @@ class GraphRelations:
                 if (detection_pair == (label1.value, label2.value) or \
                     detection_pair == (label2.value, label1.value)) and val == "next to":
                     return True
-                elif val == "next to":
-                    print("detection_pair", detection_pair, (label1.value, label2.value))
 
             return False
         

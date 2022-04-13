@@ -13,7 +13,8 @@ class Detection:
     score = None
     box = None
     mask = None
-    mask_poly = None
+    mask_contour = None
+    mask_polygon = None
     
     obb_corners = None
     obb_center = None

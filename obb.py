@@ -14,7 +14,7 @@ import os
 import time
 
 
-def get_obb_using_eig(contour, calcconvexhull=True):
+def get_obb_using_eig(points, calcconvexhull=True):
     """ given a set of points, calculate the oriented bounding 
     box. 
     
@@ -28,8 +28,6 @@ def get_obb_using_eig(contour, calcconvexhull=True):
     Output:
         tuple of corners, centre
     """
-
-    points = contour.squeeze()
 
     if points.size == 0 or len(points) < 4:
         return None, None, None
@@ -105,7 +103,7 @@ def get_obb_using_cv(contour):
     
     return box, center, rot_quat
 
-def get_obb_from_mask(mask_im):
+def get_obb_from_contour(contour):
     """ given a binary mask, calculate the oriented 
     bounding box of the foreground object. This is done
     by calculating the outline of the object, transform
@@ -117,18 +115,7 @@ def get_obb_from_mask(mask_im):
 
     """
     
-    # mask = (mask_im[:,:, 0] == 1).astype("uint8")
-    mask = mask_im.astype("uint8")
-    
-    # kernel = np.ones((5,5),np.uint8)
-    # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel) # erosion followed by dilation
-    
     # https://stackoverflow.com/questions/13542855/algorithm-to-find-the-minimum-area-rectangle-for-given-points-in-order-to-comput/33619018#33619018
-
-    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_L1) # maybe applying approximation is good? was: cv2.CHAIN_APPROX_SIMPLE
     
-    if len(cnts) > 0:
-        return get_obb_using_cv(cnts[0])
-        # return get_obb_using_eig(cnts[0])
-
-    return None, None, None
+    return get_obb_using_cv(contour)
+    # return get_obb_using_eig(contour)

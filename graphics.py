@@ -14,7 +14,7 @@ coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
 
-def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
+def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
 
     args = types.SimpleNamespace()
     args.display_masks=True
@@ -27,16 +27,14 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
     font_scale = 1.0
     font_thickness = 1
 
-    num_dets_to_consider = classes.shape[0]
+    num_dets_to_consider = len(detections)
     
     info_text = ""
-    
-    # info_text += "detections: " + str(len(classes))
-    
-    for i in np.arange(len(classes)):
-        tracking_id = "t_id " + str(tracking_ids[i]) + ", " if tracking_ids[i] is not None else ""
-        tracking_score = "t_score " + str(np.round(tracking_scores[i], 1)) if tracking_scores[i] is not None else ""
-        info_text +=  class_names[classes[i]] + ", " + tracking_id + tracking_score + "\n"
+        
+    for detection in detections:
+        tracking_id = "t_id " + str(detection.tracking_id) + ", " if detection.tracking_id is not None else ""
+        tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) if detection.tracking_score is not None else ""
+        info_text +=  detection.label.name + ", " + tracking_id + tracking_score + "\n"
 
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
@@ -52,7 +50,7 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
     # Also keeps track of a per-gpu color cache for maximum speed
     def get_color(j, on_gpu=None):
         global color_cache
-        color_idx = (classes[j] * 5 if class_color else j * 5) % len(COLORS)
+        color_idx = (detections[j].label.value * 5 if class_color else j * 5) % len(COLORS)
         
         if on_gpu is not None and color_idx in color_cache[on_gpu]:
             return color_cache[on_gpu][color_idx]
@@ -128,11 +126,10 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
                 cv2.putText(img_numpy, label + ", (" + str(xc_m) + ", " + str(yc_m) + ")",
                             (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
 
-    # draw oriented bounding boxes
-    for i in np.arange(len(obb_centers)):
-        if obb_centers[i] is not None:
-            cv2.circle(img_numpy, tuple(obb_centers[i]), 5, (0, 255, 0), -1)
-            cv2.drawContours(img_numpy, [obb_corners[i]], 0, (0, 255, 0), 2)
+    for detection in detections:
+        if detection.obb_center is not None:
+            cv2.circle(img_numpy, tuple(detection.obb_center), 5, (0, 255, 0), -1)
+            cv2.drawContours(img_numpy, [detection.obb_corners], 0, (0, 255, 0), 2)
 
     if args.display_fps and fps is not None:
         # Draw the text on the CPU
@@ -156,7 +153,8 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
 
     if args.display_text or args.display_bboxes:
         for j in reversed(range(num_dets_to_consider)):
-            x1, y1, x2, y2 = boxes[j, :]
+            detection = detections[j]
+            x1, y1, x2, y2 = detection.box
             x1 = int(x1)
             y1 = int(y1)
             x2 = int(x2)
@@ -165,23 +163,19 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
             color = get_color(j).cpu().detach().numpy() *255
             color = [int(i) for i in color]
 
-            score = scores[j]
-
             if args.display_bboxes:
                 cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
 
             if args.display_text:
-                _class = class_names[classes[j]]
-
-                if  obb_centers[j] is not None:
-                    x1_center, y1_center = obb_centers[j]
+                if  detection.obb_center is not None:
+                    x1_center, y1_center = detection.obb_center
                     x1_m, y1_m = worksurface_detection.pixels_to_meters((x1_center, y1_center)).tolist()
                 else:
                     x1_m, y1_m = (-1, -1)
 
-                tracking_id = "t_id " + str(tracking_ids[j]) + ", " if tracking_ids[j] is not None else ""
-                tracking_score = "t_score " + str(np.round(tracking_scores[j], 1)) + ", " if tracking_scores[j] is not None else ""
-                text_str = '%s: %s %sscore %.2f, (%.2f, %.2f)' % (_class, tracking_id, tracking_score, score, x1_m, y1_m) if args.display_scores else _class
+                tracking_id = "t_id " + str(detection.tracking_id) + ", " if detection.tracking_id is not None else ""
+                tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) + ", " if detection.tracking_score is not None else ""
+                text_str = '%s: %s %sscore %.2f, (%.2f, %.2f)' % (detection.label.name, tracking_id, tracking_score, detection.score, x1_m, y1_m) if args.display_scores else detection.label.name
 
                 text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
                 text_w = int(text_w)
@@ -194,9 +188,9 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
     
     # show tracking obbs
-    for j in np.arange(len(classes)):
-        if tracking_boxes[j] is not None:
-            x1, y1, x2, y2 = tracking_boxes[j]
+    for detection in detections:
+        if detection.tracking_box is not None:
+            x1, y1, x2, y2 = detection.tracking_box
             x1 = int(x1)
             x2 = int(x2)
             y1 = int(y1)
@@ -207,7 +201,7 @@ def get_labelled_img(img, class_names, classes, scores, boxes, masks, obb_corner
             #! not showing this right now because it makes visualisation messy
             # cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1) 
             
-            # text_str = 'tracking: %d, %.2f' % (online_ids[j], online_scores[j])
+            # text_str = 'tracking: %d, %.2f' % (detection.online_id, detection.online_score)
 
             # text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
             # text_w = int(text_w)
