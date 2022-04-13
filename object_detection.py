@@ -99,7 +99,7 @@ class ObjectDetection:
             
             detection.label = self.labels(classes[i]) # self.dataset.class_names[classes[i]]
             
-            detection.score = scores[i]
+            detection.score = float(scores[i])
             detection.box = boxes[i]
             detection.mask = masks[i]
             
@@ -110,17 +110,6 @@ class ObjectDetection:
                 detection.mask_contour = np.squeeze(cnts[0])
             
             detections.append(detection)
-                            
-            # todo: previously the objects as commented out. This was so it could be dumped to JSON.
-            # detection = {}
-            # detection["class_name"] = self.dataset.class_names[classes[i]]
-            # detection["score"] = float(scores[i])
-            # detection["obb_corners"] = worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
-            # detection["obb_center"] = worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
-            # detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
-            # detection["tracking_id"] = tracking_ids[i] if tracking_ids[i] is not None else -1
-            # detection["tracking_score"] = float(tracking_scores[i]) if tracking_scores[i] is not None else float(-1)
-            # detections.append(detection)
                 
         tracker_start = time.time()
         # apply tracker
@@ -130,7 +119,7 @@ class ObjectDetection:
         for t in online_targets:
             detections[t.input_id].tracking_id = t.track_id
             detections[t.input_id].tracking_box = t.tlbr
-            detections[t.input_id].score = t.score
+            detections[t.input_id].score = float(t.score)
 
         fps_tracker = 1.0 / (time.time() - tracker_start)
         
@@ -140,7 +129,10 @@ class ObjectDetection:
             corners, center, rot_quat = obb.get_obb_from_contour(detection.mask_contour)
             detection.obb_corners = corners
             detection.obb_center = center
-            detection.obb_rot_quats = rot_quat
+            detection.obb_rot_quat = rot_quat
+            
+            detection.obb_corners_meters = worksurface_detection.pixels_to_meters(corners)
+            detection.obb_center_meters = worksurface_detection.pixels_to_meters(center)
         
         fps_obb = 1.0 / (time.time() - obb_start)
                 
@@ -172,9 +164,8 @@ class ObjectDetection:
         font_thickness = 1
         text_color = (int(0), int(0), int(0))
         text_pt = (labelled_img.shape[1] + 30, graph_img.shape[0] + 50)
-        print("text_pt", text_pt)
         cv2.putText(joined_img, action[3], text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
         
         print(action[3])
         
-        return joined_img, detections
+        return joined_img, detections, action

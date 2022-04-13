@@ -64,9 +64,8 @@ if __name__ == '__main__':
                 t_now = time.time()
                 if t_prev is not None and t_now - t_prev > 0:
                     fps = str(round(1 / (t_now - t_prev), 1)) + " fps (ros)"
-                labelled_img, detections = pipeline.process_img(current_cam_img, fps)
-                print("detections", detections)
-                json_detections = json.dumps(detections)
+                labelled_img, detections, json_detections, action = pipeline.process_img(current_cam_img, fps)
+                print("json_detections", json_detections)
                 
                 labelled_img_publisher.publish_img(labelled_img)
                 data_publisher.publish_text(json_detections)

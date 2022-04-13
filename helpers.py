@@ -2,27 +2,31 @@ import os
 import regex
 import argparse
 import cv2
+import numpy as np
+from torch import Tensor
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional, Tuple
 
 @dataclass
 class Detection:
-    id = None
-    label = None
+    id: Optional[int] = None
+    label: Optional[str] = None
     
-    score = None
-    box = None
-    mask = None
-    mask_contour = None
-    mask_polygon = None
+    score: Optional[float] = None
+    box: Optional[np.ndarray] = None
+    mask: Optional[Tensor] = None
+    mask_contour: Optional[np.ndarray] = None
+    mask_polygon: Optional[np.ndarray] = None
     
-    obb_corners = None
-    obb_center = None
-    obb_rot_quat = None
+    obb_corners: Optional[np.ndarray] = None
+    obb_center: Optional[np.ndarray] = None
+    obb_rot_quat: Optional[np.ndarray] = None
+    obb_corners_meters: Optional[np.ndarray] = None
+    obb_center_meters: Optional[np.ndarray] = None
     
-    tracking_id = None
-    tracking_score = None
-    tracking_box = None
+    tracking_id: Optional[int] = None
+    tracking_score: Optional[float] = None
+    tracking_box: Optional[np.ndarray] = None
     
     
 
