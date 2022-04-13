@@ -11,19 +11,6 @@ from object_detection import ObjectDetection
 from helpers import scale_img, get_images
 from config import load_config
 
-def quaternion_multiply(quaternion1, quaternion0):
-        x0, y0, z0, w0 = quaternion0
-        x1, y1, z1, w1 = quaternion1
-
-        # This quat is W X Y Z
-        out_quat = np.array([-x1*x0 - y1*y0 - z1*z0 + w1*w0,
-                     x1*w0 + y1*z0 - z1*y0 + w1*x0,
-                    -x1*z0 + y1*w0 + z1*x0 + w1*y0,
-                     x1*y0 - y1*x0 + z1*w0 + w1*z0], dtype=np.float64)
-
-        # This quat is X Y Z W
-        out = out_quat[[1,2,3,0]]
-        return out
 
 class Pipeline:
     def __init__(self):
@@ -50,60 +37,9 @@ class Pipeline:
             self.worksurface_detection = WorkSurfaceDetection(img)
             # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
         
-        labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection, fps)
-
-        for detection in detections:
-            corners = np.array(detection.obb_corners)
-            distances = []
-            # Logger.loginfo("{}".format(corners))
-            first_corner = corners[0]
-
-            for ic, corner in enumerate(corners):
-                distances.append(np.linalg.norm(corner - first_corner))
-            # Logger.loginfo("Distances: {}".format(distances))
-            distances = np.array(distances)
-            idx_edge = distances.argsort()[-2]
-            # Logger.loginfo("Index of edge: {}".format(idx_edge))
-            second_corner = corners[idx_edge]
-
-            highest_y = np.argmax([first_corner[1], second_corner[1]])
-            if highest_y == 0:
-                vector_1 = first_corner - second_corner
-            elif highest_y == 1:
-                vector_1 = second_corner - first_corner
-
-            unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
-            unit_vector_2 = np.array([0, 1])
-            # Logger.loginfo("Vectors: {}, {}".format(vector_1, unit_vector_2))
-
-            angle = (np.arctan2(unit_vector_1[1], unit_vector_1[0]) -
-                        np.arctan2(unit_vector_2[1], unit_vector_2[0]))
-
-
-            # If angle is too negative, add 180 degrees
-            if (angle * 180 / np.pi) < -30:
-                angle = angle + np.pi
-            # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
-
-            # Below code works but z-axis is incorrect, should be rotated by 180 degs
-            angle = -angle
-
-            rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]),
-                                        np.array([np.cos(angle/2)])))
-
-            #rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,-1]),
-            #                           np.array([-np.cos(angle/2)])))
-
-            #Rotate around x-axis by 180 degs
-            rot_quat = quaternion_multiply(np.array([0,1,0,0]), rot_quat)
-
-            #Rotate around z-axis by 180 degs
-            #rot_quat = quaternion_multiply(np.array([0,0,1,0]), rot_quat)
-
-            detection.obb_rot_quat = rot_quat.tolist()
-            # detection.obb_rot_quat = np.array([[1,0,0,0]]).tolist()
+        labelled_img, detections, action = self.object_detection.get_prediction(img, self.worksurface_detection, fps)
         
-        return labelled_img, detections
+        return labelled_img, detections, action
     
 
 if __name__ == '__main__':
