@@ -2,6 +2,28 @@ import os
 import regex
 import argparse
 import cv2
+from dataclasses import dataclass
+from typing import List
+
+@dataclass
+class Detection:
+    id = None
+    label = None
+    
+    score = None
+    box = None
+    mask = None
+    mask_poly = None
+    
+    obb_corners = None
+    obb_center = None
+    obb_rot_quat = None
+    
+    tracking_id = None
+    tracking_score = None
+    tracking_box = None
+    
+    
 
 def str2bool(v):
     if isinstance(v, bool):

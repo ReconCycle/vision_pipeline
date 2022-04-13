@@ -14,28 +14,9 @@ from graph_relations import GraphRelations
 import obb
 import graphics
 from config import load_config
-from helpers import Struct
-from dataclasses import dataclass
-from typing import List
+from helpers import Struct, Detection
+
 import enum
-
-
-@dataclass
-class Detection:
-    id = None
-    class_name = None
-    
-    score = None
-    box = None
-    mask = None
-    
-    obb_corners = None
-    obb_center = None
-    obb_rot_quat = None
-    
-    tracking_id = None
-    tracking_score = None
-    tracking_box = None
 
 
 class ObjectDetection:
@@ -98,16 +79,12 @@ class ObjectDetection:
         self.fps_graphics = -1.
         self.fps_total = -1.
         
-        label = enum.IntEnum('label', self.dataset.class_names)
+        # convert class names to enums
+        labels = enum.IntEnum('label', self.dataset.class_names, start=0)
+        self.labels = labels
         
-        
-        
-        self.label = label
-        
-        print("label", label)
-        print("label.battery", label.battery, repr(label.battery), label.battery==5)
-        import sys
-        sys.exit(0)
+        print("label", labels)
+        print("label.battery", labels.battery, repr(labels.battery), labels.battery==5)
         
 
     def get_prediction(self, img_path, worksurface_detection=None, extra_text=None):
@@ -119,7 +96,7 @@ class ObjectDetection:
         tracker_start = time.time()
         # apply tracker
         # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
-        online_targets = self.tracker.update(boxes, scores)
+        online_targets = self.tracker.update(boxes, scores) #? does the tracker not benefit from the predicted classes?
         
         tracking_ids = np.full(len(classes), None)
         tracking_boxes = np.full(len(classes), None)
@@ -144,7 +121,43 @@ class ObjectDetection:
             obb_centers.append(center)
             obb_rot_quats.append(rot_quat)
         fps_obb = 1.0 / (time.time() - obb_start)
-        
+
+        detections = []
+        for i in np.arange(len(classes)):
+            if obb_corners[i] is not None:
+                
+                detection = Detection()
+                detection.id = i
+                
+                # print("self.labels(classes[i])", self.labels(classes[i]))
+                
+                detection.label = self.labels(classes[i]) # self.dataset.class_names[classes[i]]
+                
+                detection.score = scores[i]
+                detection.box = boxes[i]
+                detection.mask = masks[i].cpu().numpy()
+                
+                detection.obb_corners = obb_corners[i] # worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
+                detection.obb_center = obb_centers[i] # worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
+                detection.obb_rot_quat = obb_rot_quats[i] # .tolist()
+                
+                detection.tracking_id = tracking_ids[i]
+                detection.tracking_score = tracking_scores[i]
+                detection.tracking_box = tracking_boxes[i]
+                
+                detections.append(detection)
+                                
+                # todo: previously the objects as commented out. This was so it could be dumped to JSON.
+                # detection = {}
+                # detection["class_name"] = self.dataset.class_names[classes[i]]
+                # detection["score"] = float(scores[i])
+                # detection["obb_corners"] = worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
+                # detection["obb_center"] = worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
+                # detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
+                # detection["tracking_id"] = tracking_ids[i] if tracking_ids[i] is not None else -1
+                # detection["tracking_score"] = float(tracking_scores[i]) if tracking_scores[i] is not None else float(-1)
+                # detections.append(detection)
+                
         graphics_start = time.time()
         if extra_text is not None:
             extra_text + ", "
@@ -152,27 +165,16 @@ class ObjectDetection:
             extra_text = ""
         fps_str = extra_text + "fps_total: " + str(np.int(round(self.fps_total, 0))) + ", fps_nn: " + str(np.int(round(fps_nn, 0))) + ", fps_tracker: " + str(np.int(round(fps_tracker, 0))) + ", fps_obb: " + str(np.int(round(fps_obb, 0))) + ", fps_graphics: " + str(np.int(round(self.fps_graphics, 0)))
         labelled_img = graphics.get_labelled_img(frame, self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores, fps=fps_str, worksurface_detection=worksurface_detection)
-
-        detections = []
-        for i in np.arange(len(classes)):
-            if obb_corners[i] is not None:
-                detection = {}
-                detection["class_name"] = self.dataset.class_names[classes[i]]
-                detection["score"] = float(scores[i])
-                detection["obb_corners"] = worksurface_detection.pixels_to_meters(obb_corners[i]).tolist()
-                detection["obb_center"] = worksurface_detection.pixels_to_meters(obb_centers[i]).tolist()
-                detection["obb_rot_quat"] = obb_rot_quats[i].tolist()
-                detection["tracking_id"] = tracking_ids[i] if tracking_ids[i] is not None else -1
-                detection["tracking_score"] = float(tracking_scores[i]) if tracking_scores[i] is not None else float(-1)
-                detections.append(detection)
         
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
         self.fps_total = 1.0 / (time.time() - t_start)
-        
-        graph_relations = GraphRelations(self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores)
-        graph_img = graph_relations.using_network_x()
 
-        print("graph_img", graph_img.shape)
+        # ! deprecated. Now use detection object
+        # graph_relations = GraphRelations(self.dataset.class_names, classes, scores, boxes, masks, obb_corners, obb_centers, tracking_ids, tracking_boxes, tracking_scores)
+        
+        graph_relations = GraphRelations(self.labels, detections)
+        
+        graph_img = graph_relations.using_network_x()
         
         joined_img_size = [labelled_img.shape[0], labelled_img.shape[1] + graph_img.shape[1], labelled_img.shape[2]]
         

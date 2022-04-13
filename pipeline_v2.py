@@ -42,7 +42,7 @@ class Pipeline:
 
     def process_img(self, img, fps=None):
         if isinstance(img, str):
-            print("img path:", img)
+            print("\nimg path:", img)
             img = cv2.imread(img)
         
         if self.worksurface_detection is None:
@@ -53,7 +53,7 @@ class Pipeline:
         labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection, fps)
 
         for detection in detections:
-            corners = np.array(detection["obb_corners"])
+            corners = np.array(detection.obb_corners)
             distances = []
             # Logger.loginfo("{}".format(corners))
             first_corner = corners[0]
@@ -100,9 +100,9 @@ class Pipeline:
             #Rotate around z-axis by 180 degs
             #rot_quat = quaternion_multiply(np.array([0,0,1,0]), rot_quat)
 
-            detection["obb_rot_quat"] = rot_quat.tolist()
-            # detection["obb_rot_quat"] = np.array([[1,0,0,0]]).tolist()
-
+            detection.obb_rot_quat = rot_quat.tolist()
+            # detection.obb_rot_quat = np.array([[1,0,0,0]]).tolist()
+        
         return labelled_img, detections
     
 
