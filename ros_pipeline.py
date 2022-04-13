@@ -36,6 +36,7 @@ if __name__ == '__main__':
     # if there is no camera topic then try and subscribe here and create a publisher for the camera images
     labelled_img_publisher = ROSPublisher(topic_name="/vision_pipeline/image_color", msg_images=True)
     data_publisher = ROSPublisher(topic_name="/vision_pipeline/data", msg_images=False)
+    action_publisher = ROSPublisher(topic_name="/vision_pipeline/action", msg_images=False)
 
     # either create a publisher topic for the labelled images and detections or create a service
     if not args_m.publish_continuously:
@@ -64,11 +65,12 @@ if __name__ == '__main__':
                 t_now = time.time()
                 if t_prev is not None and t_now - t_prev > 0:
                     fps = str(round(1 / (t_now - t_prev), 1)) + " fps (ros)"
-                labelled_img, detections, json_detections, action = pipeline.process_img(current_cam_img, fps)
+                labelled_img, detections, json_detections, action, json_action = pipeline.process_img(current_cam_img, fps)
                 print("json_detections", json_detections)
                 
                 labelled_img_publisher.publish_img(labelled_img)
                 data_publisher.publish_text(json_detections)
+                action_publisher.publish_text(json_action)
                 
                 t_prev = t_now
             else:

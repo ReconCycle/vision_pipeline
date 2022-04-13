@@ -3,35 +3,14 @@ import numpy as np
 import time
 import cv2
 from rich import print
-import dataclasses
 import json
-from json import JSONEncoder
-from torch import Tensor
-from shapely.geometry import Polygon
 
 from image_calibration import ImageCalibration
 from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
 
-from helpers import scale_img, get_images
+from helpers import scale_img, get_images, EnhancedJSONEncoder
 from config import load_config
-
-
-class EnhancedJSONEncoder(JSONEncoder):
-    def default(self, obj):
-        if dataclasses.is_dataclass(obj):
-            return dataclasses.asdict(obj)
-        if isinstance(obj, Tensor):
-            return None
-        if isinstance(obj, Polygon):
-            return None
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return JSONEncoder.default(self, obj)
 
 
 class Pipeline:
@@ -62,8 +41,9 @@ class Pipeline:
         labelled_img, detections, action = self.object_detection.get_prediction(img, self.worksurface_detection, fps)
 
         json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
+        json_action = json.dumps(action, cls=EnhancedJSONEncoder)
         
-        return labelled_img, detections, json_detections, action
+        return labelled_img, detections, json_detections, action, json_action
     
 
 if __name__ == '__main__':
@@ -85,7 +65,7 @@ if __name__ == '__main__':
     imgs = get_images(img_path)
 
     for img_p in imgs:
-        labeled_img, _, _, _ = pipeline.process_img(img_p)
+        labeled_img, *_ = pipeline.process_img(img_p)
         
         t_start = time.time()
         if show_imgs:

@@ -3,14 +3,27 @@ import regex
 import argparse
 import cv2
 import numpy as np
+import dataclasses
+from json import JSONEncoder
 from torch import Tensor
+from shapely.geometry import Polygon
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
+from enum import IntEnum
+
+
+class Action(IntEnum):
+    move = 0
+    cut = 1
+    lever = 2
+    turn_over = 3
+    remove_clip = 4
+
 
 @dataclass
 class Detection:
     id: Optional[int] = None
-    label: Optional[str] = None
+    label: Optional[Action] = None
     
     score: Optional[float] = None
     box: Optional[np.ndarray] = None
@@ -27,8 +40,43 @@ class Detection:
     tracking_id: Optional[int] = None
     tracking_score: Optional[float] = None
     tracking_box: Optional[np.ndarray] = None
-    
-    
+
+
+class EnhancedJSONEncoder(JSONEncoder):
+    def iterencode(self, o, _one_shot=False):
+        
+        # handle IntEnum to give the name instead of the int
+        def map_intenum(obj):
+            if isinstance(obj, IntEnum):
+                # return {'name': obj.name, 'value': obj.value}
+                return obj.name
+            if isinstance(obj, dict):
+                return {k: map_intenum(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [map_intenum(v) for v in obj]
+            if dataclasses.is_dataclass(obj):
+                dataclass_dict = dataclasses.asdict(obj)
+                return {k: map_intenum(v) for k, v in dataclass_dict.items()}
+        
+            return obj
+        
+        o = map_intenum(o)
+        return super(EnhancedJSONEncoder, self).iterencode(o, _one_shot)
+    def default(self, obj):
+        if dataclasses.is_dataclass(obj):
+            return dataclasses.asdict(obj)
+        if isinstance(obj, Tensor):
+            return None
+        if isinstance(obj, Polygon):
+            return None
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return JSONEncoder.default(self, obj)    
+
 
 def str2bool(v):
     if isinstance(v, bool):

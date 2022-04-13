@@ -15,17 +15,8 @@ from graph_tool.all import *
 import matplotlib.pylab as plt
 import networkx as nx
 
-from enum import IntEnum
 from typing import List
-from helpers import Detection
-
-
-class Action(IntEnum):
-    move = 0
-    cut = 1
-    lever = 2
-    turn_over = 3
-    remove_clip = 4
+from helpers import Detection, Action
 
 
 def compute_is_inside(poly1, poly2):
