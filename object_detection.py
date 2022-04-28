@@ -10,7 +10,6 @@ from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
 
 from tracker.byte_tracker import BYTETracker
-from graph_relations import GraphRelations
 
 import obb
 import graphics
@@ -32,6 +31,8 @@ class ObjectDetection:
             with open(config.yolact_dataset_file, "r") as read_file:
                 yolact_dataset = commentjson.load(read_file)
                 print("yolact_dataset", yolact_dataset)
+        else:
+            raise Exception("config.yolact_dataset_file is incorrect: " +  str(config.yolact_dataset_file))
                 
         self.dataset = Config(yolact_dataset)
         
@@ -130,9 +131,12 @@ class ObjectDetection:
             detection.obb_corners = corners
             detection.obb_center = center
             detection.obb_rot_quat = rot_quat
-            
-            detection.obb_corners_meters = worksurface_detection.pixels_to_meters(corners)
-            detection.obb_center_meters = worksurface_detection.pixels_to_meters(center)
+            if worksurface_detection is not None:
+                detection.obb_corners_meters = worksurface_detection.pixels_to_meters(corners)
+                detection.obb_center_meters = worksurface_detection.pixels_to_meters(center)
+            else:
+                detection.obb_corners_meters = None
+                detection.obb_center_meters = None
         
         fps_obb = 1.0 / (time.time() - obb_start)
                 
@@ -147,25 +151,4 @@ class ObjectDetection:
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
         self.fps_total = 1.0 / (time.time() - t_start)
         
-        graph_relations = GraphRelations(self.labels, detections)
-        
-        graph_img, action = graph_relations.using_network_x()
-        
-        joined_img_size = [labelled_img.shape[0], labelled_img.shape[1] + graph_img.shape[1], labelled_img.shape[2]]
-        
-        joined_img = np.zeros(joined_img_size, dtype=np.uint8)
-        joined_img.fill(200)
-        joined_img[:labelled_img.shape[0], :labelled_img.shape[1]] = labelled_img
-        
-        joined_img[:graph_img.shape[0], labelled_img.shape[1]:labelled_img.shape[1]+graph_img.shape[1]] = graph_img
-        
-        font_face = cv2.FONT_HERSHEY_DUPLEX
-        font_scale = 1.0
-        font_thickness = 1
-        text_color = (int(0), int(0), int(0))
-        text_pt = (labelled_img.shape[1] + 30, graph_img.shape[0] + 50)
-        cv2.putText(joined_img, action[3], text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
-        
-        print(action[3])
-        
-        return joined_img, detections, action
+        return labelled_img, detections

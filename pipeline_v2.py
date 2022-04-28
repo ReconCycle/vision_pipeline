@@ -8,6 +8,7 @@ import json
 from image_calibration import ImageCalibration
 from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
+from graph_relations import GraphRelations
 
 from helpers import scale_img, get_images, EnhancedJSONEncoder
 from config import load_config
@@ -40,10 +41,33 @@ class Pipeline:
         
         labelled_img, detections, action = self.object_detection.get_prediction(img, self.worksurface_detection, fps)
 
+        ########################
+        graph_relations = GraphRelations(self.labels, detections)
+        
+        graph_img, action = graph_relations.using_network_x()
+        
+        joined_img_size = [labelled_img.shape[0], labelled_img.shape[1] + graph_img.shape[1], labelled_img.shape[2]]
+        
+        joined_img = np.zeros(joined_img_size, dtype=np.uint8)
+        joined_img.fill(200)
+        joined_img[:labelled_img.shape[0], :labelled_img.shape[1]] = labelled_img
+        
+        joined_img[:graph_img.shape[0], labelled_img.shape[1]:labelled_img.shape[1]+graph_img.shape[1]] = graph_img
+        
+        font_face = cv2.FONT_HERSHEY_DUPLEX
+        font_scale = 1.0
+        font_thickness = 1
+        text_color = (int(0), int(0), int(0))
+        text_pt = (labelled_img.shape[1] + 30, graph_img.shape[0] + 50)
+        cv2.putText(joined_img, action[3], text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        
+        print(action[3])
+        ########################
+
         json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
         json_action = json.dumps(action, cls=EnhancedJSONEncoder)
         
-        return labelled_img, detections, json_detections, action, json_action
+        return joined_img, detections, json_detections, action, json_action
     
 
 if __name__ == '__main__':

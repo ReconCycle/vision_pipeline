@@ -119,10 +119,8 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
             if coords_in_pixels is not None:
                 xc, yc = np.around(coords_in_pixels[:2]).astype(int)
                 xc_m, yc_m, *_= worksurface_detection.points_m_dict[label]
-                # xc_m, yc_m = np.around(worksurface_detection.pixels_to_meters(coords_in_pixels), decimals=2)
-                # print("xc, yc", xc, yc)
+
                 cv2.circle(img_numpy, (xc, yc), 5, (0, 255, 0), -1)
-                # print(label + ", (" + str(xc_m) + ", " + str(yc_m) + ")")
                 cv2.putText(img_numpy, label + ", (" + str(xc_m) + ", " + str(yc_m) + ")",
                             (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
 
@@ -167,9 +165,8 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
                 cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
 
             if args.display_text:
-                if  detection.obb_center is not None:
-                    x1_center, y1_center = detection.obb_center
-                    x1_m, y1_m = worksurface_detection.pixels_to_meters((x1_center, y1_center)).tolist()
+                if detection.obb_corners_meters is not None:
+                    x1_m, y1_m = detection.obb_corners_meters.tolist()
                 else:
                     x1_m, y1_m = (-1, -1)
 
