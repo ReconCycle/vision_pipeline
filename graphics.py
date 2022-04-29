@@ -165,8 +165,8 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
                 cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
 
             if args.display_text:
-                if detection.obb_corners_meters is not None:
-                    x1_m, y1_m = detection.obb_corners_meters.tolist()
+                if detection.obb_center_meters is not None:
+                    x1_m, y1_m = detection.obb_center_meters
                 else:
                     x1_m, y1_m = (-1, -1)
 

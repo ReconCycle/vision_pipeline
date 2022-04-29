@@ -27,6 +27,7 @@ class Pipeline:
 
         # 3. object detection
         self.object_detection = ObjectDetection(self.config.obj_detection)
+        self.labels = self.object_detection.labels
 
 
     def process_img(self, img, fps=None):
@@ -39,7 +40,7 @@ class Pipeline:
             self.worksurface_detection = WorkSurfaceDetection(img)
             # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
         
-        labelled_img, detections, action = self.object_detection.get_prediction(img, self.worksurface_detection, fps)
+        labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection, extra_text=fps)
 
         ########################
         graph_relations = GraphRelations(self.labels, detections)
