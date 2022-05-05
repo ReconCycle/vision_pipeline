@@ -124,6 +124,7 @@ class ObjectDetection:
 
         fps_tracker = 1.0 / (time.time() - tracker_start)
         
+        
         obb_start = time.time()
         # calculate the oriented bounding boxes
         for detection in detections:
@@ -138,7 +139,9 @@ class ObjectDetection:
                 detection.obb_corners_meters = None
                 detection.obb_center_meters = None
         
-        fps_obb = 1.0 / (time.time() - obb_start)
+        fps_obb = -1
+        if time.time() - obb_start > 0:
+            fps_obb = 1.0 / (time.time() - obb_start)
                 
         graphics_start = time.time()
         if extra_text is not None:

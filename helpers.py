@@ -1,5 +1,7 @@
 import os
+from matplotlib.pyplot import step
 import regex
+import natsort
 import argparse
 import cv2
 import numpy as np
@@ -23,7 +25,7 @@ class Action(IntEnum):
 @dataclass
 class Detection:
     id: Optional[int] = None
-    label: Optional[Action] = None
+    label: Optional[IntEnum] = None
     
     score: Optional[float] = None
     box: Optional[np.ndarray] = None
@@ -98,6 +100,26 @@ def get_images(input_dir):
     else:
         images = None
     return images
+
+def get_images_realsense(input_dir):
+    images_paths = None
+    if os.path.isdir(input_dir):
+        images_paths = [img for img in os.listdir(input_dir) if img.endswith(".png") or img.endswith(".npy")]
+        images_paths = natsort.os_sorted(images_paths)
+        images_paths = [os.path.join(input_dir, images_path) for images_path in images_paths]
+
+        if len(images_paths) % 3 == 0:
+            images_paths = np.array(images_paths).reshape((-1, 3))
+        else: 
+            print("Error: number of images in directory not a multiple of 3!")
+        
+        for colour_img, depth_img, depth_colormap in images_paths:
+            print("\nimg path:", colour_img)
+            colour_img = cv2.imread(colour_img)
+            depth_img = np.load(depth_img)
+            depth_colormap = cv2.imread(depth_colormap)
+            yield [colour_img, depth_img, depth_colormap]
+
 
 def scale_img(img, scale_percent=50):
     width = int(img.shape[1] * scale_percent / 100)

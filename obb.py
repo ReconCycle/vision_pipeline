@@ -33,6 +33,11 @@ def better_quaternion(obb_corners):
     corners = np.array(obb_corners)
     distances = []
     # Logger.loginfo("{}".format(corners))
+    
+    # sanity check
+    if corners.shape != (4, 2):
+        return None
+
     first_corner = corners[0]
 
     for ic, corner in enumerate(corners):
@@ -162,6 +167,9 @@ def get_obb_using_eig(points, calcconvexhull=True):
 
 
 def get_obb_using_cv(contour):
+
+    if contour.size == 0 or len(contour) < 4:
+        return None, None, None
     
     # https://stackoverflow.com/questions/18207181/opencv-python-draw-minarearect-rotatedrect-not-implemented
     rect = cv2.minAreaRect(contour)
@@ -187,5 +195,8 @@ def get_obb_from_contour(contour):
     # https://stackoverflow.com/questions/13542855/algorithm-to-find-the-minimum-area-rectangle-for-given-points-in-order-to-comput/33619018#33619018
     corners, center, rot_quat = get_obb_using_cv(contour)
     # corners, center, rot_quat =  get_obb_using_eig(contour)
-    better_rot_quat = better_quaternion(corners)
+
+    better_rot_quat = None
+    if corners is not None:
+        better_rot_quat = better_quaternion(corners)
     return corners, center, better_rot_quat
