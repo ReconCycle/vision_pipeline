@@ -154,11 +154,10 @@ if __name__ == '__main__':
 
     pipeline = RealsensePipeline()
 
-    realsense_camera = RealsenseCamera()
-
     USE_CAMERA = False
 
     if USE_CAMERA:
+        realsense_camera = RealsenseCamera()
         while True:
             try:
                 # 1. get image and depth from camera
@@ -169,7 +168,8 @@ if __name__ == '__main__':
     
     else:
         # load images from folder
-        img_path = "/Users/sebastian/WorkProjects/datasets/reconcycle/2022-05-05_kalo_qundis_realsense"
+        img_path = "/Users/simonblaue/ownCloud/Bachelorarbeit/2022-05-05_kalo_qundis_realsense"
+        # img_path = "/Users/sebastian/WorkProjects/datasets/reconcycle/2022-05-05_kalo_qundis_realsense"
         # save_path = "./save_images" # set to None to not save
         # if save_path is not None and not os.path.exists(save_path):
         #     os.makedirs(save_path)

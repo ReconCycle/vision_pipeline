@@ -30,12 +30,12 @@ class GapDetector:
         self.create_evaluation = False
         self.automatic_thresholding = -1 # -1 to 3
         self.min_gap_volume = 0.1 # 0.0 to 200.0
-        self.max_gap_volume = 20.0 # 0.0 to 200.0
+        self.max_gap_volume = 5000.0 # 0.0 to 200.0
         self.KM_number_of_clusters = 3 # 1 to 10
         self.B_branching_factor = 50 # 2 to 200
         self.B_threshold = 0.015 # 0.0 to 1.0
-        self.DB_eps = 0.007 # 0.0001 to 0.02
-        self.HDB_min_cluster_size = 10 # 5 to 150
+        self.DB_eps = 0.01 # 0.0001 to 0.02
+        self.HDB_min_cluster_size = 50 # 5 to 150
         self.otsu_bins = 800 # 2 to 1024
 
         # self.depth_axis = config.depth_axis # in line 49
