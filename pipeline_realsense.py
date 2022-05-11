@@ -33,7 +33,8 @@ def mask_from_contours(contour):
     mask = cv2.drawContours(mask, [contour], -1, (255,255,255), -1)
     return cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
 
-def create_depth_list(mask):
+
+def image_to_depth(mask):
     depth_list = np.zeros((mask.shape[0]*mask.shape[1], 3))
     count = 0
     for i in np.arange(mask.shape[0]):
@@ -48,11 +49,49 @@ def create_depth_list(mask):
     return depth_list
 
 
+
+
+
+
+
+
+def visualise_3d(geometries):
+
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(visible = False)
+    # vis.add_geometry(pcd)
+    # vis.update_geometry(pcd)
+    for geom in b:
+        vis.add_geometry(geom)
+        vis.update_geometry(geom)
+    vis.poll_events()
+    vis.update_renderer()
+    # vis.capture_screen_image(path)
+    o3d_screenshot_mat = vis.capture_screen_float_buffer()
+    # scale and convert to uint8 type
+    o3d_screenshot_mat = (255.0 * np.asarray(o3d_screenshot_mat)).astype(np.uint8)
+    vis.destroy_window()
+    return o3d_screenshot_mat
+
 # Create Box Objects around the detected gaps.
 def boxes(gaps):
     boxes = []
     hulls = []
-    for gap in gaps:
+
+    biggest_gap_volume = 0.
+    biggest_gap_index = None
+
+    # sort by volume
+    gaps.sort(key=lambda x: x[4], reverse=True)
+
+    # for index, gap in enumerate(gaps):
+    #     center, vertices, img_vertices, simplices, volume, size, num_of_points = gap
+    #     if volume > biggest_gap_volume:
+    #         biggest_gap_volume = volume
+    #         biggest_gap_index = index
+
+
+    for index, gap in enumerate(gaps):
         center, vertices, img_vertices, simplices, volume, size, num_of_points = gap
         pcd = o3d.geometry.PointCloud()
         bounding_box = o3d.geometry.OrientedBoundingBox()
@@ -60,7 +99,13 @@ def boxes(gaps):
         pcd.points = points
         pcd.paint_uniform_color([0,0,0])
         geom1 = bounding_box.create_from_points(points)
-        geom1.color = np.array([1,0,0])
+        print("volume", volume)
+        print("geom1" , geom1)
+        print("center", center)
+        if index == 0:
+            geom1.color = np.array([0,0,1])
+        else:
+            geom1.color = np.array([1,0,0])
         boxes.append(geom1)
         boxes.append(pcd)
 
@@ -104,11 +149,11 @@ class RealsensePipeline:
             print("mask", mask.shape)
 
             print("depth_img", depth_img.shape, np.amin(depth_img), np.max(depth_img), stats.mode(depth_img, axis=None).mode)
-            depth_img = depth_img * 3 # ! IMPORTANT MULTIPLIER
+            depth_img = depth_img * 3  # ! IMPORTANT MULTIPLIER
             depth_masked = cv2.bitwise_and(depth_img, depth_img, mask = mask)
 
-            depth_list = create_depth_list(depth_masked)
-            depth_list = ((depth_list - np.amin(depth_list))/np.ptp(depth_list)) # ! required for gaps
+            depth_list = image_to_depth(depth_masked)
+            # depth_list = ((depth_list - np.amin(depth_list))/np.ptp(depth_list))  # ! required for gaps
 
             ############### 
             # # working visualisation without gap detection:
@@ -120,20 +165,26 @@ class RealsensePipeline:
 
             # call the detector for gaps with depth array
             gap_detector = GapDetector()
-            # thresholding is turned off, but this is how you would use it. 
-            # (and set parameter in gap_detector.py)
-            thresholded_depth_list = gap_detector.threshold(depth_list)
-            gap_detector.detector_callback(thresholded_depth_list)
 
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector((thresholded_depth_list))
+            ############### bbox
+            # thresholded_depth_list = gap_detector.threshold(depth_list)
+            # gap_detector.detector_callback(depth_list)
+            #
+            # pcd = o3d.geometry.PointCloud()
+            # pcd.points = o3d.utility.Vector3dVector((depth_list))
+            # # create the boxes from detected gaps
+            # b = boxes(gap_detector.gaps)
+            # b.append(pcd)
+            # # visualise
+            # o3d.visualization.draw_geometries(b)
+            #################
 
-            # create the boxes from detected gaps
-            b = boxes(gap_detector.gaps)
-            b.append(pcd)
-            # visualise
-            o3d.visualization.draw_geometries(b)
+            ##############
+            pcd = gap_detector.lever_detector(depth_list, depth_masked)
+            o3d.visualization.draw_geometries([pcd])
+            #############
 
+            # cv2.imshow("screenshot", visualise_3d(b))
 
         # show images
         cv_show = [labelled_img]
@@ -148,7 +199,7 @@ class RealsensePipeline:
         cv2.namedWindow('images', cv2.WINDOW_NORMAL)
         cv2.imshow('images', images)
 
-        cv2.waitKey(1)
+        cv2.waitKey(0) # was 1
 
 if __name__ == '__main__':
 
@@ -168,8 +219,8 @@ if __name__ == '__main__':
     
     else:
         # load images from folder
-        img_path = "/Users/simonblaue/ownCloud/Bachelorarbeit/2022-05-05_kalo_qundis_realsense"
-        # img_path = "/Users/sebastian/WorkProjects/datasets/reconcycle/2022-05-05_kalo_qundis_realsense"
+        # img_path = "/Users/simonblaue/ownCloud/Bachelorarbeit/2022-05-05_kalo_qundis_realsense"
+        img_path = "/Users/sebastian/WorkProjects/datasets/reconcycle/2022-05-05_kalo_qundis_realsense"
         # save_path = "./save_images" # set to None to not save
         # if save_path is not None and not os.path.exists(save_path):
         #     os.makedirs(save_path)

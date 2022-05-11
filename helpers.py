@@ -131,6 +131,33 @@ def scale_img(img, scale_percent=50):
     return resized
 
 
+COLOURS = ((244,  67,  54),
+          (233,  30,  99),
+          (156,  39, 176),
+          (103,  58, 183),
+          ( 63,  81, 181),
+          ( 33, 150, 243),
+          (  3, 169, 244),
+          (  0, 188, 212),
+          (  0, 150, 136),
+          ( 76, 175,  80),
+          (139, 195,  74),
+          (205, 220,  57),
+          (255, 235,  59),
+          (255, 193,   7),
+          (255, 152,   0),
+          (255,  87,  34),
+          (121,  85,  72),
+          (158, 158, 158),
+          ( 96, 125, 139))
+
+
+def get_colour(j):
+    colour_idx = (j * 5) % len(COLOURS)
+    colour = np.array(COLOURS[colour_idx], dtype=np.float64)
+    return colour
+
+
 class Struct(object):
     """
     Holds the configuration for anything you want it to.

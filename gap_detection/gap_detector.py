@@ -7,10 +7,14 @@ from scipy.spatial import ConvexHull
 import sklearn.cluster as cluster
 import hdbscan
 import time
+import open3d as o3d
+import cv2
+from itertools import combinations, product
 # import config
 
 # Own Modules
-import gap_detection.helpers as helpers
+import gap_detection.helpers2 as helpers
+from helpers import get_colour
 
 # Events? Dont know what threding is for
 import threading
@@ -30,26 +34,13 @@ class GapDetector:
         self.create_evaluation = False
         self.automatic_thresholding = -1 # -1 to 3
         self.min_gap_volume = 0.1 # 0.0 to 200.0
-        self.max_gap_volume = 5000.0 # 0.0 to 200.0
+        self.max_gap_volume = 20000.0 # 0.0 to 200.0
         self.KM_number_of_clusters = 3 # 1 to 10
         self.B_branching_factor = 50 # 2 to 200
         self.B_threshold = 0.015 # 0.0 to 1.0
         self.DB_eps = 0.01 # 0.0001 to 0.02
         self.HDB_min_cluster_size = 50 # 5 to 150
         self.otsu_bins = 800 # 2 to 1024
-
-        # self.depth_axis = config.depth_axis # in line 49
-        # self.clustering_mode = config.clustering
-        # self.create_evaluation = config.create_evaluation
-        # self.automatic_thresholding = config.automatic_thresholding
-        # self.min_gap_volume = config.min_gap_volume
-        # self.max_gap_volume = config.max_gap_volume
-        # self.KM_number_of_clusters = config.KM_number_of_clusters
-        # self.B_branching_factor = config.B_branching_factor
-        # self.B_threshold = config.B_threshold
-        # self.DB_eps = config.DB_eps
-        # self.HDB_min_cluster_size = config.HDB_min_cluster_size
-        # self.otsu_bins = config.otsu_bins
 
         self.gaps = []  #gap lsit
 
@@ -119,6 +110,7 @@ class GapDetector:
             if(num_of_points >= 4):
                 clusters.append(cluster)
 
+        clusters.sort(key=lambda x: len(x), reverse=True)
         
         print("num clusters: ", len(clusters), num_of_points)
 
@@ -143,13 +135,13 @@ class GapDetector:
             hull = ConvexHull(cluster, qhull_options="QJ")
 
             # Map from vertex to point in cluster
-            vertices = []
+            convex_hull_vertices = []
             for vertex in hull.vertices:
                 x, y, z = cluster[vertex]
-                vertices.append([x, y, z])
+                convex_hull_vertices.append([x, y, z])
 
             gap = cluster.tolist()
-            for vertex in vertices:
+            for vertex in convex_hull_vertices:
                 # For each vertex, add a new point to the gap with the height
                 # of the surface and the other axes corresponding to the vertex
                 if(self.depth_axis == 0):
@@ -185,6 +177,251 @@ class GapDetector:
             self.create_evaluation = False
 
         self.detected_gap.set()  # signal succesful gap detection
+
+    def lever_detector(self, points, depth_masked):
+        MIN_CLUSTER_SIZE = 150  # number of points in cluster
+        MAX_CLUSTER_DISTANCE = 20  # in pixels
+
+        # depth_axis_pts = points[:, self.depth_axis]
+        # print("depth_axis_pts", depth_axis_pts.shape)
+        # points = points[depth_axis_pts != 0]
+        # print("new points", points.shape)
+        # points = self.threshold(points) #! DISABLED
+        print("new2 points", points.shape)
+        clusters, num_of_points = self.clustering(points)
+
+        print("number of clusters", len(clusters))
+
+        clustered_points = []
+        colours = []
+        for index, cluster in enumerate(clusters):
+            print("cluster.shape", cluster.shape, np.mean(cluster))
+
+            clustered_points.extend(cluster)
+            if len(cluster) < MIN_CLUSTER_SIZE:
+                cluster_colours = [np.array((180, 180, 180), dtype=np.float64) / 255] * len(cluster)
+            else:
+                cluster_colours = [get_colour(index) / 255] * len(cluster)
+
+            colours.extend(cluster_colours)
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(np.array(clustered_points))
+        pcd.colors = o3d.utility.Vector3dVector(np.array(colours))
+
+        height, width = (480, 640)
+        kernel = np.ones((2, 2), np.uint8)
+        img = np.zeros((height, width, 3), dtype=np.uint8)
+        contours = []
+        for index, cluster in enumerate(clusters):
+            if len(cluster) > MIN_CLUSTER_SIZE:
+                # create an inverse image, so that our contour is on the inside of the object
+                cluster_img = np.zeros((height, width), dtype=np.uint8)
+                for x, y, z in cluster:
+                    cluster_colour = np.asarray(get_colour(index), dtype=np.uint8)
+                    # print(x, y, z, cluster_colour)
+                    img[int(x), int(y)] = cluster_colour
+                    cluster_img[int(x), int(y)] = 255
+
+                # apply erosion so that the contour is inside the object
+                # cluster_img = cv2.morphologyEx(cluster_img, cv2.MORPH_CLOSE, kernel)
+                cluster_img = cv2.erode(cluster_img, kernel, iterations=1)
+                # cluster_img = cv2.dilate(cluster_img, kernel, iterations=1)
+                # cluster_img = cv2.morphologyEx(cluster_img, cv2.MORPH_OPEN, kernel)
+
+                # we sample evenly along the contour, and this is better when using CHAIN_APPROX_NONE instead of
+                # CHAIN_APPROX_SIMPLE
+                cluster_contours, _ = cv2.findContours(cluster_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+                cluster_contours = list(cluster_contours)
+                cluster_contours.sort(key=lambda x: len(x), reverse=True)
+                contour = cluster_contours[0]
+                contours.append(contour)
+
+                # cluster_img = cv2.cvtColor(cluster_img, cv2.COLOR_GRAY2BGR)
+                # cv2.drawContours(cluster_img, [contour], -1, (0, 255, 0), 2)
+                # cv2.namedWindow('cluster_img', cv2.WINDOW_NORMAL)
+                # cv2.imshow('cluster_img', cluster_img)
+                # cv2.waitKey(0)
+
+        good_points = []
+        medoids = []
+        for cnt1, cnt2 in combinations(contours, 2):
+            # do these contours share a close edge?
+            approx_sample_len = 40
+            precise_sample_search_widening = 50
+
+            # contours should be at least the sample length, otherwise they are tiny contours and can be ignored
+            if len(cnt1) > approx_sample_len and len(cnt2) > approx_sample_len:
+
+                area1 = cv2.contourArea(cnt1)
+                area2 = cv2.contourArea(cnt2)
+                # ! we can take this outside of the combinations for loop
+                # approximately evenly sampled points along the contour
+                cnt1_sample_idx = np.arange(len(cnt1), step=int(len(cnt1)/approx_sample_len))
+                cnt2_sample_idx = np.arange(len(cnt2), step=int(len(cnt2)/approx_sample_len))
+                # cnt1_sample = cnt1[cnt1_sample_idx].squeeze()
+                # cnt2_sample = cnt2[cnt2_sample_idx].squeeze()
+
+                def get_close_points_from_2_clusters(cnt1, cnt2, cnt1_sample_idx, cnt2_sample_idx):
+                    points1 = []
+                    points1_idx = []
+                    points2 = []
+                    points2_idx = []
+                    for point_idx1, point_idx2 in product(cnt1_sample_idx, cnt2_sample_idx):
+                        point1 = cnt1[point_idx1].squeeze()
+                        point2 = cnt2[point_idx2].squeeze()
+                        dist = np.linalg.norm(point1-point2)
+                        if dist < MAX_CLUSTER_DISTANCE:
+                            points1.append(point1)
+                            points1_idx.append(point_idx1)
+                            points2.append(point2)
+                            points2_idx.append(point_idx2)
+                    return points1, points1_idx, points2, points2_idx
+
+                points1, points1_idx, points2, points2_idx = get_close_points_from_2_clusters(cnt1, cnt2,
+                                                                                              cnt1_sample_idx,
+                                                                                              cnt2_sample_idx)
+
+                def precise_idx_range(cnt, points_idx):
+                    step_size = 10
+                    epsilon = 5
+                    new_points_idx = []
+                    # around each point, create an epsilon-ball, and add those points to the list
+                    for point_idx in points_idx:
+                        min_idx = point_idx - epsilon * step_size
+                        max_idx = point_idx + epsilon * step_size
+                        if min_idx < 0:
+                            min_idx % len(cnt)
+                            new_points_idx.extend(np.arange(min_idx % len(cnt), stop=len(cnt), step=step_size))
+
+                        if max_idx >= len(cnt):
+                            max_idx % len(cnt)
+                            new_points_idx.extend(np.arange(0, stop=max_idx % len(cnt), step=step_size))
+
+                        new_points_idx.extend(np.arange(np.clip(min_idx, 0, len(cnt)),
+                                                        stop=np.clip(max_idx, 0, len(cnt)),
+                                                        step=step_size))
+
+                    # remove duplicate points from the list
+                    new_points_idx = list(set(new_points_idx))
+
+                    return new_points_idx
+
+                # now get more precise points around this part of the contour
+                if len(points1) > 0 and len(points2) > 0:
+                    cnt1_sample_idx_precise = precise_idx_range(cnt1, points1_idx)
+                    cnt2_sample_idx_precise = precise_idx_range(cnt2, points2_idx)
+
+                    points1_p, points1_idx_p, points2_p, points2_idx_p = get_close_points_from_2_clusters(cnt1, cnt2,
+                                                                                                  cnt1_sample_idx_precise,
+                                                                                                  cnt2_sample_idx_precise)
+
+                    points1.extend(points1_p)
+                    points1_idx.extend(points1_idx_p)
+                    points2.extend(points2_p)
+                    points2_idx.extend(points2_idx_p)
+
+                    zip(points1, points1_idx)
+
+                    # ! is points1_idx sorted? It should be
+                    def get_middle_point(points_idx):
+
+                        min_idx = np.amin(points_idx)
+                        max_idx = np.amax(points_idx)
+
+                        # it could be that the contour starts somewhere in the middle of the segment
+                        # eg. contour length 700. Segment exists at 670, 680, 0, 10, 20
+                        if (max_idx + 50) % len(cnt1) < min_idx:
+                            print("there exists a jump")
+
+                            prev_point_idx = points_idx[0]
+                            for point_idx in points_idx:
+                                if point_idx > prev_point_idx + 50:
+                                    max_idx = prev_point_idx
+                                    print("iterating forwards, jump at", prev_point_idx, point_idx)
+                                    break
+
+                                prev_point_idx = point_idx
+
+                            prev_point_idx = points_idx[-1]
+                            for point_idx in np.flip(points_idx):
+                                if point_idx < prev_point_idx - 50:
+                                    print("iterating back, jump at", prev_point_idx, point_idx)
+                                    min_idx = prev_point_idx
+                                    break
+
+                                prev_point_idx = point_idx
+
+                        print("min idx:", min_idx)
+                        print("max idx:", max_idx)
+                        middle_idx_idx = (points_idx.index(min_idx) + int(len(points_idx)/2)) % len(points_idx)
+                        middle_idx = points_idx[middle_idx_idx]
+                        return middle_idx
+
+                    middle1 = cnt1[get_middle_point(points1_idx)].squeeze()
+                    middle2 = cnt2[get_middle_point(points2_idx)].squeeze()
+                    print("middle1", middle1)
+                    print("middle2", middle2)
+                    medoids.extend([middle1, middle2])
+
+                    # compute avg height of points1 and points2
+                    # this will tell us which side is the lower side of the gap
+                    heights1 = []
+                    heights2 = []
+                    for point in points1:
+                        height = depth_masked[point[1], point[0]]
+                        if height != 0.0:
+                            heights1.append(height)
+                    for point in points2:
+                        height = depth_masked[point[1], point[0]]
+                        if height != 0.0:
+                            heights2.append(height)
+
+                    mean1 = np.mean(heights1)
+                    mean2 = np.mean(heights2)
+                    diff = mean1 - mean2
+
+                    print("\n")
+
+                    if diff < 0:
+                        print("lever from cluster 2")
+                    else:
+                        print("lever from cluster 1")
+
+                    print("area1", area1, "area2", area2)
+                    print("mean diff", diff)
+                    print("mean1", mean1, "mean2", mean2)
+
+                # for showing all the points
+                good_points.extend(points1)
+                good_points.extend(points2)
+
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        # img_grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # contours, hierarchy = cv2.findContours(img_grey, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # print(len(contours))
+
+        cv2.drawContours(img, contours, -1, (0, 255, 0), 2)
+
+        for point in good_points:
+            cv2.circle(img, tuple(point), 3, (0, 0, 255), -1)
+
+        for point in medoids:
+            cv2.circle(img, tuple(point), 6, (255, 0, 0), -1)
+
+        cv2.namedWindow('img', cv2.WINDOW_NORMAL)
+        cv2.imshow('img', img)
+
+        return pcd
+
+    # def depth_to_image(depth_list):
+    #     height, width = (480, 640)
+    #     img = np.zeros((height, width))
+    #     for i in np.arange(height):
+    #         for j in np.arange(width):
+    #             img[i, j] = depth_list[i * j + j]
+    #
+    #     return img
 
 
     # =============== GAP DETECTION SERVICE ===============
