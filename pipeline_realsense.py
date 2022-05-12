@@ -9,7 +9,7 @@ from scipy import stats
 import open3d as o3d
 
 from camera_realsense_feed import RealsenseCamera
-from gap_detection.gap_detector import GapDetector
+from gap_detection.better_gap_detector import BetterGapDetector
 from object_detection import ObjectDetection
 from helpers import Detection, Action
 
@@ -164,7 +164,7 @@ class RealsensePipeline:
 
 
             # call the detector for gaps with depth array
-            gap_detector = GapDetector()
+            gap_detector = BetterGapDetector()
 
             ############### bbox
             # thresholded_depth_list = gap_detector.threshold(depth_list)
