@@ -43,6 +43,10 @@ class Detection:
     tracking_score: Optional[float] = None
     tracking_box: Optional[np.ndarray] = None
 
+# @dataclass
+# class LeverAction:
+#     from_px = None
+#     to_px = None
 
 class EnhancedJSONEncoder(JSONEncoder):
     def iterencode(self, o, _one_shot=False):
@@ -90,6 +94,7 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+
 def get_images(input_dir):
     if os.path.isdir(input_dir):
         images = [img for img in os.listdir(input_dir) if img.endswith(".png")]
@@ -100,6 +105,7 @@ def get_images(input_dir):
     else:
         images = None
     return images
+
 
 def get_images_realsense(input_dir):
     images_paths = None
@@ -113,12 +119,12 @@ def get_images_realsense(input_dir):
         else: 
             print("Error: number of images in directory not a multiple of 3!")
         
-        for colour_img, depth_img, depth_colormap in images_paths:
-            print("\nimg path:", colour_img)
-            colour_img = cv2.imread(colour_img)
-            depth_img = np.load(depth_img)
-            depth_colormap = cv2.imread(depth_colormap)
-            yield [colour_img, depth_img, depth_colormap]
+        for colour_img_p, depth_img_p, depth_colormap_p in images_paths:
+            print("\nimg path:", colour_img_p)
+            colour_img = cv2.imread(colour_img_p)
+            depth_img = np.load(depth_img_p)
+            depth_colormap = cv2.imread(depth_colormap_p)
+            yield [colour_img, depth_img, depth_colormap, colour_img_p]
 
 
 def scale_img(img, scale_percent=50):
@@ -151,10 +157,21 @@ COLOURS = ((244,  67,  54),
           (158, 158, 158),
           ( 96, 125, 139))
 
+COLOURS_BLUES = ((227, 5, 34),
+                 (209, 59, 78),
+                 (207, 107, 120),
+                 (194, 138, 145))
+
 
 def get_colour(j):
     colour_idx = (j * 5) % len(COLOURS)
     colour = np.array(COLOURS[colour_idx], dtype=np.float64)
+    return colour
+
+
+def get_colour_blue(j):
+    colour_idx = j % len(COLOURS_BLUES)
+    colour = np.array(COLOURS_BLUES[colour_idx], dtype=int)
     return colour
 
 

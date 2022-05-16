@@ -19,15 +19,22 @@ import random
 
 # Own Modules
 import gap_detection.helpers2 as helpers
-from helpers import get_colour
+from helpers import get_colour, get_colour_blue
 
 
 class BetterGapDetector:
     def __init__(self):
 
-        self.MIN_LEVERABLE_AREA = 80  # 800 is better, 80 is for debugging
-        self.MIN_CLUSTER_SIZE = 150  # number of points in cluster
-        self.MAX_CLUSTER_DISTANCE = 20  # in pixels
+        # threshold the cluster sizes. 800 is better, 80 is for debugging
+        self.MIN_LEVERABLE_AREA = 80
+        # if the lever_line is too small then levering won't be possible
+        self.MIN_LEVERABLE_LENGTH = 20
+        # number of points in cluster
+        self.MIN_CLUSTER_SIZE = 150
+        # distance between clusters, such that there is a possibility to lever between them
+        self.MAX_CLUSTER_DISTANCE = 20
+        # sample size of points on cnt between clusters to find part of cnt that shares edge with another cluster
+        self.APPROX_SAMPLE_LENGTH = 40
 
         self.depth_axis = 2
         self.clustering_mode = 3  # 0 to 3
@@ -127,6 +134,28 @@ class BetterGapDetector:
         return zip(*idxs_and_points)
 
     @staticmethod
+    def get_regression_line(points):
+        # straight line y=f(x)
+        def f(x, m, b):
+            return m * x + b
+
+        print("points x y", np.array(points)[:, 0].shape, np.array(points)[:, 1].shape,
+              np.array(points).shape)
+
+        p_opt, p_cov = curve_fit(f, np.array(points)[:, 0], np.array(points)[:, 1])
+        m = p_opt[0]  # slope
+        b = p_opt[1]  # intercept
+
+        # two points on the line are
+        p1 = [0, b]
+        if np.abs(m) > 0.1:
+            p2 = [-b / m, 0]
+        else:
+            p2 = [1, m + b]
+
+        return p1, p2
+
+    @staticmethod
     def closest_point_on_line(p1, p2, p3):
         x1, y1 = p1
         x2, y2 = p2
@@ -135,6 +164,11 @@ class BetterGapDetector:
         det = dx * dx + dy * dy
         a = (dy * (y3 - y1) + dx * (x3 - x1)) / det
         return x1 + a * dx, y1 + a * dy
+
+    @staticmethod
+    def get_closest_point_from_list_to_point(points, p1):
+        dists = [np.linalg.norm(point - p1) for point in points]
+        return points[np.argmin(dists)]
 
     @staticmethod
     def get_midpoint(p1, p2):
@@ -152,9 +186,16 @@ class BetterGapDetector:
         return c, d
 
     @staticmethod
+    def cnt_center(cnt):
+        m = cv2.moments(cnt)
+        x = int(m["m10"] / m["m00"])
+        y = int(m["m01"] / m["m00"])
+        return [x, y]
+
+    @staticmethod
     def get_pair_furthest_points(points):
-        D = squareform(pdist(points, 'euclidean'))
-        N, [I_row, I_col] = np.nanmax(D), np.unravel_index(np.argmax(D), D.shape)
+        d = squareform(pdist(points, 'euclidean'))
+        n, [I_row, I_col] = np.nanmax(d), np.unravel_index(np.argmax(d), d.shape)
 
         print("I_row", I_row, points[I_row])
         print("I_col", I_col, points[I_col])
@@ -170,103 +211,11 @@ class BetterGapDetector:
 
         return np.mean(heights)
 
-    def get_middle_point(self, points_idx, points, cnt):
+    def lever_detector(self, points, depth_masked, obj_center):
 
-        ##############
-        # unreliable min, max point finder
-        ##############
-        # min_idx = np.amin(points_idx)
-        # max_idx = np.amax(points_idx)
-        #
-        # # it could be that the contour starts somewhere in the middle of the segment
-        # # eg. contour length 700. Segment exists at 670, 680, 0, 10, 20
-        # if (max_idx + 50) % len(cnt) < min_idx:
-        #     print("there exists a jump")
-        #
-        #     prev_point_idx = points_idx[0]
-        #     for point_idx in points_idx:
-        #         if point_idx > prev_point_idx + 50:
-        #             max_idx = prev_point_idx
-        #             print("iterating forwards, jump at", prev_point_idx, point_idx)
-        #             break
-        #
-        #         prev_point_idx = point_idx
-        #
-        #     prev_point_idx = points_idx[-1]
-        #     for point_idx in np.flip(points_idx):
-        #         if point_idx < prev_point_idx - 50:
-        #             print("iterating back, jump at", prev_point_idx, point_idx)
-        #             min_idx = prev_point_idx
-        #             break
-        #
-        #         prev_point_idx = point_idx
-        #
-        # print("min idx:", min_idx)
-        # print("max idx:", max_idx)
-        # print("len(cnt)", len(cnt))
-        # middle_idx_idx = (points_idx.index(min_idx) + int(len(points_idx) / 2)) % len(points_idx)
-        # middle_idx = points_idx[middle_idx_idx]
-        ################
+        lever_actions = []
 
-        min_point, max_point = self.get_pair_furthest_points(points)
-        print("min_point", min_point)
-        print("max_point", max_point)
-
-        ##################
-        # line of best fit
-        ##################
-        # def f(x, A, B):  # this is your 'straight line' y=f(x)
-        #     return A * x + B
-        #
-        # print("points x y", np.array(points)[:, 0].shape, np.array(points)[:, 1].shape,
-        #       np.array(points).shape)
-        #
-        # popt, pcov = curve_fit(f, np.array(points)[:, 0],
-        #                        np.array(points)[:, 1])  # your data x, y to fit
-        # m = popt[0]  # slope
-        # b = popt[1]  # intercept
-        #
-        # # two points on the line are
-        # p1 = [0, b]
-        # if np.abs(m) > 0.1:
-        #     p2 = [-b / m, 0]
-        # else:
-        #     p2 = [1, m + b]
-        #########################
-
-        # our line segment is then:
-        # print("cnt[min_idx].squeeze()", cnt[min_idx].squeeze())
-        # print("cnt[max_idx].squeeze()", cnt[max_idx].squeeze())
-        # segment_p1 = np.array(closest_point_on_line(p1, p2, cnt[min_idx].squeeze())).astype(int)
-        # segment_p2 = np.array(closest_point_on_line(p1, p2, cnt[max_idx].squeeze())).astype(int)
-        # ! the above isn't working really well. I think the points need to be distributed uniformly for it to work
-
-        # ! this is kind of dumb at the moment
-        segment_p1 = np.array(self.closest_point_on_line(min_point, max_point, min_point)).astype(int)
-        segment_p2 = np.array(self.closest_point_on_line(min_point, max_point, max_point)).astype(int)
-
-        print("segment_p1", segment_p1)
-        print("segment_p2", segment_p2)
-
-        midpoint = self.get_midpoint(segment_p1, segment_p2)
-
-        # ! in which direction is the inside of the cluster?
-        p3, p4 = self.get_perp(segment_p1, midpoint)
-        p3, p4 = np.array(p3).astype(int), np.array(p4).astype(int)
-        print("p3", p3, "p4", p4)
-
-        return segment_p1, segment_p2, p3, p4, min_point, max_point
-
-    def lever_detector(self, points, depth_masked):
-        # depth_axis_pts = points[:, self.depth_axis]
-        # print("depth_axis_pts", depth_axis_pts.shape)
-        # points = points[depth_axis_pts != 0]
-        # print("new points", points.shape)
-        # points = self.threshold(points) #! DISABLED
-        print("new2 points", points.shape)
         clusters, num_of_points = self.clustering(points)
-
-        print("number of clusters", len(clusters))
 
         clustered_points = []
         colours = []
@@ -300,10 +249,7 @@ class BetterGapDetector:
                     cluster_img[int(x), int(y)] = 255
 
                 # apply erosion so that the contour is inside the object
-                # cluster_img = cv2.morphologyEx(cluster_img, cv2.MORPH_CLOSE, kernel)
                 cluster_img = cv2.erode(cluster_img, kernel, iterations=1)
-                # cluster_img = cv2.dilate(cluster_img, kernel, iterations=1)
-                # cluster_img = cv2.morphologyEx(cluster_img, cv2.MORPH_OPEN, kernel)
 
                 # we sample evenly along the contour, and this is better when using CHAIN_APPROX_NONE instead of
                 # CHAIN_APPROX_SIMPLE
@@ -313,50 +259,35 @@ class BetterGapDetector:
                 contour = cluster_contours[0]
                 contours.append(contour)
 
-                # cluster_img = cv2.cvtColor(cluster_img, cv2.COLOR_GRAY2BGR)
-                # cv2.drawContours(cluster_img, [contour], -1, (0, 255, 0), 2)
-                # cv2.namedWindow('cluster_img', cv2.WINDOW_NORMAL)
-                # cv2.imshow('cluster_img', cluster_img)
-                # cv2.waitKey(0)
-
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
         good_points = []
         lines = []
         points_min_max = []
-        medoids = []
         for cnt1, cnt2 in combinations(contours, 2):
-            # do these contours share a close edge?
-            approx_sample_len = 40
-            precise_sample_search_widening = 50
-
             # contours should be at least the sample length, otherwise they are tiny contours and can be ignored
-            if len(cnt1) > approx_sample_len and len(cnt2) > approx_sample_len:
+            if len(cnt1) > self.APPROX_SAMPLE_LENGTH and len(cnt2) > self.APPROX_SAMPLE_LENGTH:
 
                 area1 = cv2.contourArea(cnt1)
                 area2 = cv2.contourArea(cnt2)
 
                 if area1 > self.MIN_LEVERABLE_AREA or area2 > self.MIN_LEVERABLE_AREA:
 
-                    # ! we can take this outside of the combinations for loop
                     # approximately evenly sampled points along the contour
-                    cnt1_sample_idx = np.arange(len(cnt1), step=int(len(cnt1) / approx_sample_len))
-                    cnt2_sample_idx = np.arange(len(cnt2), step=int(len(cnt2) / approx_sample_len))
-                    # cnt1_sample = cnt1[cnt1_sample_idx].squeeze()
-                    # cnt2_sample = cnt2[cnt2_sample_idx].squeeze()
+                    cnt1_sample_idx = np.arange(len(cnt1), step=int(len(cnt1) / self.APPROX_SAMPLE_LENGTH))
+                    cnt2_sample_idx = np.arange(len(cnt2), step=int(len(cnt2) / self.APPROX_SAMPLE_LENGTH))
 
                     points1, points1_idx, points2, points2_idx = self.get_close_points_from_2_clusters(cnt1, cnt2,
-                                                                                                  cnt1_sample_idx,
-                                                                                                  cnt2_sample_idx)
+                                                                                                       cnt1_sample_idx,
+                                                                                                       cnt2_sample_idx)
 
                     # now get more precise points around this part of the contour
                     if len(points1) > 0 and len(points2) > 0:
                         cnt1_sample_idx_precise = self.precise_idx_range(cnt1, points1_idx)
                         cnt2_sample_idx_precise = self.precise_idx_range(cnt2, points2_idx)
 
-                        points1_p, points1_idx_p, points2_p, points2_idx_p = self.get_close_points_from_2_clusters(cnt1, cnt2,
-                                                                                                              cnt1_sample_idx_precise,
-                                                                                                              cnt2_sample_idx_precise)
+                        points1_p, points1_idx_p, points2_p, points2_idx_p = self.get_close_points_from_2_clusters(cnt1,
+                                                                cnt2, cnt1_sample_idx_precise, cnt2_sample_idx_precise)
 
                         points1.extend(points1_p)
                         points1_idx.extend(points1_idx_p)
@@ -370,49 +301,75 @@ class BetterGapDetector:
 
                         # compute avg height of points1 and points2
                         # this will tell us which side is the lower side of the gap
-
                         mean1 = self.mean_depth(depth_masked, points1)
                         mean2 = self.mean_depth(depth_masked, points2)
                         diff = mean1 - mean2
 
-                        print("\n")
-                        print("area1", area1, "area2", area2)
-                        print("mean diff", diff)
-                        print("mean1", mean1, "mean2", mean2)
-
                         if diff < 0 and area2 > self.MIN_LEVERABLE_AREA:
-                            print("lever from cluster 2")
                             points, points_idx, cnt = points2, points2_idx, cnt2
                         elif diff > 0 and area1 > self.MIN_LEVERABLE_AREA:
-                            print("lever from cluster 1")
                             points, points_idx, cnt = points1, points1_idx, cnt1
                         else:
                             break
 
-                        segment_p1, segment_p2, p3, p4, min_point, max_point = self.get_middle_point(points_idx, points, cnt)
-                        # middle2_idx = self.get_middle_point(points2_idx, points2, cnt2)
+                        min_point, max_point = self.get_pair_furthest_points(points)
 
-                        # middle = cnt1[middle_idx].squeeze()
-                        # print("middle", middle)
-                        # medoids.append(middle)
-                        lines.append([segment_p1, segment_p2])
-                        lines.append([p3, p4])
+                        # line of best fit
+                        # p1, p2 = self.get_regression_line(points)
+                        # ! the above isn't working really well.
+                        # ! I think the points need to be distributed uniformly for it to work
+                        # ! If we use the regression line then, use:
+                        # segment_p1 = np.array(self.closest_point_on_line(p1, p2, min_point)).astype(int)
+                        # segment_p2 = np.array(self.closest_point_on_line(p1, p2, max_point)).astype(int)
+                        segment_p1 = min_point
+                        segment_p2 = max_point
 
-                        # points_min_max.append([tuple(cnt[min_idx].squeeze()), tuple(cnt[max_idx].squeeze())])
-                        points_min_max.append([tuple(np.array(min_point).astype(int)), tuple(np.array(max_point).astype(int))])
+                        midpoint = self.get_midpoint(segment_p1, segment_p2)
 
-                        # middle2 = cnt2[middle2_idx].squeeze()
-                        # print("middle1", middle1)
-                        # print("middle2", middle2)
-                        # medoids.extend([middle1, middle2])
+                        # if np.abs(segment_p1) > 10000 or np.abs(segment_p2) > 10000 or np.abs(midpoint) > 10000:
+                        print("segment_p1", segment_p1)
+                        print("segment_p2", segment_p2)
+                        print("midpoint", midpoint)
+                            # break
+
+                        # now get the closest point in points on the cnt to the midpoint
+                        midpoint_on_cnt = self.get_closest_point_from_list_to_point(points, midpoint)
+                        midpoint_on_cnt = np.array(midpoint_on_cnt).astype(int)
+                        cluster_center = self.cnt_center(cnt)
+                        lever_line = [midpoint_on_cnt, cluster_center]
+                        # if the lever_line is too small then levering won't be possible
+                        if np.linalg.norm(midpoint_on_cnt - cluster_center) >= self.MIN_LEVERABLE_LENGTH:
+
+                            lever_actions.append([np.array([*midpoint_on_cnt,
+                                                  depth_masked[midpoint_on_cnt[1], midpoint_on_cnt[0]]]),
+                                                  np.array([*cluster_center,
+                                                  depth_masked[cluster_center[1], cluster_center[0]]])
+                                                  ])
+
+                            # p3, p4 = self.get_perp(segment_p1, midpoint)
+                            # p3, p4 = np.array(p3).astype(int), np.array(p4).astype(int)
+                            # print("p3", p3, "p4", p4)
+                            #
+                            # # this function requires float32 otherwise it breaks
+                            # dist_from_contour = cv2.pointPolygonTest(cnt, np.array(p3).astype(np.float32), True)
+                            #
+                            # if dist_from_contour >= 0:
+                            #     perp_line = [np.array(midpoint).astype(int), p3]
+                            # else:
+                            #     perp_line = [np.array(midpoint).astype(int), p4]
+
+                            lines.append([segment_p1, segment_p2])
+                            # lines.append(lever_line)
+
+                            points_min_max.append([tuple(np.array(min_point).astype(int)),
+                                                   tuple(np.array(max_point).astype(int))])
 
                     # for showing all the points
                     good_points.extend(points1)
                     good_points.extend(points2)
 
-        # img_grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # contours, hierarchy = cv2.findContours(img_grey, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        # print(len(contours))
+        # sort the lever actions based on which one is closest to the center of the device
+        lever_actions.sort(key=lambda lever_action: np.linalg.norm(lever_action[0][:2] - obj_center), reverse=False)
 
         cv2.drawContours(img, contours, -1, (0, 255, 0), 1)
 
@@ -423,28 +380,20 @@ class BetterGapDetector:
             cv2.circle(img, p_min, 6, (50, 141, 168), -1)
             cv2.circle(img, p_max, 6, (190, 150, 37), -1)
 
-        for p1, p2 in lines:
-            cv2.line(img, p1, p2, (255, 0, 0), 3)
+        for idx, [p1, p2] in enumerate(lines):
+            # colour = tuple(np.asarray(get_colour(idx)).astype(int))
+            # colour = tuple([int(x) for x in get_colour(idx)])
+            colour = [162, 162, 162]
+            print("colour", colour, p1, p2)
+            cv2.line(img, p1, p2, colour, 3)
 
+        for idx, lever_action in enumerate(lever_actions):
+            leverpoint, midpoint = lever_action
+            colour = tuple([int(x) for x in get_colour_blue(idx)])
+            cv2.line(img, [int(x) for x in leverpoint[:2]],
+                          [int(x) for x in midpoint[:2]], colour, 3)
 
-
-        # for point in medoids:
-        #     cv2.circle(img, tuple(point), 6, (255, 0, 0), -1)
-
-        cv2.namedWindow('img', cv2.WINDOW_NORMAL)
-        cv2.imshow('img', img)
-
-        return pcd
-
-    # def depth_to_image(depth_list):
-    #     height, width = (480, 640)
-    #     img = np.zeros((height, width))
-    #     for i in np.arange(height):
-    #         for j in np.arange(width):
-    #             img[i, j] = depth_list[i * j + j]
-    #
-    #     return img
-
+        return pcd, lever_actions, img
 
     # =============== CLUSTER ALGORITHM WRAPPERS ===============
     def kmeans(self, data):

@@ -44,7 +44,7 @@ if __name__ == '__main__':
     if ros_available:
         rospy.init_node(args.node_name)
         if args.camera_type == "camera":
-            camera_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/image_color")
+            camera_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/colour")
         elif args.camera_type == "realsense":
             colour_realsense_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/colour")
             depth_realsense_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/depth")

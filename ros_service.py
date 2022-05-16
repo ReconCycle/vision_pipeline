@@ -11,7 +11,7 @@ import json
 
 
 class ROSService:
-    def __init__(self, pipeline, service_name="get_detection", camera_topic="/camera/image_color"):
+    def __init__(self, pipeline, service_name="get_detection", camera_topic="/camera/colour"):
         self.pipeline = pipeline
 
         rospy.Subscriber(camera_topic, Image, self.camera_img_callback)
@@ -19,7 +19,6 @@ class ROSService:
 
         s = rospy.Service(service_name, Detection, self.service_callback)
         # rospy.spin()
-        
 
     def service_callback(self, req):
         print("service callback")
@@ -33,7 +32,6 @@ class ROSService:
         else:
             print("No image from camera!")
             return DetectionResponse(False, None, None)
-
 
     def camera_img_callback(self, camera_img):
         print("image from camera")

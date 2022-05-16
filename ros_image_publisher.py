@@ -20,7 +20,7 @@ if __name__ == '__main__':
     """
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="/camera/image_color")
+    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="/camera/colour")
     parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="camera")
     parser.add_argument("--img_folder", help="Load images from folder..", nargs='?', type=str, default="./folder")
     parser.add_argument("--undistort", help="Use the calibration file to undistort the image", nargs='?', type=helpers.str2bool, default=False)

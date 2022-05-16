@@ -28,7 +28,7 @@ def imfill(mask):
     return im_floodfill_inv
 
 
-def mask_from_contours(contour):
+def mask_from_contour(contour):
     mask = np.zeros((480, 640, 3), np.uint8)
     mask = cv2.drawContours(mask, [contour], -1, (255,255,255), -1)
     return cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
@@ -47,12 +47,6 @@ def image_to_depth(mask):
     depth_list = depth_list[depth_axis_pts != 0]
     
     return depth_list
-
-
-
-
-
-
 
 
 def visualise_3d(geometries):
@@ -125,15 +119,17 @@ class RealsensePipeline:
         self.object_detection = ObjectDetection(self.config.obj_detection)
         self.labels = self.object_detection.labels
     
-    def run(self, colour_img, depth_img, depth_colormap=None):
+    def process_img(self, colour_img, depth_img, depth_colormap=None, debug=False):
         print("running pipeline realsense frame...")
 
         # 2. apply yolact to image and get hca_back
         labelled_img, detections = self.object_detection.get_prediction(colour_img, extra_text=None)
 
-
         # 3. apply mask to depth image and convert to pointcloud
+        lever_actions = None
         mask = None
+        cluster_img = None
+        pcd = None
         # get the first detection that is hca_back
         detection_hca_back = None
         for detection in detections:
@@ -144,13 +140,14 @@ class RealsensePipeline:
         if detection_hca_back is not None:
             contour = detection_hca_back.mask_contour
             hull = cv2.convexHull(contour, False)
-            mask = mask_from_contours(hull)
+            mask = mask_from_contour(hull)
+            hull_center = BetterGapDetector.cnt_center(hull)
 
             print("mask", mask.shape)
 
             print("depth_img", depth_img.shape, np.amin(depth_img), np.max(depth_img), stats.mode(depth_img, axis=None).mode)
             depth_img = depth_img * 3  # ! IMPORTANT MULTIPLIER
-            depth_masked = cv2.bitwise_and(depth_img, depth_img, mask = mask)
+            depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=mask)
 
             depth_list = image_to_depth(depth_masked)
             # depth_list = ((depth_list - np.amin(depth_list))/np.ptp(depth_list))  # ! required for gaps
@@ -161,10 +158,6 @@ class RealsensePipeline:
             # pcd.points = o3d.utility.Vector3dVector((depth_list))
             # o3d.visualization.draw_geometries([pcd])
             ###############
-
-
-            # call the detector for gaps with depth array
-            gap_detector = BetterGapDetector()
 
             ############### bbox
             # thresholded_depth_list = gap_detector.threshold(depth_list)
@@ -178,28 +171,38 @@ class RealsensePipeline:
             # # visualise
             # o3d.visualization.draw_geometries(b)
             #################
+            gap_detector = BetterGapDetector()
+            pcd, lever_actions, cluster_img = gap_detector.lever_detector(depth_list, depth_masked, hull_center)
 
-            ##############
-            pcd = gap_detector.lever_detector(depth_list, depth_masked)
-            o3d.visualization.draw_geometries([pcd])
-            #############
+            if debug:
+                self.show_img(labelled_img, mask, cluster_img, depth_colormap, pcd)
 
-            # cv2.imshow("screenshot", visualise_3d(b))
+        json_lever_actions = json.dumps(lever_actions, cls=EnhancedJSONEncoder)
 
+        return cluster_img, lever_actions, json_lever_actions
+
+    @staticmethod
+    def show_img(labelled_img, mask, cluster_img, depth_colormap, pcd):
         # show images
         cv_show = [labelled_img]
 
         if depth_colormap is not None:
-            cv_show.append(depth_colormap)        
+            cv_show.append(depth_colormap)
         if mask is not None:
             cv_show.append(cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR))
+        if cluster_img is not None:
+            cv_show.append(cluster_img)
 
         images = np.hstack(tuple(cv_show))
 
         cv2.namedWindow('images', cv2.WINDOW_NORMAL)
         cv2.imshow('images', images)
 
-        cv2.waitKey(0) # was 1
+        # if pcd is not None:
+        #     o3d.visualization.draw_geometries([pcd])
+
+        cv2.waitKey(0)  # was 1
+
 
 if __name__ == '__main__':
 
@@ -213,7 +216,7 @@ if __name__ == '__main__':
             try:
                 # 1. get image and depth from camera
                 colour_img, depth_img, depth_colormap = realsense_camera.get_frame()
-                pipeline.run(colour_img, depth_img, depth_colormap)
+                pipeline.process_img(colour_img, depth_img, depth_colormap, debug=True)
             except KeyboardInterrupt:
                 break
     
@@ -224,7 +227,6 @@ if __name__ == '__main__':
         # save_path = "./save_images" # set to None to not save
         # if save_path is not None and not os.path.exists(save_path):
         #     os.makedirs(save_path)
-        for colour_img, depth_img, depth_colormap in get_images_realsense(img_path): 
-            # 1. get image and depth from camera
-            # colour_img, depth_img, depth_colormap = realsense_camera.get_frame()
-            pipeline.run(colour_img, depth_img, depth_colormap)
+        for colour_img, depth_img, depth_colormap, colour_img_p in get_images_realsense(img_path):
+            if "005" in colour_img_p:  # ! DEBUG
+                pipeline.process_img(colour_img, depth_img, depth_colormap, debug=True)
