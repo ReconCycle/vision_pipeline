@@ -10,7 +10,7 @@ import io
 from itertools import permutations
 from shapely.geometry import Polygon
 
-from graph_tool.all import *
+# from graph_tool.all import *
 
 import matplotlib.pylab as plt
 import networkx as nx

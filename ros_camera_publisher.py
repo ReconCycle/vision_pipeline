@@ -7,6 +7,8 @@ ros_available = True
 try:
     import rospy
     from ros_publisher import ROSPublisher
+    from ros_vision_pipeline.msg import ColourDepth
+    from cv_bridge import CvBridge
 except ModuleNotFoundError:
     ros_available = False
     pass
@@ -19,19 +21,19 @@ import helpers
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--camera_type", help="Which camera: camera/realsense", nargs='?', type=str, default="camera")
-    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="camera")
-    parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="camera")
+    parser.add_argument("--camera_type", help="Which camera: basler/realsense", nargs='?', type=str, default="basler")
+    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="basler")
+    parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="basler")
     parser.add_argument("--save", help="Save images to folder..", nargs='?', type=helpers.str2bool, default=False)
     parser.add_argument("--undistort", help="Use the calibration file to undistort the image", nargs='?', type=helpers.str2bool, default=True)
     parser.add_argument("--fps", help="Set fps of camera", nargs='?', type=float, default=None)
     args = parser.parse_args()
 
     # set the camera_topic to realsense as well, if not set manually
-    if args.camera_type == "realsense" and args.camera_topic == "camera":
+    if args.camera_type == "realsense" and args.camera_topic == "basler":
         args.camera_topic = "realsense"
 
-    if args.camera_type == "realsense" and args.node_name == "camera":
+    if args.camera_type == "realsense" and args.node_name == "basler":
         args.node_name = "realsense"
 
     print("\ncamera_type:", args.camera_type)
@@ -41,14 +43,19 @@ if __name__ == '__main__':
     print("undistort:", args.undistort)
     print("fps:", args.fps, "\n")
 
+
     if ros_available:
         rospy.init_node(args.node_name)
+        br = CvBridge()
         if args.camera_type == "camera":
             camera_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/colour")
         elif args.camera_type == "realsense":
+            colour_depth_pub = rospy.Publisher("/" + args.camera_topic + "/colour_depth", ColourDepth, queue_size=20)
             colour_realsense_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/colour")
             depth_realsense_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/depth")
             depthmap_realsense_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/depthmap")
+    else:
+        print("ROS NOT AVAILABLE.")
 
     save_folder_name = "./camera_images"
     save_folder = save_folder_name
@@ -63,7 +70,7 @@ if __name__ == '__main__':
         os.makedirs(save_folder)
 
     img_count = 1
-    if args.camera_type == "camera":
+    if args.camera_type == "basler":
         def img_from_camera(img):
             global img_count
             print("image from camera received")
@@ -94,6 +101,9 @@ if __name__ == '__main__':
                     colour_realsense_publisher.publish_img(colour_img)
                     depth_realsense_publisher.publish_img(depth_img)
                     depthmap_realsense_publisher.publish_img(depth_colormap)
+
+                    colour_depth = ColourDepth(br.cv2_to_imgmsg(colour_img), br.cv2_to_imgmsg(depth_img))
+                    colour_depth_pub.publish(colour_depth)
 
                 if args.save:
                     

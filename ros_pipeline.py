@@ -3,6 +3,7 @@ import os
 import cv2
 import rospy
 from sensor_msgs.msg import Image
+from ros_vision_pipeline.msg import ColourDepth
 from cv_bridge import CvBridge
 from camera_feed import camera_feed
 from ros_publisher import ROSPublisher
@@ -19,14 +20,14 @@ import helpers
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--camera_type", help="Which camera: camera/realsense", nargs='?', type=str, default="camera")
-    parser.add_argument("--publish_continuously", help="Publish continuously otherwise create service.", nargs='?', type=helpers.str2bool, default=False)
-    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="camera")
+    parser.add_argument("--camera_type", help="Which camera: basler/realsense", nargs='?', type=str, default="basler")
+    parser.add_argument("--publish_continuously", help="Publish continuously otherwise create service.", nargs='?', type=helpers.str2bool, default=True)
+    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="basler")
     parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision_pipeline")
     args = parser.parse_args()
 
     # set the camera_topic to realsense as well, if not set manually
-    if args.camera_type == "realsense" and args.camera_topic == "camera":
+    if args.camera_type == "realsense" and args.camera_topic == "basler":
         args.camera_topic = "realsense"
 
     if args.camera_type == "realsense" and args.node_name == "vision_pipeline":
@@ -41,7 +42,7 @@ if __name__ == '__main__':
     # 2. Create ROS camera labelled node and ROS data node -> feed images and data from pipeline
 
     rospy.init_node(args.node_name)
-    if args.camera_type == "camera":
+    if args.camera_type == "basler":
         pipeline = Pipeline()
     else:
         pipeline = RealsensePipeline()
@@ -59,7 +60,6 @@ if __name__ == '__main__':
     colour_img = None
     depth_img = None
     img_id = 0
-    depth_id = 0
 
     def img_from_camera_callback(img):
         global colour_img  # access variable from outside callback
@@ -68,18 +68,26 @@ if __name__ == '__main__':
         colour_img = np.array(colour_img)
         img_id += 1
 
-    def depth_from_camera_callback(depth):
-        global depth_img  # access variable from outside callback
-        global depth_id
+    def colour_depth_from_camera_callback(msg):
+        colour = CvBridge().imgmsg_to_cv2(msg.colour_image)
+        depth = CvBridge().imgmsg_to_cv2(msg.depth_image)
+
+        global colour_img  # access variable from outside callback
+        global depth_img
+        global img_id
         # current_cam_img = CvBridge().imgmsg_to_cv2(img)
+        colour_img = np.array(colour)
         depth_img = np.array(depth)
-        depth_id += 1
+
+        img_id += 1
 
     # ? the following might need to run on a separate thread!
     if args.publish_continuously:
-        rospy.Subscriber("/" + args.camera_topic + "/colour", Image, img_from_camera_callback)
-        if args.camera_type == "realsense":
-            rospy.Subscriber("/" + args.camera_topic + "/depthmap", Image, img_from_camera_callback)
+        if args.camera_type == "basler":
+            rospy.Subscriber("/" + args.camera_topic + "/colour", Image, img_from_camera_callback)
+        elif args.camera_type == "realsense":
+            # rospy.Subscriber("/" + args.camera_topic + "/depthmap", Image, img_from_camera_callback)
+            rospy.Subscriber("/" + args.camera_topic + "/colour_depth", ColourDepth, colour_depth_from_camera_callback)
 
         # process the newest image from the camera
         processed_img_id = 0  # don't keep processing the same image
@@ -92,19 +100,21 @@ if __name__ == '__main__':
                 if t_prev is not None and t_now - t_prev > 0:
                     fps = str(round(1 / (t_now - t_prev), 1)) + " fps (ros)"
 
-                if args.camera_type == "camera":
+                if args.camera_type == "basler":
                     labelled_img, detections, json_detections, action, json_action = pipeline.process_img(colour_img, fps)
                     print("json_detections", json_detections)
 
                     labelled_img_publisher.publish_img(labelled_img)
                     data_publisher.publish_text(json_detections)
                     action_publisher.publish_text(json_action)
-                else:
+                elif args.camera_type == "realsense":
                     cluster_img, lever_actions, json_lever_actions = pipeline.process_img(colour_img, depth_img)
+                    if cluster_img is not None and json_lever_actions is not None:
+                        print("publishing...", cluster_img.shape)
 
-                    labelled_img_publisher.publish_img(cluster_img)
-                    # data_publisher.publish_text(json_detections)
-                    action_publisher.publish_text(json_lever_actions)  # ! this might need to be json
+                        labelled_img_publisher.publish_img(cluster_img)
+                        # data_publisher.publish_text(json_detections)
+                        action_publisher.publish_text(json_lever_actions)  # ! this might need to be json
                 
                 t_prev = t_now
             else:
@@ -113,7 +123,6 @@ if __name__ == '__main__':
 
             if img_id == sys.maxsize:
                 img_id = 0
-                depth_id = 0
                 processed_img_id = 0
     else:
         rospy.spin()

@@ -37,7 +37,7 @@ class ImageCalibration:
     def load_calibration_file(self, calibration_file):
         if calibration_file is not None:
             with open(calibration_file) as fr:
-                self.calibration = yaml.load(fr)
+                self.calibration = yaml.safe_load(fr)
 
 
     def get_images(self, input_dir):

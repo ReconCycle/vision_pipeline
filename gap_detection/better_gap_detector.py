@@ -9,7 +9,12 @@ from shapely.geometry import LineString
 import sklearn.cluster as cluster
 import hdbscan
 import time
-import open3d as o3d
+open3d_available = True
+try:
+    import open3d as o3d
+except ModuleNotFoundError:
+    open3d_available = False
+    pass
 import cv2
 from itertools import combinations, product
 import math
@@ -188,9 +193,12 @@ class BetterGapDetector:
     @staticmethod
     def cnt_center(cnt):
         m = cv2.moments(cnt)
-        x = int(m["m10"] / m["m00"])
-        y = int(m["m01"] / m["m00"])
-        return [x, y]
+        if np.abs(m["m00"]) > 0.01:
+            x = int(m["m10"] / m["m00"])
+            y = int(m["m01"] / m["m00"])
+            return [x, y]
+        else:
+            return None
 
     @staticmethod
     def get_pair_furthest_points(points):
@@ -229,10 +237,12 @@ class BetterGapDetector:
                 cluster_colours = [get_colour(index) / 255] * len(cluster)
 
             colours.extend(cluster_colours)
-
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(np.array(clustered_points))
-        pcd.colors = o3d.utility.Vector3dVector(np.array(colours))
+        
+        pcd = None
+        if open3d_available:
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(np.array(clustered_points))
+            pcd.colors = o3d.utility.Vector3dVector(np.array(colours))
 
         height, width = depth_masked.shape[:2]
         kernel = np.ones((2, 2), np.uint8)
@@ -336,33 +346,34 @@ class BetterGapDetector:
                         midpoint_on_cnt = self.get_closest_point_from_list_to_point(points, midpoint)
                         midpoint_on_cnt = np.array(midpoint_on_cnt).astype(int)
                         cluster_center = self.cnt_center(cnt)
-                        lever_line = [midpoint_on_cnt, cluster_center]
-                        # if the lever_line is too small then levering won't be possible
-                        if np.linalg.norm(midpoint_on_cnt - cluster_center) >= self.MIN_LEVERABLE_LENGTH:
+                        if cluster_center is not None:
+                            lever_line = [midpoint_on_cnt, cluster_center]
+                            # if the lever_line is too small then levering won't be possible
+                            if np.linalg.norm(midpoint_on_cnt - cluster_center) >= self.MIN_LEVERABLE_LENGTH:
 
-                            lever_actions.append([np.array([*midpoint_on_cnt,
-                                                  depth_masked[midpoint_on_cnt[1], midpoint_on_cnt[0]]]),
-                                                  np.array([*cluster_center,
-                                                  depth_masked[cluster_center[1], cluster_center[0]]])
-                                                  ])
+                                lever_actions.append([np.array([*midpoint_on_cnt,
+                                                      depth_masked[midpoint_on_cnt[1], midpoint_on_cnt[0]]]),
+                                                      np.array([*cluster_center,
+                                                      depth_masked[cluster_center[1], cluster_center[0]]])
+                                                      ])
 
-                            # p3, p4 = self.get_perp(segment_p1, midpoint)
-                            # p3, p4 = np.array(p3).astype(int), np.array(p4).astype(int)
-                            # print("p3", p3, "p4", p4)
-                            #
-                            # # this function requires float32 otherwise it breaks
-                            # dist_from_contour = cv2.pointPolygonTest(cnt, np.array(p3).astype(np.float32), True)
-                            #
-                            # if dist_from_contour >= 0:
-                            #     perp_line = [np.array(midpoint).astype(int), p3]
-                            # else:
-                            #     perp_line = [np.array(midpoint).astype(int), p4]
+                                # p3, p4 = self.get_perp(segment_p1, midpoint)
+                                # p3, p4 = np.array(p3).astype(int), np.array(p4).astype(int)
+                                # print("p3", p3, "p4", p4)
+                                #
+                                # # this function requires float32 otherwise it breaks
+                                # dist_from_contour = cv2.pointPolygonTest(cnt, np.array(p3).astype(np.float32), True)
+                                #
+                                # if dist_from_contour >= 0:
+                                #     perp_line = [np.array(midpoint).astype(int), p3]
+                                # else:
+                                #     perp_line = [np.array(midpoint).astype(int), p4]
 
-                            lines.append([segment_p1, segment_p2])
-                            # lines.append(lever_line)
+                                lines.append([segment_p1, segment_p2])
+                                # lines.append(lever_line)
 
-                            points_min_max.append([tuple(np.array(min_point).astype(int)),
-                                                   tuple(np.array(max_point).astype(int))])
+                                points_min_max.append([tuple(np.array(min_point).astype(int)),
+                                                       tuple(np.array(max_point).astype(int))])
 
                     # for showing all the points
                     good_points.extend(points1)

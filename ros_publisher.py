@@ -1,6 +1,7 @@
 import cv2
 import rospy
 from sensor_msgs.msg import Image
+from ros_vision_pipeline.msg import ColourDepth
 from cv_bridge import CvBridge
 from std_msgs.msg import String
 

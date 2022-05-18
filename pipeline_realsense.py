@@ -6,14 +6,19 @@ import cv2
 from rich import print
 import json
 from scipy import stats
-import open3d as o3d
+open3d_available = True
+try:
+    import open3d as o3d
+except ModuleNotFoundError:
+    open3d_available = False
+    pass
 
 from camera_realsense_feed import RealsenseCamera
 from gap_detection.better_gap_detector import BetterGapDetector
 from object_detection import ObjectDetection
 from helpers import Detection, Action
 
-from helpers import scale_img, get_images, get_images_realsense, EnhancedJSONEncoder
+from helpers import scale_img, get_images, get_images_realsense, EnhancedJSONEncoder, img_grid
 from config import load_config
 
 
@@ -49,61 +54,61 @@ def image_to_depth(mask):
     return depth_list
 
 
-def visualise_3d(geometries):
+# def visualise_3d(geometries):
 
-    vis = o3d.visualization.Visualizer()
-    vis.create_window(visible = False)
-    # vis.add_geometry(pcd)
-    # vis.update_geometry(pcd)
-    for geom in b:
-        vis.add_geometry(geom)
-        vis.update_geometry(geom)
-    vis.poll_events()
-    vis.update_renderer()
-    # vis.capture_screen_image(path)
-    o3d_screenshot_mat = vis.capture_screen_float_buffer()
-    # scale and convert to uint8 type
-    o3d_screenshot_mat = (255.0 * np.asarray(o3d_screenshot_mat)).astype(np.uint8)
-    vis.destroy_window()
-    return o3d_screenshot_mat
+#     vis = o3d.visualization.Visualizer()
+#     vis.create_window(visible = False)
+#     # vis.add_geometry(pcd)
+#     # vis.update_geometry(pcd)
+#     for geom in b:
+#         vis.add_geometry(geom)
+#         vis.update_geometry(geom)
+#     vis.poll_events()
+#     vis.update_renderer()
+#     # vis.capture_screen_image(path)
+#     o3d_screenshot_mat = vis.capture_screen_float_buffer()
+#     # scale and convert to uint8 type
+#     o3d_screenshot_mat = (255.0 * np.asarray(o3d_screenshot_mat)).astype(np.uint8)
+#     vis.destroy_window()
+#     return o3d_screenshot_mat
 
 # Create Box Objects around the detected gaps.
-def boxes(gaps):
-    boxes = []
-    hulls = []
+# def boxes(gaps):
+#     boxes = []
+#     hulls = []
 
-    biggest_gap_volume = 0.
-    biggest_gap_index = None
+#     biggest_gap_volume = 0.
+#     biggest_gap_index = None
 
-    # sort by volume
-    gaps.sort(key=lambda x: x[4], reverse=True)
+#     # sort by volume
+#     gaps.sort(key=lambda x: x[4], reverse=True)
 
-    # for index, gap in enumerate(gaps):
-    #     center, vertices, img_vertices, simplices, volume, size, num_of_points = gap
-    #     if volume > biggest_gap_volume:
-    #         biggest_gap_volume = volume
-    #         biggest_gap_index = index
+#     # for index, gap in enumerate(gaps):
+#     #     center, vertices, img_vertices, simplices, volume, size, num_of_points = gap
+#     #     if volume > biggest_gap_volume:
+#     #         biggest_gap_volume = volume
+#     #         biggest_gap_index = index
 
 
-    for index, gap in enumerate(gaps):
-        center, vertices, img_vertices, simplices, volume, size, num_of_points = gap
-        pcd = o3d.geometry.PointCloud()
-        bounding_box = o3d.geometry.OrientedBoundingBox()
-        points = o3d.utility.Vector3dVector(vertices)
-        pcd.points = points
-        pcd.paint_uniform_color([0,0,0])
-        geom1 = bounding_box.create_from_points(points)
-        print("volume", volume)
-        print("geom1" , geom1)
-        print("center", center)
-        if index == 0:
-            geom1.color = np.array([0,0,1])
-        else:
-            geom1.color = np.array([1,0,0])
-        boxes.append(geom1)
-        boxes.append(pcd)
+#     for index, gap in enumerate(gaps):
+#         center, vertices, img_vertices, simplices, volume, size, num_of_points = gap
+#         pcd = o3d.geometry.PointCloud()
+#         bounding_box = o3d.geometry.OrientedBoundingBox()
+#         points = o3d.utility.Vector3dVector(vertices)
+#         pcd.points = points
+#         pcd.paint_uniform_color([0,0,0])
+#         geom1 = bounding_box.create_from_points(points)
+#         print("volume", volume)
+#         print("geom1" , geom1)
+#         print("center", center)
+#         if index == 0:
+#             geom1.color = np.array([0,0,1])
+#         else:
+#             geom1.color = np.array([1,0,0])
+#         boxes.append(geom1)
+#         boxes.append(pcd)
 
-    return boxes
+#     return boxes
 
 
 class RealsensePipeline:
@@ -118,6 +123,7 @@ class RealsensePipeline:
 
         self.object_detection = ObjectDetection(self.config.obj_detection)
         self.labels = self.object_detection.labels
+        self.gap_detector = BetterGapDetector()
     
     def process_img(self, colour_img, depth_img, depth_colormap=None, debug=False):
         print("running pipeline realsense frame...")
@@ -137,7 +143,8 @@ class RealsensePipeline:
                 detection_hca_back = detection
                 break
         
-        if detection_hca_back is not None:
+        if detection_hca_back is not None and \
+                len(detection_hca_back.mask_contour) > self.gap_detector.APPROX_SAMPLE_LENGTH:
             contour = detection_hca_back.mask_contour
             hull = cv2.convexHull(contour, False)
             mask = mask_from_contour(hull)
@@ -171,11 +178,12 @@ class RealsensePipeline:
             # # visualise
             # o3d.visualization.draw_geometries(b)
             #################
-            gap_detector = BetterGapDetector()
-            pcd, lever_actions, cluster_img = gap_detector.lever_detector(depth_list, depth_masked, hull_center)
+            if len(depth_list) > 0:
 
-            if debug:
-                self.show_img(labelled_img, mask, cluster_img, depth_colormap, pcd)
+                pcd, lever_actions, cluster_img = self.gap_detector.lever_detector(depth_list, depth_masked, hull_center)
+
+                if debug:
+                    self.show_img(labelled_img, mask, cluster_img, depth_colormap, pcd)
 
         json_lever_actions = json.dumps(lever_actions, cls=EnhancedJSONEncoder)
 
@@ -193,7 +201,9 @@ class RealsensePipeline:
         if cluster_img is not None:
             cv_show.append(cluster_img)
 
-        images = np.hstack(tuple(cv_show))
+        # images = np.hstack(tuple(cv_show))
+
+        images = img_grid(cv_show)
 
         cv2.namedWindow('images', cv2.WINDOW_NORMAL)
         cv2.imshow('images', images)
@@ -201,14 +211,14 @@ class RealsensePipeline:
         # if pcd is not None:
         #     o3d.visualization.draw_geometries([pcd])
 
-        cv2.waitKey(0)  # was 1
+        cv2.waitKey(1)  # was 1
 
 
 if __name__ == '__main__':
 
     pipeline = RealsensePipeline()
 
-    USE_CAMERA = False
+    USE_CAMERA = True
 
     if USE_CAMERA:
         realsense_camera = RealsenseCamera()

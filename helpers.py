@@ -12,6 +12,7 @@ from shapely.geometry import Polygon
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from enum import IntEnum
+import itertools
 
 
 class Action(IntEnum):
@@ -174,6 +175,41 @@ def get_colour_blue(j):
     colour = np.array(COLOURS_BLUES[colour_idx], dtype=int)
     return colour
 
+
+def img_grid(imgs, w=2, h=None, margin=0):
+    if h is None and isinstance(w, int):
+        h = int(np.ceil(len(imgs) / w))
+    if w is None and isinstance(h, int):
+        w = int(np.ceil(len(imgs) / h))
+    n = w * h
+
+    # Define the shape of the image to be replicated (all images should have the same shape)
+    img_h, img_w, img_c = imgs[0].shape
+
+    # Define the margins in x and y directions
+    m_x = margin
+    m_y = margin
+
+    # Size of the full size image
+    mat_x = img_w * w + m_x * (w - 1)
+    mat_y = img_h * h + m_y * (h - 1)
+
+    # Create a matrix of zeros of the right size and fill with 255 (so margins end up white)
+    img_matrix = np.zeros((mat_y, mat_x, img_c), np.uint8)
+    img_matrix.fill(255)
+
+    # Prepare an iterable with the right dimensions
+    positions = itertools.product(range(h), range(w))
+
+    for (y_i, x_i), img in zip(positions, imgs):
+        x = x_i * (img_w + m_x)
+        y = y_i * (img_h + m_y)
+        img_matrix[y:y + img_h, x:x + img_w, :] = img
+
+    # resized = cv2.resize(img_matrix, (mat_x // 3, mat_y // 3), interpolation=cv2.INTER_AREA)
+    # compression_params = [cv2.IMWRITE_JPEG_QUALITY, 90]
+    # cv2.imwrite(name, resized, compression_params)
+    return img_matrix
 
 class Struct(object):
     """
