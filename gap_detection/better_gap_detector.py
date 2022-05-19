@@ -19,11 +19,7 @@ import cv2
 from itertools import combinations, product
 import math
 import random
-
-# import config
-
 # Own Modules
-import gap_detection.helpers2 as helpers
 from helpers import get_colour, get_colour_blue
 
 
@@ -31,7 +27,7 @@ class BetterGapDetector:
     def __init__(self):
 
         # threshold the cluster sizes. 800 is better, 80 is for debugging
-        self.MIN_LEVERABLE_AREA = 80
+        self.MIN_LEVERABLE_AREA = 800
         # if the lever_line is too small then levering won't be possible
         self.MIN_LEVERABLE_LENGTH = 20
         # number of points in cluster
@@ -55,7 +51,6 @@ class BetterGapDetector:
         self.otsu_bins = 800  # 2 to 1024
 
     def clustering(self, points):
-        print("clustering!")
         # ----- CLUSTERING THE GAPS -----
         clustering_switch = {
             0: self.kmeans,
@@ -77,14 +72,14 @@ class BetterGapDetector:
 
             # To construct a convex hull a minimum of 4 points is needed
             num_of_points, dim = cluster.shape
-            if (num_of_points >= 4):
+            if num_of_points >= 4:
                 clusters.append(cluster)
 
         clusters.sort(key=lambda x: len(x), reverse=True)
 
-        print("num clusters: ", len(clusters), num_of_points)
+        # print("num clusters: ", len(clusters), num_of_points)
 
-        return (clusters, num_of_points)
+        return clusters, num_of_points
 
     def get_close_points_from_2_clusters(self, cnt1, cnt2, cnt1_sample_idx, cnt2_sample_idx):
         points1 = []
@@ -144,9 +139,6 @@ class BetterGapDetector:
         def f(x, m, b):
             return m * x + b
 
-        print("points x y", np.array(points)[:, 0].shape, np.array(points)[:, 1].shape,
-              np.array(points).shape)
-
         p_opt, p_cov = curve_fit(f, np.array(points)[:, 0], np.array(points)[:, 1])
         m = p_opt[0]  # slope
         b = p_opt[1]  # intercept
@@ -204,9 +196,6 @@ class BetterGapDetector:
     def get_pair_furthest_points(points):
         d = squareform(pdist(points, 'euclidean'))
         n, [I_row, I_col] = np.nanmax(d), np.unravel_index(np.argmax(d), d.shape)
-
-        print("I_row", I_row, points[I_row])
-        print("I_col", I_col, points[I_col])
         return points[I_row], points[I_col]
 
     @staticmethod
@@ -222,14 +211,14 @@ class BetterGapDetector:
     def lever_detector(self, points, depth_masked, obj_center):
 
         lever_actions = []
-
-        clusters, num_of_points = self.clustering(points)
+        clusters = []
+        # sanity check
+        if len(points) > self.MIN_CLUSTER_SIZE:
+            clusters, num_of_points = self.clustering(points)
 
         clustered_points = []
         colours = []
         for index, cluster in enumerate(clusters):
-            print("cluster.shape", cluster.shape, np.mean(cluster))
-
             clustered_points.extend(cluster)
             if len(cluster) < self.MIN_CLUSTER_SIZE:
                 cluster_colours = [np.array((180, 180, 180), dtype=np.float64) / 255] * len(cluster)
@@ -336,11 +325,10 @@ class BetterGapDetector:
 
                         midpoint = self.get_midpoint(segment_p1, segment_p2)
 
-                        # if np.abs(segment_p1) > 10000 or np.abs(segment_p2) > 10000 or np.abs(midpoint) > 10000:
-                        print("segment_p1", segment_p1)
-                        print("segment_p2", segment_p2)
-                        print("midpoint", midpoint)
-                            # break
+                        # print("segment_p1", segment_p1)
+                        # print("segment_p2", segment_p2)
+                        # print("midpoint", midpoint)
+
 
                         # now get the closest point in points on the cnt to the midpoint
                         midpoint_on_cnt = self.get_closest_point_from_list_to_point(points, midpoint)
@@ -351,10 +339,10 @@ class BetterGapDetector:
                             # if the lever_line is too small then levering won't be possible
                             if np.linalg.norm(midpoint_on_cnt - cluster_center) >= self.MIN_LEVERABLE_LENGTH:
 
-                                lever_actions.append([np.array([*midpoint_on_cnt,
-                                                      depth_masked[midpoint_on_cnt[1], midpoint_on_cnt[0]]]),
-                                                      np.array([*cluster_center,
-                                                      depth_masked[cluster_center[1], cluster_center[0]]])
+                                lever_actions.append([np.array([*cluster_center,
+                                                      depth_masked[cluster_center[1], cluster_center[0]]]),
+                                                      np.array([*midpoint_on_cnt,
+                                                      depth_masked[midpoint_on_cnt[1], midpoint_on_cnt[0]]])
                                                       ])
 
                                 # p3, p4 = self.get_perp(segment_p1, midpoint)
@@ -392,17 +380,15 @@ class BetterGapDetector:
             cv2.circle(img, p_max, 6, (190, 150, 37), -1)
 
         for idx, [p1, p2] in enumerate(lines):
-            # colour = tuple(np.asarray(get_colour(idx)).astype(int))
             # colour = tuple([int(x) for x in get_colour(idx)])
             colour = [162, 162, 162]
-            print("colour", colour, p1, p2)
             cv2.line(img, p1, p2, colour, 3)
 
         for idx, lever_action in enumerate(lever_actions):
-            leverpoint, midpoint = lever_action
+            cluster_center, leverpoint = lever_action
             colour = tuple([int(x) for x in get_colour_blue(idx)])
-            cv2.line(img, [int(x) for x in leverpoint[:2]],
-                          [int(x) for x in midpoint[:2]], colour, 3)
+            cv2.arrowedLine(img, [int(x) for x in cluster_center[:2]],
+                          [int(x) for x in leverpoint[:2]], colour, 3, tipLength=0.3)
 
         return pcd, lever_actions, img
 

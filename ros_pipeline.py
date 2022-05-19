@@ -1,6 +1,7 @@
 import sys
 import os
 import cv2
+from rich import print
 import rospy
 from sensor_msgs.msg import Image
 from ros_vision_pipeline.msg import ColourDepth
@@ -49,6 +50,8 @@ if __name__ == '__main__':
 
     # if there is no camera topic then try and subscribe here and create a publisher for the camera images
     labelled_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/colour", msg_images=True)
+    clustered_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/cluster", msg_images=True)
+    mask_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/mask", msg_images=True)
     data_publisher = ROSPublisher(topic_name="/" + args.node_name + "/data", msg_images=False)
     action_publisher = ROSPublisher(topic_name="/" + args.node_name + "/action", msg_images=False)
 
@@ -60,6 +63,9 @@ if __name__ == '__main__':
     colour_img = None
     depth_img = None
     img_id = 0
+
+    subscriber = None
+    subscribe_topic = ""
 
     def img_from_camera_callback(img):
         global colour_img  # access variable from outside callback
@@ -81,19 +87,26 @@ if __name__ == '__main__':
 
         img_id += 1
 
+    def subscribe(args):
+        global subscriber
+        global subscribe_topic
+
+        if args.camera_type == "basler":
+            subscribe_topic = "/" + args.camera_topic + "/colour"
+            subscriber = rospy.Subscriber(subscribe_topic, Image, img_from_camera_callback)
+        elif args.camera_type == "realsense":
+            subscribe_topic = "/" + args.camera_topic + "/colour_depth"
+            subscriber = rospy.Subscriber(subscribe_topic, ColourDepth, colour_depth_from_camera_callback)
+
     # ? the following might need to run on a separate thread!
     if args.publish_continuously:
-        if args.camera_type == "basler":
-            rospy.Subscriber("/" + args.camera_topic + "/colour", Image, img_from_camera_callback)
-        elif args.camera_type == "realsense":
-            # rospy.Subscriber("/" + args.camera_topic + "/depthmap", Image, img_from_camera_callback)
-            rospy.Subscriber("/" + args.camera_topic + "/colour_depth", ColourDepth, colour_depth_from_camera_callback)
+        subscribe(args)
 
         # process the newest image from the camera
         processed_img_id = 0  # don't keep processing the same image
         t_prev = None
         fps = None
-        while True:
+        while not rospy.is_shutdown():
             if colour_img is not None and processed_img_id < img_id:
                 processed_img_id = img_id
                 t_now = time.time()
@@ -107,18 +120,30 @@ if __name__ == '__main__':
                     labelled_img_publisher.publish_img(labelled_img)
                     data_publisher.publish_text(json_detections)
                     action_publisher.publish_text(json_action)
-                elif args.camera_type == "realsense":
-                    cluster_img, lever_actions, json_lever_actions = pipeline.process_img(colour_img, depth_img)
-                    if cluster_img is not None and json_lever_actions is not None:
-                        print("publishing...", cluster_img.shape)
 
-                        labelled_img_publisher.publish_img(cluster_img)
-                        # data_publisher.publish_text(json_detections)
+                    print("json_action", json_action)
+
+                elif args.camera_type == "realsense":
+                    cluster_img, labelled_img, mask, lever_actions, json_lever_actions = pipeline.process_img(colour_img, depth_img)
+                    if cluster_img is not None and json_lever_actions is not None:
+
+                        clustered_img_publisher.publish_img(cluster_img)
+                        labelled_img_publisher.publish_img(labelled_img)
+                        mask_img_publisher.publish_img(mask)
                         action_publisher.publish_text(json_lever_actions)  # ! this might need to be json
+                        print("json_lever_actions", json_lever_actions)
                 
                 t_prev = t_now
             else:
                 print("Waiting to receive image.")
+
+                num_connections = subscriber.get_num_connections()
+                if num_connections == 0 and subscribe_topic in list(np.array(rospy.get_published_topics()).flat):
+                    print("(Re)subscribing to topic...")
+                    if subscriber is not None:
+                        subscriber.unregister()
+                    subscribe(args)
+
                 time.sleep(0.1)
 
             if img_id == sys.maxsize:

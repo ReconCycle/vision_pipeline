@@ -150,9 +150,7 @@ class RealsensePipeline:
             mask = mask_from_contour(hull)
             hull_center = BetterGapDetector.cnt_center(hull)
 
-            print("mask", mask.shape)
-
-            print("depth_img", depth_img.shape, np.amin(depth_img), np.max(depth_img), stats.mode(depth_img, axis=None).mode)
+            # print("depth_img", depth_img.shape, np.amin(depth_img), np.max(depth_img), stats.mode(depth_img, axis=None).mode)
             depth_img = depth_img * 3  # ! IMPORTANT MULTIPLIER
             depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=mask)
 
@@ -187,7 +185,7 @@ class RealsensePipeline:
 
         json_lever_actions = json.dumps(lever_actions, cls=EnhancedJSONEncoder)
 
-        return cluster_img, lever_actions, json_lever_actions
+        return cluster_img, labelled_img, mask, lever_actions, json_lever_actions
 
     @staticmethod
     def show_img(labelled_img, mask, cluster_img, depth_colormap, pcd):

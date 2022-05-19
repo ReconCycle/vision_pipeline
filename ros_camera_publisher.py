@@ -2,6 +2,7 @@ import sys
 import os
 import shutil
 import cv2
+from rich import print
 
 ros_available = True
 try:
@@ -42,7 +43,6 @@ if __name__ == '__main__':
     print("save:", args.save)
     print("undistort:", args.undistort)
     print("fps:", args.fps, "\n")
-
 
     if ros_available:
         rospy.init_node(args.node_name)
