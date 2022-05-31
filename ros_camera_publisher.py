@@ -5,14 +5,14 @@ import cv2
 from rich import print
 
 ros_available = True
-try:
-    import rospy
-    from ros_publisher import ROSPublisher
-    from ros_vision_pipeline.msg import ColourDepth
-    from cv_bridge import CvBridge
-except ModuleNotFoundError:
-    ros_available = False
-    pass
+# try:
+import rospy
+from ros_publisher import ROSPublisher
+from ros_vision_pipeline.msg import ColourDepth
+from cv_bridge import CvBridge
+# except ModuleNotFoundError:
+#     ros_available = False
+#     pass
 
 from camera_feed import camera_feed
 from camera_realsense_feed import RealsenseCamera

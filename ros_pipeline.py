@@ -24,14 +24,14 @@ if __name__ == '__main__':
     parser.add_argument("--camera_type", help="Which camera: basler/realsense", nargs='?', type=str, default="basler")
     parser.add_argument("--publish_continuously", help="Publish continuously otherwise create service.", nargs='?', type=helpers.str2bool, default=True)
     parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="basler")
-    parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision_pipeline")
+    parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision_pipeline_basler")
     args = parser.parse_args()
 
     # set the camera_topic to realsense as well, if not set manually
     if args.camera_type == "realsense" and args.camera_topic == "basler":
         args.camera_topic = "realsense"
 
-    if args.camera_type == "realsense" and args.node_name == "vision_pipeline":
+    if args.camera_type == "realsense" and args.node_name == "vision_pipeline_basler":
         args.node_name = "vision_pipeline_realsense"
 
     print("\ncamera_type:", args.camera_type)
@@ -50,10 +50,15 @@ if __name__ == '__main__':
 
     # if there is no camera topic then try and subscribe here and create a publisher for the camera images
     labelled_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/colour", msg_images=True)
-    clustered_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/cluster", msg_images=True)
-    mask_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/mask", msg_images=True)
     data_publisher = ROSPublisher(topic_name="/" + args.node_name + "/data", msg_images=False)
     action_publisher = ROSPublisher(topic_name="/" + args.node_name + "/action", msg_images=False)
+
+    clustered_img_publisher = None
+    mask_img_publisher = None
+    if args.camera_type == "realsense":
+        clustered_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/cluster", msg_images=True)
+        mask_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/mask", msg_images=True)
+
 
     # either create a publisher topic for the labelled images and detections or create a service
     if not args.publish_continuously:
