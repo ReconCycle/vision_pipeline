@@ -47,7 +47,7 @@ if __name__ == '__main__':
     if ros_available:
         rospy.init_node(args.node_name)
         br = CvBridge()
-        if args.camera_type == "camera":
+        if args.camera_type == "basler":
             camera_publisher = ROSPublisher(topic_name="/" + args.camera_topic + "/colour")
         elif args.camera_type == "realsense":
             colour_depth_pub = rospy.Publisher("/" + args.camera_topic + "/colour_depth", ColourDepth, queue_size=20)
