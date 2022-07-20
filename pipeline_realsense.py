@@ -185,6 +185,11 @@ class RealsensePipeline:
 
         json_lever_actions = json.dumps(lever_actions, cls=EnhancedJSONEncoder)
 
+        # if there is no cluster image, return a black image
+        if cluster_img is None:
+            cluster_img = np.zeros(colour_img.shape, np.uint8)
+            cv2.putText(cluster_img, "Clustering failed.", (20,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2)
+
         return cluster_img, labelled_img, mask, lever_actions, json_lever_actions
 
     @staticmethod
