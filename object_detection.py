@@ -132,7 +132,7 @@ class ObjectDetection:
             detection.obb_corners = corners
             detection.obb_center = center
             detection.obb_rot_quat = rot_quat
-            if worksurface_detection is not None:
+            if worksurface_detection is not None and corners is not None:
                 detection.obb_corners_meters = worksurface_detection.pixels_to_meters(corners)
                 detection.obb_center_meters = worksurface_detection.pixels_to_meters(center)
             else:
