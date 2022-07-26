@@ -79,7 +79,7 @@ class ObjectDetection:
         
         self.tracker = BYTETracker(self.tracker_args)
         self.fps_graphics = -1.
-        self.fps_total = -1.
+        self.fps_objdet = -1.
         
         # convert class names to enums
         labels = enum.IntEnum('label', self.dataset.class_names, start=0)
@@ -148,10 +148,10 @@ class ObjectDetection:
             extra_text + ", "
         else:
             extra_text = ""
-        fps_str = extra_text + "fps_total: " + str(np.int(round(self.fps_total, 0))) + ", fps_nn: " + str(np.int(round(fps_nn, 0))) + ", fps_tracker: " + str(np.int(round(fps_tracker, 0))) + ", fps_obb: " + str(np.int(round(fps_obb, 0))) + ", fps_graphics: " + str(np.int(round(self.fps_graphics, 0)))
+        fps_str = extra_text + "fps_objdet: " + str(round(self.fps_objdet, 1)) + ", fps_nn: " + str(round(fps_nn, 1)) + ", fps_tracker: " + str(np.int(round(fps_tracker, 0))) + ", fps_obb: " + str(np.int(round(fps_obb, 0))) + ", fps_graphics: " + str(np.int(round(self.fps_graphics, 0)))
         labelled_img = graphics.get_labelled_img(frame, masks, detections, fps=fps_str, worksurface_detection=worksurface_detection)
         
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
-        self.fps_total = 1.0 / (time.time() - t_start)
+        self.fps_objdet = 1.0 / (time.time() - t_start)
         
         return labelled_img, detections

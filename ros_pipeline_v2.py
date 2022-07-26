@@ -128,7 +128,7 @@ if __name__ == '__main__':
                 processed_img_id = img_id
                 t_now = time.time()
                 if t_prev is not None and t_now - t_prev > 0:
-                    fps = str(round(1 / (t_now - t_prev), 1)) + " fps (ros)"
+                    fps = "fps_total:" + str(round(1 / (t_now - t_prev), 1)) + ", "
 
                 if args.camera_type == "basler":
                     labelled_img, detections, json_detections, action, json_action = pipeline.process_img(colour_img, fps)
