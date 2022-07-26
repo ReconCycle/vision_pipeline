@@ -72,8 +72,9 @@ if __name__ == '__main__':
     depth_img = None
     img_id = 0
 
-    subscriber = None
+    img_sub = None
     subscribe_topic = ""
+    depth_sub = None
 
     def img_from_camera_callback(img):
         global colour_img  # access variable from outside callback
@@ -97,21 +98,21 @@ if __name__ == '__main__':
         img_id += 1
 
     def subscribe(args):
-        global subscriber
+        global img_sub
         global depth_sub
         global subscribe_topic
 
         if args.camera_type == "basler":
-            subscribe_topic = "/" + args.camera_topic + "/colour"
-            subscriber = rospy.Subscriber(subscribe_topic, Image, img_from_camera_callback)
+            subscribe_topic = "/" + args.camera_topic + "/image_rect_color"
+            img_sub = rospy.Subscriber(subscribe_topic, Image, img_from_camera_callback)
         elif args.camera_type == "realsense":
             img_topic = "/" + args.camera_topic + "/color/image_raw"
             depth_topic = "/" + args.camera_topic + "/aligned_depth_to_color/image_raw"
 
-            subscriber = message_filters.Subscriber(img_topic, Image)
+            img_sub = message_filters.Subscriber(img_topic, Image)
             depth_sub = message_filters.Subscriber(depth_topic, Image)
 
-            ts = message_filters.TimeSynchronizer([subscriber, depth_sub], 10)
+            ts = message_filters.TimeSynchronizer([img_sub, depth_sub], 10)
             ts.registerCallback(colour_depth_from_camera_callback)
 
     # ? the following might need to run on a separate thread!
@@ -158,11 +159,11 @@ if __name__ == '__main__':
             else:
                 print("Waiting to receive image.")
 
-                num_connections = subscriber.get_num_connections()
+                num_connections = img_sub.get_num_connections()
                 if num_connections == 0 and subscribe_topic in list(np.array(rospy.get_published_topics()).flat):
                     print("(Re)subscribing to topic...")
-                    if subscriber is not None:
-                        subscriber.unregister()
+                    if img_sub is not None:
+                        img_sub.unregister()
                     if depth_sub is not None:
                         depth_sub.unregister()
                     subscribe(args)
