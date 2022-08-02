@@ -29,26 +29,32 @@ class BetterGapDetector:
         # threshold the cluster sizes. 800 is better, 80 is for debugging
         self.MIN_LEVERABLE_AREA = 800
         # if the lever_line is too small then levering won't be possible
-        self.MIN_LEVERABLE_LENGTH = 20
+        self.MIN_LEVERABLE_LENGTH = 5
         # number of points in cluster
-        self.MIN_CLUSTER_SIZE = 150
+        self.MIN_CLUSTER_SIZE = 30
         # distance between clusters, such that there is a possibility to lever between them
-        self.MAX_CLUSTER_DISTANCE = 20
+        self.MAX_CLUSTER_DISTANCE = 130
         # sample size of points on cnt between clusters to find part of cnt that shares edge with another cluster
         self.APPROX_SAMPLE_LENGTH = 40
 
         self.depth_axis = 2
         self.clustering_mode = 3  # 0 to 3
-        self.create_evaluation = False
-        self.automatic_thresholding = -1  # -1 to 3
-        self.min_gap_volume = 0.1  # 0.0 to 200.0
-        self.max_gap_volume = 20000.0  # 0.0 to 200.0
+
+        # kmeans
         self.KM_number_of_clusters = 3  # 1 to 10
+
+        # birch
         self.B_branching_factor = 50  # 2 to 200
         self.B_threshold = 0.015  # 0.0 to 1.0
+        
+        # dbscan
         self.DB_eps = 0.01  # 0.0001 to 0.02
+
+        # hdbscan
         self.HDB_min_cluster_size = 50  # 5 to 150
-        self.otsu_bins = 800  # 2 to 1024
+        
+        
+
 
     def clustering(self, points):
         # ----- CLUSTERING THE GAPS -----
@@ -210,6 +216,9 @@ class BetterGapDetector:
 
     def lever_detector(self, points, depth_masked, obj_center):
 
+        font_face = cv2.FONT_HERSHEY_DUPLEX
+        font_thickness = 1
+
         lever_actions = []
         clusters = []
         # sanity check
@@ -254,21 +263,35 @@ class BetterGapDetector:
                 # CHAIN_APPROX_SIMPLE
                 cluster_contours, _ = cv2.findContours(cluster_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
                 cluster_contours = list(cluster_contours)
-                cluster_contours.sort(key=lambda x: len(x), reverse=True)
-                contour = cluster_contours[0]
-                contours.append(contour)
+                if len(cluster_contours) > 0:
+                    cluster_contours.sort(key=lambda x: len(x), reverse=True)
+                    contour = cluster_contours[0]
+                    contours.append(contour)
 
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
         good_points = []
         lines = []
         points_min_max = []
-        for cnt1, cnt2 in combinations(contours, 2):
+
+        cnt_objs = []
+        # computations for each contour, outside of pairwise for loop
+        for cnt in contours:  
+            area = cv2.contourArea(cnt)
+            center = self.cnt_center(cnt)
+
+            points = cnt.squeeze()
+            print("points shape", points.shape)
+            depth = self.mean_depth(depth_masked, points)
+            
+            cnt_obj = cnt, area, center, depth
+            cnt_objs.append(cnt_obj)
+
+        for cnt_obj1, cnt_obj2 in combinations(cnt_objs, 2):
+            cnt1, area1, center1, depth1 = cnt_obj1
+            cnt2, area2, center2, depth2 = cnt_obj2
             # contours should be at least the sample length, otherwise they are tiny contours and can be ignored
             if len(cnt1) > self.APPROX_SAMPLE_LENGTH and len(cnt2) > self.APPROX_SAMPLE_LENGTH:
-
-                area1 = cv2.contourArea(cnt1)
-                area2 = cv2.contourArea(cnt2)
 
                 if area1 > self.MIN_LEVERABLE_AREA or area2 > self.MIN_LEVERABLE_AREA:
 
@@ -389,6 +412,15 @@ class BetterGapDetector:
             colour = tuple([int(x) for x in get_colour_blue(idx)])
             cv2.arrowedLine(img, [int(x) for x in cluster_center[:2]],
                           [int(x) for x in leverpoint[:2]], colour, 3, tipLength=0.3)
+
+        # print avg height of each cluster
+        for cnt_obj in cnt_objs:
+            _, _, center, depth = cnt_obj
+            text = str(np.int(round(depth, 0)))
+            text_pt = center
+            font_scale = 0.4
+            color = [255, 255, 255]
+            cv2.putText(img, text, text_pt, font_face, font_scale, color, font_thickness, cv2.LINE_AA)
 
         return pcd, lever_actions, img
 

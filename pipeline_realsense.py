@@ -125,11 +125,11 @@ class RealsensePipeline:
         self.labels = self.object_detection.labels
         self.gap_detector = BetterGapDetector()
     
-    def process_img(self, colour_img, depth_img, depth_colormap=None, debug=False):
+    def process_img(self, colour_img, depth_img, depth_colormap=None, debug=False, fps=None):
         print("running pipeline realsense frame...")
 
         # 2. apply yolact to image and get hca_back
-        labelled_img, detections = self.object_detection.get_prediction(colour_img, extra_text=None)
+        labelled_img, detections = self.object_detection.get_prediction(colour_img, extra_text=fps)
 
         # 3. apply mask to depth image and convert to pointcloud
         lever_actions = None

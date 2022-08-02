@@ -148,7 +148,7 @@ class ObjectDetection:
             extra_text + ", "
         else:
             extra_text = ""
-        fps_str = extra_text + "fps_objdet: " + str(round(self.fps_objdet, 1)) + ", fps_nn: " + str(round(fps_nn, 1)) + ", fps_tracker: " + str(np.int(round(fps_tracker, 0))) + ", fps_obb: " + str(np.int(round(fps_obb, 0))) + ", fps_graphics: " + str(np.int(round(self.fps_graphics, 0)))
+        fps_str = extra_text + "objdet: " + str(round(self.fps_objdet, 1)) + ", nn: " + str(round(fps_nn, 1)) + ", tracker: " + str(np.int(round(fps_tracker, 0))) + ", obb: " + str(np.int(round(fps_obb, 0))) + ", graphics: " + str(np.int(round(self.fps_graphics, 0)))
         labelled_img = graphics.get_labelled_img(frame, masks, detections, fps=fps_str, worksurface_detection=worksurface_detection)
         
         self.fps_graphics = 1.0 / (time.time() - graphics_start)

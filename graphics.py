@@ -27,6 +27,9 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
     font_scale = 1.0
     font_thickness = 1
 
+    if img.shape[0] < 1000:
+        font_scale = 0.5
+
     num_dets_to_consider = len(detections)
     
     info_text = ""
@@ -45,6 +48,8 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
     else:
         img_gpu = img / 255.0
         h, w, _ = img.shape
+
+    
 
     # Quick and dirty lambda for selecting the color for a particular index
     # Also keeps track of a per-gpu color cache for maximum speed
