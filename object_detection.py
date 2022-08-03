@@ -45,6 +45,10 @@ class ObjectDetection:
 
             # Image Size
             'max_size': 1100,
+
+            # These are in BGR and are for ImageNet
+            'MEANS': (103.94, 116.78, 123.68),
+            'STD': (57.38, 57.12, 58.40),
             
             # the save path should contain resnet101_reducedfc.pth
             'save_path': './data_limited/yolact/',

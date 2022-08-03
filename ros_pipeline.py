@@ -12,6 +12,7 @@ from ros_service import ROSService
 import message_filters
 from pipeline_v2 import Pipeline
 from pipeline_realsense import RealsensePipeline
+from gap_detection.nn_gap_detector import NNGapDetector
 import numpy as np
 import json
 import argparse
@@ -31,10 +32,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # set the camera_topic to realsense as well, if not set manually
-    if args.camera_type == "realsense" and args.camera_topic == "basler":
+    if args.camera_type.startswith("realsense") and args.camera_topic == "basler":
         args.camera_topic = "realsense"
 
-    if args.camera_type == "realsense" and args.node_name == "vision_pipeline_basler":
+    if args.camera_type.startswith("realsense") and args.node_name == "vision_pipeline_basler":
         args.node_name = "vision_pipeline_realsense"
 
     print("\ncamera_type:", args.camera_type)
@@ -48,9 +49,11 @@ if __name__ == '__main__':
     rospy.init_node(args.node_name)
     if args.camera_type == "basler":
         pipeline = Pipeline()
-    else:
+    elif args.camera_type == "realsense":
         pipeline = RealsensePipeline()
-
+    elif args.camera_type == "realsense_nn":
+        pipeline = NNGapDetector()
+    
     # if there is no camera topic then try and subscribe here and create a publisher for the camera images
     labelled_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/colour", msg_images=True)
     data_publisher = ROSPublisher(topic_name="/" + args.node_name + "/data", msg_images=False)
@@ -58,7 +61,7 @@ if __name__ == '__main__':
 
     clustered_img_publisher = None
     mask_img_publisher = None
-    if args.camera_type == "realsense":
+    if args.camera_type.startswith("realsense"):
         clustered_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/cluster", msg_images=True)
         mask_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/mask", msg_images=True)
 
@@ -105,7 +108,7 @@ if __name__ == '__main__':
         if args.camera_type == "basler":
             subscribe_topic = "/" + args.camera_topic + "/image_rect_color"
             img_sub = rospy.Subscriber(subscribe_topic, Image, img_from_camera_callback)
-        elif args.camera_type == "realsense":
+        elif args.camera_type == "realsense" or args.camera_type == "realsense_nn":
             img_topic = "/" + args.camera_topic + "/color/image_raw"
             depth_topic = "/" + args.camera_topic + "/aligned_depth_to_color/image_raw"
 
@@ -154,6 +157,10 @@ if __name__ == '__main__':
                             print("cluster_img is None")
                         if json_lever_actions is None:
                             print("json_lever_actions is None")
+
+                elif args.camera_type == "realsense_nn":
+                    labelled_img = pipeline.get_prediction(colour_img, depth_img)
+                    labelled_img_publisher.publish_img(labelled_img)
                 
                 t_prev = t_now
             else:
