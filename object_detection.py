@@ -5,6 +5,7 @@ import time
 import commentjson
 import cv2
 from rich import print
+from shapely.geometry import Polygon
 
 from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
@@ -112,7 +113,18 @@ class ObjectDetection:
             mask = masks[i].cpu().numpy().astype("uint8")
             cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if len(cnts) > 0:
-                detection.mask_contour = np.squeeze(cnts[0])
+                # get the contour with the largest area. Assume this is the one containing our object
+                cnt = max(cnts, key = cv2.contourArea)
+                detection.mask_contour = np.squeeze(cnt)
+
+                poly = None
+                if len(detection.mask_contour) > 2:
+                    poly = Polygon(detection.mask_contour)
+                    
+                if poly is None or not poly.is_valid:
+                    poly = Polygon(detection.obb_corners)
+
+                detection.mask_polygon = poly
             
             detections.append(detection)
                 

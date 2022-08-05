@@ -61,9 +61,11 @@ if __name__ == '__main__':
 
     clustered_img_publisher = None
     mask_img_publisher = None
+    depth_img_publisher = None
     if args.camera_type.startswith("realsense"):
         clustered_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/cluster", msg_images=True)
         mask_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/mask", msg_images=True)
+        depth_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/depth", msg_images=True)
 
 
     # either create a publisher topic for the labelled images and detections or create a service
@@ -144,12 +146,13 @@ if __name__ == '__main__':
                     print("json_action", json_action)
 
                 elif args.camera_type == "realsense":
-                    cluster_img, labelled_img, mask, lever_actions, json_lever_actions = pipeline.process_img(colour_img, depth_img, fps=fps)
+                    cluster_img, labelled_img, mask, lever_actions, json_lever_actions, altered_depth = pipeline.process_img(colour_img, depth_img, fps=fps)
                     if cluster_img is not None and json_lever_actions is not None:
 
                         clustered_img_publisher.publish_img(cluster_img)
                         labelled_img_publisher.publish_img(labelled_img)
                         mask_img_publisher.publish_img(mask)
+                        depth_img_publisher.publish_img(altered_depth)
                         action_publisher.publish_text(json_lever_actions)  # ! this might need to be json
                         print("json_lever_actions", json_lever_actions)
                     else:

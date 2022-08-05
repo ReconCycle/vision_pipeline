@@ -14,7 +14,7 @@ except ModuleNotFoundError:
     pass
 
 from camera_realsense_feed import RealsenseCamera
-from gap_detection.better_gap_detector import BetterGapDetector
+from gap_detection.gap_detector_clustering import GapDetectorClustering
 from object_detection import ObjectDetection
 from helpers import Detection, Action
 
@@ -31,27 +31,6 @@ def imfill(mask):
     # Invert floodfilled image
     im_floodfill_inv = cv2.bitwise_not(im_floodfill)
     return im_floodfill_inv
-
-
-def mask_from_contour(contour):
-    mask = np.zeros((480, 640, 3), np.uint8)
-    mask = cv2.drawContours(mask, [contour], -1, (255,255,255), -1)
-    return cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-
-
-def image_to_depth(mask):
-    depth_list = np.zeros((mask.shape[0]*mask.shape[1], 3))
-    count = 0
-    for i in np.arange(mask.shape[0]):
-        for j in np.arange(mask.shape[1]):
-            depth_list[count] = np.array([i, j, mask[i, j]])
-            count += 1
-
-    depth_axis_pts = depth_list[:, 2]
-    # filtering camara defects, where depth = 0
-    depth_list = depth_list[depth_axis_pts != 0]
-    
-    return depth_list
 
 
 # def visualise_3d(geometries):
@@ -123,7 +102,7 @@ class RealsensePipeline:
 
         self.object_detection = ObjectDetection(self.config.obj_detection)
         self.labels = self.object_detection.labels
-        self.gap_detector = BetterGapDetector()
+        self.gap_detector = GapDetectorClustering()
     
     def process_img(self, colour_img, depth_img, depth_colormap=None, debug=False, fps=None):
         print("running pipeline realsense frame...")
@@ -132,65 +111,14 @@ class RealsensePipeline:
         labelled_img, detections = self.object_detection.get_prediction(colour_img, extra_text=fps)
 
         # 3. apply mask to depth image and convert to pointcloud
-        lever_actions = None
-        mask = None
-        cluster_img = None
-        pcd = None
-        # get the first detection that is hca_back
-        detection_hca_back = None
-        for detection in detections:
-            if detection.label == self.labels.hca_back:
-                detection_hca_back = detection
-                break
-        
-        if detection_hca_back is not None and \
-                len(detection_hca_back.mask_contour) > self.gap_detector.APPROX_SAMPLE_LENGTH:
-            contour = detection_hca_back.mask_contour
-            hull = cv2.convexHull(contour, False)
-            mask = mask_from_contour(hull)
-            hull_center = BetterGapDetector.cnt_center(hull)
+        pcd, lever_actions, cluster_img, depth_scaled, device_mask = self.gap_detector.lever_detector(depth_img, detections, self.labels)
 
-            # print("depth_img", depth_img.shape, np.amin(depth_img), np.max(depth_img), stats.mode(depth_img, axis=None).mode)
-            depth_img = depth_img * 3  # ! IMPORTANT MULTIPLIER
-            depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=mask)
-
-            depth_list = image_to_depth(depth_masked)
-            # depth_list = ((depth_list - np.amin(depth_list))/np.ptp(depth_list))  # ! required for gaps
-
-            ############### 
-            # # working visualisation without gap detection:
-            # pcd = o3d.geometry.PointCloud()
-            # pcd.points = o3d.utility.Vector3dVector((depth_list))
-            # o3d.visualization.draw_geometries([pcd])
-            ###############
-
-            ############### bbox
-            # thresholded_depth_list = gap_detector.threshold(depth_list)
-            # gap_detector.detector_callback(depth_list)
-            #
-            # pcd = o3d.geometry.PointCloud()
-            # pcd.points = o3d.utility.Vector3dVector((depth_list))
-            # # create the boxes from detected gaps
-            # b = boxes(gap_detector.gaps)
-            # b.append(pcd)
-            # # visualise
-            # o3d.visualization.draw_geometries(b)
-            #################
-            if len(depth_list) > 0:
-
-                pcd, lever_actions, cluster_img = self.gap_detector.lever_detector(depth_list, depth_masked, hull_center)
-
-                if debug:
-                    self.show_img(labelled_img, mask, cluster_img, depth_colormap, pcd)
+        if debug:
+            self.show_img(labelled_img, device_mask, cluster_img, depth_colormap, pcd)
 
         json_lever_actions = json.dumps(lever_actions, cls=EnhancedJSONEncoder)
 
-        # if there is no cluster image, return a black image
-        if cluster_img is None:
-            cluster_img = np.zeros(colour_img.shape, np.uint8)
-            cv2.putText(cluster_img, "Clustering failed.", (20,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2)
-
-        return cluster_img, labelled_img, mask, lever_actions, json_lever_actions
+        return cluster_img, labelled_img, device_mask, lever_actions, json_lever_actions, depth_scaled
 
     @staticmethod
     def show_img(labelled_img, mask, cluster_img, depth_colormap, pcd):

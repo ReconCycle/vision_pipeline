@@ -61,17 +61,6 @@ class GraphRelations:
     def using_network_x(self, save_file_path=None):
         labels = self.labels
         
-        for detection in self.detections:
-            
-            poly = None
-            if len(detection.mask_contour) > 2:
-                poly = Polygon(detection.mask_contour)
-                
-            if poly is None or not poly.is_valid:
-                poly = Polygon(detection.obb_corners)
-
-            detection.mask_polygon = poly
-        
         inside_edges = []
         next_to_edges = []        
         for detection1, detection2 in permutations(self.detections, 2):
@@ -190,6 +179,13 @@ class GraphRelations:
         
         # AI logic
         # todo: if a battery is present, remove all other connected subgraphs
+        # todo: include worksurface
+        # todo: transport item from worksurface (a) to vice
+        # todo: transport item from worksurface (b) to cutter
+        # todo: transport item from ... to ... 
+
+        # item1, item2, context (eg. which worksurface/module and depth) 
+
         def ai():
             
             is_inside_bool, det1, det2 = is_inside(labels.plastic_clip, labels.hca_back)
