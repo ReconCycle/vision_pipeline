@@ -147,10 +147,12 @@ if __name__ == '__main__':
 
                 elif args.camera_type == "realsense":
                     cluster_img, labelled_img, mask, lever_actions, json_lever_actions, altered_depth = pipeline.process_img(colour_img, depth_img, fps=fps)
+                    
+                    labelled_img_publisher.publish_img(labelled_img)
+                    
                     if cluster_img is not None and json_lever_actions is not None:
 
                         clustered_img_publisher.publish_img(cluster_img)
-                        labelled_img_publisher.publish_img(labelled_img)
                         mask_img_publisher.publish_img(mask)
                         depth_img_publisher.publish_img(altered_depth)
                         action_publisher.publish_text(json_lever_actions)  # ! this might need to be json
@@ -165,6 +167,13 @@ if __name__ == '__main__':
                     labelled_img = pipeline.get_prediction(colour_img, depth_img)
                     labelled_img_publisher.publish_img(labelled_img)
                 
+                #! 
+                #!
+                #!
+
+                rospy.sleep(0.5)  # ! DEBUG ONLY
+                print("SLEEPING! STOP COMPUTER OVERHEATING AND CRASHING?")
+
                 t_prev = t_now
             else:
                 print("Waiting to receive image.")

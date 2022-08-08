@@ -275,9 +275,9 @@ class GapDetectorClustering:
             if detection.label == labels.hca_back:
                 detection_hca_back = detection
                 break
-                    
-        if detection_hca_back is not None and \
-                len(detection_hca_back.mask_contour) > self.APPROX_SAMPLE_LENGTH:
+        
+        # if detection_hca_back is not None and len(detection_hca_back.mask_contour) > self.APPROX_SAMPLE_LENGTH
+        if detection_hca_back is not None:
 
             contour = detection_hca_back.mask_contour
             hull = cv2.convexHull(contour, False)            
@@ -288,6 +288,9 @@ class GapDetectorClustering:
             depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=device_mask)
 
             device_poly = detection_hca_back.mask_polygon
+            if device_poly is None:
+                print("device_poly is None!")
+                return None, None, None, None, None
 
             height, width = depth_masked.shape[:2]
             img = np.zeros((height, width, 3), dtype=np.uint8)
@@ -298,10 +301,11 @@ class GapDetectorClustering:
                 # if there is no cluster image, return a black image
                 cv2.putText(img, "No depth data.", (20,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2)
 
-                return None, None, img, None
+                return None, None, img, None, None
 
         else:
-            return None, None, None, None
+            print("detection_hca_back is None!")
+            return None, None, None, None, None
 
 
         # threshold depth image
@@ -448,6 +452,11 @@ class GapDetectorClustering:
 
                     # lever action is from: center_low -> center_high
                     # exclude actions where: center_high is too close to the device edge.
+                    print("center_high", center_high)
+                    print("type(device_poly)", type(device_poly))
+                    print("device_poly.is_valid", device_poly.is_valid)
+                    print("type(device_poly.boundary)", type(device_poly.boundary))
+
                     center_high_pt = Point(center_high[0],center_high[1])
                     if device_poly.boundary.distance(center_high_pt) < self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE:
                         # center_high too close to device edge

@@ -168,7 +168,7 @@ def get_obb_using_eig(points, calcconvexhull=True):
 
 def get_obb_using_cv(contour):
 
-    if contour.size == 0 or len(contour) < 4:
+    if contour is None or contour.size == 0 or len(contour) < 4:
         return None, None, None
     
     # https://stackoverflow.com/questions/18207181/opencv-python-draw-minarearect-rotatedrect-not-implemented
