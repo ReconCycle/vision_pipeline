@@ -4,6 +4,10 @@ from skimage.filters import threshold_otsu, threshold_minimum, threshold_li
 from skimage.filters import threshold_yen
 import skimage.exposure
 
+import rospy
+from geometry_msgs.msg import PoseStamped, PointStamped, Pose
+
+import pyrealsense2
 from scipy.spatial import ConvexHull, distance_matrix
 from scipy.spatial.distance import squareform, pdist
 from scipy.optimize import curve_fit
@@ -22,7 +26,7 @@ from itertools import combinations, product
 import math
 import random
 # Own Modules
-from helpers import get_colour, get_colour_blue
+from helpers import get_colour, get_colour_blue, LeverAction
 
 
 class GapDetectorClustering:
@@ -267,7 +271,30 @@ class GapDetectorClustering:
         mask = cv2.drawContours(mask, [contour], -1, (255,255,255), -1)
         return cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
 
-    def lever_detector(self, depth_img, detections, labels):
+    @staticmethod
+    def img_to_camera_coords(x_y, depth, camera_info):
+        _intrinsics = pyrealsense2.intrinsics()
+        _intrinsics.width = camera_info.width
+        _intrinsics.height = camera_info.height
+        _intrinsics.ppx = camera_info.K[2]
+        _intrinsics.ppy = camera_info.K[5]
+        _intrinsics.fx = camera_info.K[0]
+        _intrinsics.fy = camera_info.K[4]
+        #_intrinsics.model = camera_info.distortion_model
+        _intrinsics.model  = pyrealsense2.distortion.none
+        _intrinsics.coeffs = [i for i in camera_info.D]
+        result = pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, x_y, depth)
+        result = np.asarray(result)
+
+        #result[0]: right, result[1]: down, result[2]: forward
+        return result[2], -result[0], -result[1]
+
+
+    def lever_detector(self, depth_img, detections, labels, camera_info, aruco_pose=None, aruco_point=None):
+
+        # print("aruco_pose", aruco_pose)
+        # print("aruco_point", aruco_point)
+        # print("camera_info", camera_info)
 
         # get the first detection that is hca_back
         detection_hca_back = None
@@ -280,7 +307,7 @@ class GapDetectorClustering:
         if detection_hca_back is not None:
 
             contour = detection_hca_back.mask_contour
-            hull = cv2.convexHull(contour, False)            
+            hull = cv2.convexHull(contour, False)
             # get mask of segmentation from contour so that we get only the largest component
             device_mask = self.mask_from_contour(hull).astype(np.uint8)
             
@@ -288,8 +315,25 @@ class GapDetectorClustering:
             depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=device_mask)
 
             device_poly = detection_hca_back.mask_polygon
+            
             if device_poly is None:
                 print("device_poly is None!")
+                return None, None, None, None, None
+            
+            if not device_poly.is_valid:
+                print("device_poly is not valid!")
+                return None, None, None, None, None
+
+            try:
+                if device_poly.boundary is None:
+                    print("device_poly.boundary is None!")
+                    return None, None, None, None, None
+            except ValueError as E:
+                print("error while reading device_poly.boundary")
+                return None, None, None, None, None
+
+            if device_poly.boundary.is_empty:
+                print("device_poly boundary is empty!")
                 return None, None, None, None, None
 
             height, width = depth_masked.shape[:2]
@@ -300,7 +344,7 @@ class GapDetectorClustering:
             if len(points) == 0:
                 # if there is no cluster image, return a black image
                 cv2.putText(img, "No depth data.", (20,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2)
-
+                print("no depth points!")
                 return None, None, img, None, None
 
         else:
@@ -317,6 +361,10 @@ class GapDetectorClustering:
         depth_max = np.amax(depth_masked)
         depth_min = np.amin(depth_masked)
         depth_min_nonzero = depth_masked_np.min() # np.min(points)
+
+        if depth_min_nonzero is np.NaN or depth_min_nonzero is None:
+            print("depth_min_nonzero is None!")
+            return None, None, None, None, None 
 
         print("depth_min", depth_min)
         print("depth_min_nonzero", depth_min_nonzero)
@@ -368,17 +416,20 @@ class GapDetectorClustering:
                     contour = cluster_contours[0]
                     contours.append(contour)
 
-                    poly = Polygon(contour.squeeze())
+                    try:
+                        poly = Polygon(contour.squeeze())
+                    except AssertionError as E:
+                        print("error converting contour to polygon!")
+                    else:
+                        area = cv2.contourArea(contour)
+                        center = self.cnt_center(contour)
+                        if center is not None:
 
-                    area = cv2.contourArea(contour)
-                    center = self.cnt_center(contour)
-                    if center is not None:
-
-                        points = contour.squeeze()
-                        depth = self.mean_depth(depth_masked, points)
-                        if depth is not None:
-                            cluster_obj = contour, poly, area, center, depth
-                            cluster_objs.append(cluster_obj)
+                            points = contour.squeeze()
+                            depth = self.mean_depth(depth_masked, points)
+                            if depth is not None:
+                                cluster_obj = contour, poly, area, center, depth
+                                cluster_objs.append(cluster_obj)
 
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
@@ -444,18 +495,60 @@ class GapDetectorClustering:
                     else:
                         break
 
-                    lever_action = [np.array([*center_low,
-                                                    depth_masked[center_low[1], center_low[0]]]),
-                                                    np.array([*center_high,
-                                                    depth_masked[center_high[1], center_high[0]]])
-                                                    ]
+                    # todo: average the depth over the cluster
+                    # todo: right now we sometimes get a depth of 0, if the center of the cluster is 0.
+
+                    # / 1000, to convert from mm to m, required for img_to_camera_coords(...)
+
+                    lever_action = LeverAction()
+                    lever_action.from_px = np.asarray([center_low[1], center_low[0]])
+                    lever_action.from_depth = np.asarray(depth_masked[center_low[1], center_low[0]]) / 1000
+
+                    lever_action.to_px = np.asarray([center_high[1], center_high[0]])
+                    lever_action.to_depth = np.asarray(depth_masked[center_high[1], center_high[0]]) / 1000
+
+                    lever_action.from_camera = self.img_to_camera_coords(lever_action.from_px, 
+                                                                        lever_action.from_depth, 
+                                                                        camera_info)
+                    lever_action.to_camera = self.img_to_camera_coords(lever_action.to_px, 
+                                                                        lever_action.to_depth, 
+                                                                        camera_info)
+
+                    
+                    print("depth", lever_action.from_depth)                        
+                    print("lever_action.from_camera", lever_action.from_camera)
+                    
+                    # todo: check if Pose is 0, 0, 0
+
+                    p = Pose()
+                    
+                    p.position.x = lever_action.from_camera[0]
+                    p.position.y = lever_action.from_camera[1]
+                    p.position.z = lever_action.from_camera[2]
+                    # Make sure the quaternion is valid and normalized
+                    p.orientation.x = 0.0
+                    p.orientation.y = 0.0
+                    p.orientation.z = 0.0
+                    p.orientation.w = 1.0
+
+                    p_stamped = PoseStamped()
+                    p_stamped.pose = p
+                    p_stamped.header.stamp = rospy.Time.now()
+                    p_stamped.header.frame_id = "realsense_link"
+
+                    # quaternion should point towards to_camera
+
+                    lever_action.pose_stamped = p_stamped
+
+
+                    # todo: obb and bb_camera
 
                     # lever action is from: center_low -> center_high
                     # exclude actions where: center_high is too close to the device edge.
-                    print("center_high", center_high)
-                    print("type(device_poly)", type(device_poly))
-                    print("device_poly.is_valid", device_poly.is_valid)
-                    print("type(device_poly.boundary)", type(device_poly.boundary))
+                    # print("center_high", center_high)
+                    # print("type(device_poly)", type(device_poly))
+                    # print("device_poly.is_valid", device_poly.is_valid)
+                    # print("type(device_poly.boundary)", type(device_poly.boundary))
 
                     center_high_pt = Point(center_high[0],center_high[1])
                     if device_poly.boundary.distance(center_high_pt) < self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE:
@@ -487,16 +580,14 @@ class GapDetectorClustering:
             cv2.line(img, p1, p2, colour, 3)
         
         for idx, lever_action in enumerate(lever_actions_bad):
-            cluster_center, leverpoint = lever_action
             colour = tuple([int(x) for x in [0, 250, 250]])
-            cv2.arrowedLine(img, [int(x) for x in cluster_center[:2]],
-                            [int(x) for x in leverpoint[:2]], colour, 3, tipLength=0.3)
+            cv2.arrowedLine(img, lever_action.from_px[::-1].astype(int),
+                            lever_action.to_px[::-1].astype(int), colour, 3, tipLength=0.3)
 
         for idx, lever_action in enumerate(lever_actions):
-            cluster_center, leverpoint = lever_action
             colour = tuple([int(x) for x in get_colour_blue(idx)])
-            cv2.arrowedLine(img, [int(x) for x in cluster_center[:2]],
-                          [int(x) for x in leverpoint[:2]], colour, 3, tipLength=0.3)
+            cv2.arrowedLine(img, lever_action.from_px[::-1].astype(int),
+                            lever_action.to_px[::-1].astype(int), colour, 3, tipLength=0.3)
 
         # print avg height of each cluster
         for cluster_obj in cluster_objs:

@@ -44,10 +44,23 @@ class Detection:
     tracking_score: Optional[float] = None
     tracking_box: Optional[np.ndarray] = None
 
-# @dataclass
-# class LeverAction:
-#     from_px = None
-#     to_px = None
+@dataclass
+class LeverAction:
+    from_px = None
+    to_px = None
+
+    from_depth = None
+    to_depth = None
+
+    # in camera coords
+    from_camera = None
+    to_camera = None
+
+    obb_px = None
+    bb_camera= None
+
+    pose_stamped = None
+
 
 class EnhancedJSONEncoder(JSONEncoder):
     def iterencode(self, o, _one_shot=False):

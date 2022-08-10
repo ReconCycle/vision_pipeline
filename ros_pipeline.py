@@ -3,7 +3,9 @@ import os
 import cv2
 from rich import print
 import rospy
-from sensor_msgs.msg import Image
+from std_srvs.srv import SetBool
+from sensor_msgs.msg import Image, CameraInfo
+from geometry_msgs.msg import PoseStamped, PointStamped, Pose
 from ros_vision_pipeline.msg import ColourDepth
 from cv_bridge import CvBridge
 from camera_feed import camera_feed
@@ -17,6 +19,8 @@ import numpy as np
 import json
 import argparse
 import time
+import atexit
+
 import helpers
 
 #! NOTES:
@@ -62,10 +66,12 @@ if __name__ == '__main__':
     clustered_img_publisher = None
     mask_img_publisher = None
     depth_img_publisher = None
+    lever_pose_publisher = None
     if args.camera_type.startswith("realsense"):
         clustered_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/cluster", msg_images=True)
         mask_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/mask", msg_images=True)
         depth_img_publisher = ROSPublisher(topic_name="/" + args.node_name + "/depth", msg_images=True)
+        lever_pose_publisher = rospy.Publisher("/" + args.node_name + "/lever", PoseStamped, queue_size=1)
 
 
     # either create a publisher topic for the labelled images and detections or create a service
@@ -76,10 +82,15 @@ if __name__ == '__main__':
     colour_img = None
     depth_img = None
     img_id = 0
+    aruco_pose = None
+    aruco_point = None
+    camera_info = None
 
+    img_topic = ""
     img_sub = None
-    subscribe_topic = ""
     depth_sub = None
+    aruco_sub = None
+    
 
     def img_from_camera_callback(img):
         global colour_img  # access variable from outside callback
@@ -88,7 +99,7 @@ if __name__ == '__main__':
         colour_img = np.array(colour_img)
         img_id += 1
 
-    def colour_depth_from_camera_callback(img_ros, depth_ros):
+    def colour_depth_aruco_callback(camera_info_ros, img_ros, depth_ros):
         colour = CvBridge().imgmsg_to_cv2(img_ros)
         colour = cv2.cvtColor(colour, cv2.COLOR_BGR2RGB)
         depth = CvBridge().imgmsg_to_cv2(depth_ros)
@@ -96,33 +107,78 @@ if __name__ == '__main__':
         global colour_img  # access variable from outside callback
         global depth_img
         global img_id
+        global camera_info
+        
         # current_cam_img = CvBridge().imgmsg_to_cv2(img)
         colour_img = np.array(colour)
         depth_img = np.array(depth)
 
+        camera_info = camera_info_ros
+
         img_id += 1
 
+    def aruco_callback(aruco_pose_ros, aruco_point_ros):
+        global aruco_pose
+        global aruco_point
+
+        aruco_pose = aruco_pose_ros.pose
+        aruco_point = aruco_point_ros
+
     def subscribe(args):
+        global aruco_sub
         global img_sub
         global depth_sub
-        global subscribe_topic
+        global img_topic
 
         if args.camera_type == "basler":
-            subscribe_topic = "/" + args.camera_topic + "/image_rect_color"
-            img_sub = rospy.Subscriber(subscribe_topic, Image, img_from_camera_callback)
+            img_topic = "/" + args.camera_topic + "/image_rect_color"
+            img_sub = rospy.Subscriber(img_topic, Image, img_from_camera_callback)
         elif args.camera_type == "realsense" or args.camera_type == "realsense_nn":
+            camear_info_topic = "/" + args.camera_topic + "/color/camera_info"
             img_topic = "/" + args.camera_topic + "/color/image_raw"
             depth_topic = "/" + args.camera_topic + "/aligned_depth_to_color/image_raw"
 
+            # aruco_sub = rospy.Subscriber("/realsense_aruco/pose", PoseStamped, pose_callback)
+
+            camera_info_sub = message_filters.Subscriber(camear_info_topic, CameraInfo)
             img_sub = message_filters.Subscriber(img_topic, Image)
             depth_sub = message_filters.Subscriber(depth_topic, Image)
+            aruco_sub = message_filters.Subscriber("/realsense_aruco/pose", PoseStamped)
+            aruco_pixel_sub = message_filters.Subscriber("/realsense_aruco/pixel", PointStamped)
 
-            ts = message_filters.TimeSynchronizer([img_sub, depth_sub], 10)
-            ts.registerCallback(colour_depth_from_camera_callback)
+            # adding the aruco pose means we cant use the TimeSynchronizer
+            # we use the ApproximateTimeSynchronizer but with the slop time very low
+            ts = message_filters.ApproximateTimeSynchronizer([camera_info_sub, img_sub, depth_sub], 10, slop=0.01, allow_headerless=False)
+            ts.registerCallback(colour_depth_aruco_callback)
+            
+            # we might not always see the aruco markers, so subscribe to them separately
+            ts2 = message_filters.ApproximateTimeSynchronizer([aruco_sub, aruco_pixel_sub], 10, slop=0.01, allow_headerless=False)
+            ts2.registerCallback(aruco_callback)
+
+    rospy.wait_for_service("/" + args.camera_topic + "/enable")
+    toggle_realsense_service = rospy.ServiceProxy("/" + args.camera_topic + "/enable", SetBool)
+    
+    def toggle_realsense(new_state):
+        try:
+            res = toggle_realsense_service(new_state)
+            print("toggled realsense:", res)
+        except rospy.ServiceException as e:
+            print("Service call failed: ", e)
+
+    def exit_handler():
+        toggle_realsense(False)
+        print("disabled realsense and program exiting...")
+    
+    atexit.register(exit_handler)
 
     # ? the following might need to run on a separate thread!
     if args.publish_continuously:
         subscribe(args)
+
+        # enable the camera
+        if args.camera_type == "realsense":
+            toggle_realsense(True)
+            print("enabled realsense camera")
 
         # process the newest image from the camera
         processed_img_id = 0  # don't keep processing the same image
@@ -146,7 +202,8 @@ if __name__ == '__main__':
                     print("json_action", json_action)
 
                 elif args.camera_type == "realsense":
-                    cluster_img, labelled_img, mask, lever_actions, json_lever_actions, altered_depth = pipeline.process_img(colour_img, depth_img, fps=fps)
+                    cluster_img, labelled_img, mask, lever_actions, json_lever_actions, altered_depth \
+                        = pipeline.process_img(colour_img, depth_img, camera_info, aruco_pose=aruco_pose, aruco_point=aruco_point, fps=fps)
                     
                     labelled_img_publisher.publish_img(labelled_img)
                     
@@ -157,6 +214,10 @@ if __name__ == '__main__':
                         depth_img_publisher.publish_img(altered_depth)
                         action_publisher.publish_text(json_lever_actions)  # ! this might need to be json
                         print("json_lever_actions", json_lever_actions)
+
+                        if len(lever_actions) > 0:
+                            print("publishing lever")
+                            lever_pose_publisher.publish(lever_actions[0].pose_stamped)
                     else:
                         if cluster_img is None:
                             print("cluster_img is None")
@@ -179,7 +240,7 @@ if __name__ == '__main__':
                 print("Waiting to receive image.")
 
                 num_connections = img_sub.get_num_connections()
-                if num_connections == 0 and subscribe_topic in list(np.array(rospy.get_published_topics()).flat):
+                if num_connections == 0 and img_topic in list(np.array(rospy.get_published_topics()).flat):
                     print("(Re)subscribing to topic...")
                     if img_sub is not None:
                         img_sub.unregister()
@@ -192,5 +253,6 @@ if __name__ == '__main__':
             if img_id == sys.maxsize:
                 img_id = 0
                 processed_img_id = 0
+
     else:
         rospy.spin()
