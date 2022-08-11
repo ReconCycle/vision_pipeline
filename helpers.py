@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from enum import IntEnum
 import itertools
+from geometry_msgs.msg import PoseStamped
 
 
 class Action(IntEnum):
@@ -46,20 +47,20 @@ class Detection:
 
 @dataclass
 class LeverAction:
-    from_px = None
-    to_px = None
+    from_px: Optional[np.ndarray] = None
+    to_px: Optional[np.ndarray] = None
 
-    from_depth = None
-    to_depth = None
+    from_depth: Optional[float] = None
+    to_depth: Optional[float] = None
 
     # in camera coords
-    from_camera = None
-    to_camera = None
+    from_camera: Optional[np.ndarray] = None
+    to_camera: Optional[np.ndarray] = None
 
-    obb_px = None
-    bb_camera= None
+    obb_px: Optional[np.ndarray] = None
+    bb_camera: Optional[np.ndarray] = None
 
-    pose_stamped = None
+    pose_stamped: Optional[PoseStamped] = None
 
 
 class EnhancedJSONEncoder(JSONEncoder):

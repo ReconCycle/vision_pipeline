@@ -116,9 +116,9 @@ class RealsensePipeline:
         if debug:
             self.show_img(labelled_img, device_mask, cluster_img, depth_colormap, pcd)
 
-        json_lever_actions = json.dumps(lever_actions, cls=EnhancedJSONEncoder)
+        # json_lever_actions = json.dumps(lever_actions, cls=EnhancedJSONEncoder)
 
-        return cluster_img, labelled_img, device_mask, lever_actions, json_lever_actions, depth_scaled
+        return cluster_img, labelled_img, device_mask, lever_actions, depth_scaled
 
     @staticmethod
     def show_img(labelled_img, mask, cluster_img, depth_colormap, pcd):

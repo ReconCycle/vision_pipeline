@@ -502,10 +502,10 @@ class GapDetectorClustering:
 
                     lever_action = LeverAction()
                     lever_action.from_px = np.asarray([center_low[1], center_low[0]])
-                    lever_action.from_depth = np.asarray(depth_masked[center_low[1], center_low[0]]) / 1000
+                    lever_action.from_depth = depth_masked[center_low[1], center_low[0]] / 1000
 
                     lever_action.to_px = np.asarray([center_high[1], center_high[0]])
-                    lever_action.to_depth = np.asarray(depth_masked[center_high[1], center_high[0]]) / 1000
+                    lever_action.to_depth = depth_masked[center_high[1], center_high[0]] / 1000
 
                     lever_action.from_camera = self.img_to_camera_coords(lever_action.from_px, 
                                                                         lever_action.from_depth, 
