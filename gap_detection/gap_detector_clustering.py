@@ -137,26 +137,6 @@ class GapDetectorClustering:
 
         return new_points_idx
 
-    def generate_pcd(self, clusters):
-        pcd = None
-        if open3d_available:
-            clustered_points = []
-            colours = []
-            for index, cluster in enumerate(clusters):
-                clustered_points.extend(cluster)
-                if len(cluster) < self.MIN_CLUSTER_SIZE:
-                    cluster_colours = [np.array((180, 180, 180), dtype=np.float64) / 255] * len(cluster)
-                else:
-                    cluster_colours = [get_colour(index) / 255] * len(cluster)
-
-                colours.extend(cluster_colours)
-
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(np.array(clustered_points))
-            pcd.colors = o3d.utility.Vector3dVector(np.array(colours))
-        
-        return pcd
-
     @staticmethod
     def sort_and_remove_duplicates(points_idx, points):
         idxs_and_points = list(zip(points_idx, points))
@@ -296,6 +276,12 @@ class GapDetectorClustering:
         # print("aruco_point", aruco_point)
         # print("camera_info", camera_info)
 
+        # vars to return
+        lever_actions = None
+        img = None
+        depth_scaled = None
+        device_mask = None
+
         # get the first detection that is hca_back
         detection_hca_back = None
         for detection in detections:
@@ -318,23 +304,23 @@ class GapDetectorClustering:
             
             if device_poly is None:
                 print("device_poly is None!")
-                return None, None, None, None, None
+                return lever_actions, img, depth_scaled, device_mask
             
             if not device_poly.is_valid:
                 print("device_poly is not valid!")
-                return None, None, None, None, None
+                return lever_actions, img, depth_scaled, device_mask
 
             try:
                 if device_poly.boundary is None:
                     print("device_poly.boundary is None!")
-                    return None, None, None, None, None
+                    return lever_actions, img, depth_scaled, device_mask
             except ValueError as E:
                 print("error while reading device_poly.boundary")
-                return None, None, None, None, None
+                return lever_actions, img, depth_scaled, device_mask
 
             if device_poly.boundary.is_empty:
                 print("device_poly boundary is empty!")
-                return None, None, None, None, None
+                return lever_actions, img, depth_scaled, device_mask
 
             height, width = depth_masked.shape[:2]
             img = np.zeros((height, width, 3), dtype=np.uint8)
@@ -349,7 +335,7 @@ class GapDetectorClustering:
 
         else:
             print("detection_hca_back is None!")
-            return None, None, None, None, None
+            return lever_actions, img, depth_scaled, device_mask
 
 
         # threshold depth image
@@ -362,12 +348,16 @@ class GapDetectorClustering:
         depth_min = np.amin(depth_masked)
         depth_min_nonzero = depth_masked_np.min() # np.min(points)
 
+        if depth_min == depth_min:
+            print("depth_min == depth_max!")
+            return lever_actions, img, depth_scaled, device_mask
+
         if depth_min_nonzero is np.NaN or depth_min_nonzero is None:
             print("depth_min_nonzero is None!")
-            return None, None, None, None, None 
+            return lever_actions, img, depth_scaled, device_mask 
 
         print("depth_min", depth_min)
-        print("depth_min_nonzero", depth_min_nonzero)
+        print("depth_min_nonzero", depth_min_nonzero, type(depth_min_nonzero))
         print("depth_max", depth_max)
 
         # rescale the depth to the range (0, 255) such that the clustering works well
@@ -384,9 +374,6 @@ class GapDetectorClustering:
         # sanity check
         if len(depth_scaled_points) > self.MIN_CLUSTER_SIZE:
             clusters, num_of_points = self.clustering(depth_scaled_points)
-        
-        # for debugging
-        pcd = self.generate_pcd(clusters)
 
         # get the contour of each cluster
         kernel = np.ones((2, 2), np.uint8)
@@ -598,7 +585,7 @@ class GapDetectorClustering:
             color = [255, 255, 255]
             cv2.putText(img, text, text_pt, font_face, font_scale, color, font_thickness, cv2.LINE_AA)
 
-        return pcd, lever_actions, img, depth_scaled, device_mask
+        return lever_actions, img, depth_scaled, device_mask
 
     # =============== CLUSTER ALGORITHM WRAPPERS ===============
     def kmeans(self, data):
