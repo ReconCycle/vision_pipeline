@@ -19,7 +19,7 @@ from camera_control_msgs.srv import SetSleeping
 
 
 class BaslerPipeline:
-    def __init__(self, camera_topic="basler", node_name="basler_vision"):
+    def __init__(self, camera_topic="basler", node_name="vision_basler"):
         self.rate = rospy.Rate(1) # fps
 
         # don't automatically start
@@ -56,7 +56,11 @@ class BaslerPipeline:
         self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_callback)
 
     def create_service_client(self):
-        rospy.wait_for_service("/" + self.camera_topic + "/set_sleeping")
+        try:
+            rospy.wait_for_service("/" + self.camera_topic + "/set_sleeping", 2) # 2 seconds
+        except rospy.ROSException as e:
+            print("Couldn't find to service!")
+    
         self.camera_service = rospy.ServiceProxy("/" + self.camera_topic + "/set_sleeping", SetSleeping)
 
     def create_publishers(self):

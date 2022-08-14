@@ -20,7 +20,7 @@ import message_filters
 
 
 class RealsensePipeline:
-    def __init__(self, camera_topic="realsense", node_name="realsense_vision"):
+    def __init__(self, camera_topic="realsense", node_name="vision_realsense"):
         self.rate = rospy.Rate(1)
 
         # don't automatically start
@@ -82,7 +82,10 @@ class RealsensePipeline:
         ts2.registerCallback(self.aruco_callback)
 
     def create_service_client(self):
-        rospy.wait_for_service("/" + self.camera_topic + "/enable")
+        try:
+            rospy.wait_for_service("/" + self.camera_topic + "/enable", 2) # 2 seconds
+        except rospy.ROSException as e:
+            print("Couldn't find to service!")
         self.camera_service = rospy.ServiceProxy("/" + self.camera_topic + "/enable", SetBool)
 
     def create_publishers(self):
@@ -94,6 +97,7 @@ class RealsensePipeline:
         self.mask_img_pub = rospy.Publisher("/" + self.node_name + "/mask", Image, queue_size=20)
         self.depth_img_pub = rospy.Publisher("/" + self.node_name + "/depth", Image, queue_size=20)
         self.lever_pose_pub = rospy.Publisher("/" + self.node_name + "/lever", PoseStamped, queue_size=1)
+        self.lever_actions_pub = rospy.Publisher("/" + self.node_name + "/lever_actions", String, queue_size=1)
 
 
     def publish(self, img, json_detections, lever_actions, cluster_img, depth_scaled, device_mask):
@@ -112,6 +116,7 @@ class RealsensePipeline:
         # we could use pose_stamped array instead to publish all the lever possibilities
         if lever_actions is not None:
             self.lever_pose_pub.publish(lever_actions[0].pose_stamped)
+            self.lever_actions_pub.publish(lever_actions)
 
     def enable_camera(self, state):
         try:

@@ -322,21 +322,17 @@ class GapDetectorClustering:
                 print("device_poly boundary is empty!")
                 return lever_actions, img, depth_scaled, device_mask
 
-            height, width = depth_masked.shape[:2]
-            img = np.zeros((height, width, 3), dtype=np.uint8)
-
             points = self.image_to_points_list(depth_masked)
 
             if len(points) == 0:
-                # if there is no cluster image, return a black image
-                cv2.putText(img, "No depth data.", (20,100), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2)
-                print("no depth points!")
-                return None, None, img, None, None
+                return lever_actions, img, depth_scaled, device_mask
 
         else:
             print("detection_hca_back is None!")
             return lever_actions, img, depth_scaled, device_mask
 
+        height, width = depth_masked.shape[:2]
+        img = np.zeros((height, width, 3), dtype=np.uint8)
 
         # threshold depth image
         print("num points thresholded", np.count_nonzero(depth_masked > self.MAX_DEPTH_THRESHOLD))

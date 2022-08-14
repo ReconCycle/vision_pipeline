@@ -5,6 +5,7 @@ from ros_vision_pipeline.msg import ColourDepth
 from cv_bridge import CvBridge
 from std_msgs.msg import String
 
+#! DEPRECATE THIS.
 
 class ROSPublisher:
     def __init__(self, topic_name, msg_images=True):
