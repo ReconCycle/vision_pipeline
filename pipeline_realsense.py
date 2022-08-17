@@ -3,6 +3,7 @@ import numpy as np
 import time
 from rich import print
 import json
+import cv2
 
 from gap_detection.gap_detector_clustering import GapDetectorClustering
 from object_detection import ObjectDetection
@@ -53,6 +54,7 @@ class RealsensePipeline:
     
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):
         colour_img = CvBridge().imgmsg_to_cv2(img_msg)
+        colour_img = cv2.cvtColor(colour_img, cv2.COLOR_BGR2RGB)
         self.colour_img = np.array(colour_img)
         self.depth_img = CvBridge().imgmsg_to_cv2(depth_msg)
         self.camera_info = camera_info
@@ -70,7 +72,7 @@ class RealsensePipeline:
         img_sub = message_filters.Subscriber(img_topic, Image)
         depth_sub = message_filters.Subscriber(depth_topic, Image)
 
-        ts = message_filters.ApproximateTimeSynchronizer([camera_info_sub, img_sub, depth_sub], 10, slop=0.01, allow_headerless=False)
+        ts = message_filters.ApproximateTimeSynchronizer([camera_info_sub, img_sub, depth_sub], 10, slop=0.05, allow_headerless=False)
         ts.registerCallback(self.img_from_camera_callback)
 
         # subscribe to aruco
@@ -78,14 +80,14 @@ class RealsensePipeline:
         aruco_pixel_sub = message_filters.Subscriber("/realsense_aruco/pixel", PointStamped)
 
         # we might not always see the aruco markers, so subscribe to them separately
-        ts2 = message_filters.ApproximateTimeSynchronizer([aruco_sub, aruco_pixel_sub], 10, slop=0.01, allow_headerless=False)
+        ts2 = message_filters.ApproximateTimeSynchronizer([aruco_sub, aruco_pixel_sub], 10, slop=0.05, allow_headerless=False)
         ts2.registerCallback(self.aruco_callback)
 
     def create_service_client(self):
         try:
             rospy.wait_for_service("/" + self.camera_topic + "/enable", 2) # 2 seconds
         except rospy.ROSException as e:
-            print("Couldn't find to service!")
+            print("[red]Couldn't find to service![/red]")
         self.camera_service = rospy.ServiceProxy("/" + self.camera_topic + "/enable", SetBool)
 
     def create_publishers(self):

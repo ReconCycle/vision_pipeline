@@ -4,7 +4,6 @@ import time
 from rich import print
 import json
 
-from image_calibration import ImageCalibration
 from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
 from helpers import EnhancedJSONEncoder
@@ -59,7 +58,7 @@ class BaslerPipeline:
         try:
             rospy.wait_for_service("/" + self.camera_topic + "/set_sleeping", 2) # 2 seconds
         except rospy.ROSException as e:
-            print("Couldn't find to service!")
+            print("[red]Couldn't find to service![/red]")
     
         self.camera_service = rospy.ServiceProxy("/" + self.camera_topic + "/set_sleeping", SetSleeping)
 
@@ -93,13 +92,10 @@ class BaslerPipeline:
         self.config = load_config()
         print("config", self.config)
         
-        # 1. load camera calibration files
-        self.calibration = ImageCalibration(self.config.camera)
-
-        # 2. work surface coordinates, will be initialised on first received image
+        # 1. work surface coordinates, will be initialised on first received image
         self.worksurface_detection = None
 
-        # 3. object detection
+        # 2. object detection
         self.object_detection = ObjectDetection(self.config.obj_detection)
         self.labels = self.object_detection.labels
 

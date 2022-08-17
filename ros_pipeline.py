@@ -18,7 +18,7 @@ import message_filters
 
 from pipeline_basler import BaslerPipeline
 from pipeline_realsense import RealsensePipeline
-from gap_detection.nn_gap_detector import NNGapDetector
+# from gap_detection.nn_gap_detector import NNGapDetector
 import helpers
 
 
