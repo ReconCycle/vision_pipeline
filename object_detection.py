@@ -6,6 +6,8 @@ import commentjson
 import cv2
 from rich import print
 from shapely.geometry import Polygon
+from shapely.validation import make_valid
+from shapely.validation import explain_validity
 
 from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
@@ -15,7 +17,8 @@ from tracker.byte_tracker import BYTETracker
 import obb
 import graphics
 from config import load_config
-from helpers import Struct, Detection
+from helpers import Struct
+from context_action_framework.types import Detection
 
 import enum
 
@@ -120,9 +123,15 @@ class ObjectDetection:
                 poly = None
                 if len(detection.mask_contour) > 2:
                     poly = Polygon(detection.mask_contour)
-                    
+                
+                if not poly.is_valid:
+                    # print("poly is not valid!")
+                    # print(explain_validity(poly))
+                    poly_multi = make_valid(poly)
+                    poly = poly_multi[0]
+                
                 if poly is None or not poly.is_valid:
-                    poly = Polygon(detection.obb_corners)
+                    poly = Polygon(detection.obb_corners) #! I think this is broken
 
                 detection.mask_polygon = poly
             

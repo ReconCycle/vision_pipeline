@@ -12,21 +12,19 @@ from scipy.spatial import ConvexHull, distance_matrix
 from scipy.spatial.distance import squareform, pdist
 from scipy.optimize import curve_fit
 from shapely.geometry import LineString, Point, Polygon
+from shapely.validation import make_valid
+from shapely.validation import explain_validity
+
 import sklearn.cluster as cluster
 import hdbscan
 import time
-open3d_available = True
-try:
-    import open3d as o3d
-except ModuleNotFoundError:
-    open3d_available = False
-    pass
 import cv2
 from itertools import combinations, product
 import math
 import random
 # Own Modules
-from helpers import get_colour, get_colour_blue, LeverAction
+from helpers import get_colour, get_colour_blue
+from context_action_framework.types import LeverAction
 
 
 class GapDetectorClustering:
@@ -302,25 +300,9 @@ class GapDetectorClustering:
 
             device_poly = detection_hca_back.mask_polygon
             
-            if device_poly is None:
-                print("device_poly is None!")
-                return lever_actions, img, depth_scaled, device_mask
-            
-            if not device_poly.is_valid:
-                print("device_poly is not valid!")
-                return lever_actions, img, depth_scaled, device_mask
-
-            try:
-                if device_poly.boundary is None:
-                    print("device_poly.boundary is None!")
-                    return lever_actions, img, depth_scaled, device_mask
-            except ValueError as E:
-                print("error while reading device_poly.boundary")
-                return lever_actions, img, depth_scaled, device_mask
-
-            if device_poly.boundary.is_empty:
-                print("device_poly boundary is empty!")
-                return lever_actions, img, depth_scaled, device_mask
+            print("device_poly.area", device_poly.area)
+            print("len(contour)", len(contour))
+            print("len(hull)", len(hull))
 
             points = self.image_to_points_list(depth_masked)
 
@@ -344,13 +326,13 @@ class GapDetectorClustering:
         depth_min = np.amin(depth_masked)
         depth_min_nonzero = depth_masked_np.min() # np.min(points)
 
-        if depth_min == depth_min:
+        if depth_min == depth_max:
             print("depth_min == depth_max!")
-            return lever_actions, img, depth_scaled, device_mask
+            return lever_actions, img, depth_masked, device_mask
 
         if depth_min_nonzero is np.NaN or depth_min_nonzero is None:
             print("depth_min_nonzero is None!")
-            return lever_actions, img, depth_scaled, device_mask 
+            return lever_actions, img, depth_masked, device_mask 
 
         print("depth_min", depth_min)
         print("depth_min_nonzero", depth_min_nonzero, type(depth_min_nonzero))
@@ -534,7 +516,7 @@ class GapDetectorClustering:
                     # print("type(device_poly.boundary)", type(device_poly.boundary))
 
                     center_high_pt = Point(center_high[0],center_high[1])
-                    if device_poly.boundary.distance(center_high_pt) < self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE:
+                    if device_poly.exterior.distance(center_high_pt) < self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE:
                         # center_high too close to device edge
                         lever_actions_bad.append(lever_action)
                     else:
