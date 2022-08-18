@@ -116,7 +116,7 @@ class RealsensePipeline:
 
         # publish only the most probable lever action, for now
         # we could use pose_stamped array instead to publish all the lever possibilities
-        if lever_actions is not None:
+        if lever_actions is not None and len(lever_actions) > 0:
             self.lever_pose_pub.publish(lever_actions[0].pose_stamped)
             self.lever_actions_pub.publish(lever_actions)
 

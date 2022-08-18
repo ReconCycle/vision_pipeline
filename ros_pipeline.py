@@ -82,10 +82,10 @@ class ROSPipeline():
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--camera_type", help="Which camera: basler/realsense", nargs='?', type=str, default="basler")
-    parser.add_argument("--auto_start", help="Publish continuously otherwise create service.", nargs='?', type=helpers.str2bool, default=False)
-    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="basler")
-    parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision_basler")
+    parser.add_argument("--camera_type", help="Which camera: basler/realsense", nargs='?', type=str, default="realsense")
+    parser.add_argument("--auto_start", help="Publish continuously otherwise create service.", nargs='?', type=helpers.str2bool, default=True)
+    parser.add_argument("--camera_topic", help="The name of the camera topic to subscribe to", nargs='?', type=str, default="realsense")
+    parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision_realsense")
     args = parser.parse_args()
 
     ros_pipeline =  ROSPipeline(args)

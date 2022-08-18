@@ -5,7 +5,7 @@ import time
 import commentjson
 import cv2
 from rich import print
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
 
@@ -125,13 +125,29 @@ class ObjectDetection:
                     poly = Polygon(detection.mask_contour)
                 
                 if not poly.is_valid:
-                    # print("poly is not valid!")
                     # print(explain_validity(poly))
-                    poly_multi = make_valid(poly)
-                    poly = poly_multi[0]
+                    poly = make_valid(poly)
                 
-                if poly is None or not poly.is_valid:
-                    poly = Polygon(detection.obb_corners) #! I think this is broken
+                # we sometimes get a GeometryCollection, where the first item is a MultiPolygon
+                if isinstance(poly, GeometryCollection):
+                    for i in np.arange(len(poly.geoms)):
+                        if isinstance(poly.geoms[i], MultiPolygon):
+                            poly = poly.geoms[i]
+                            break
+                        
+                # we sometimes get a MultiPolygon where the first item is usually the polygon we want
+                if isinstance(poly, MultiPolygon) or isinstance(poly, GeometryCollection): 
+                    for i in np.arange(len(poly.geoms)):
+                        if isinstance(poly.geoms[i], Polygon):
+                            poly = poly.geoms[i]
+                            break
+
+                # return a Polygon or None
+                if not isinstance(poly, Polygon):
+                    print("[red]poly is of type"+ str(type(poly)) + " and not Polygon![/red]")
+                    if isinstance(poly, GeometryCollection):
+                        print(list(poly.geoms))
+                    poly = None
 
                 detection.mask_polygon = poly
             
