@@ -16,61 +16,16 @@ from tracker.byte_tracker import BYTETracker
 
 import obb
 import graphics
-from config import load_config
-from helpers import Struct
-from context_action_framework.types import Detection
+from helpers import Struct, make_valid_poly
+from context_action_framework.types import Detection, Label
 
-import enum
 
 
 class ObjectDetection:
-    def __init__(self, config=None):
-        yolact_dataset = None
-        
-        if config is None:
-            config = load_config().obj_detection
-        
-        if os.path.isfile(config.yolact_dataset_file):
-            print("loading", config.yolact_dataset_file)
-            with open(config.yolact_dataset_file, "r") as read_file:
-                yolact_dataset = commentjson.load(read_file)
-                print("yolact_dataset", yolact_dataset)
-        else:
-            raise Exception("config.yolact_dataset_file is incorrect: " +  str(config.yolact_dataset_file))
-                
-        self.dataset = Config(yolact_dataset)
-        
-        config_override = {
-            'name': 'yolact_base',
+    def __init__(self, yolact, dataset):
 
-            # Dataset stuff
-            'dataset': self.dataset,
-            'num_classes': len(self.dataset.class_names) + 1,
-
-            # Image Size
-            'max_size': 1100,
-
-            # These are in BGR and are for ImageNet
-            'MEANS': (103.94, 116.78, 123.68),
-            'STD': (57.38, 57.12, 58.40),
-            
-            # the save path should contain resnet101_reducedfc.pth
-            'save_path': './data_limited/yolact/',
-            'score_threshold': config.yolact_score_threshold,
-            'top_k': len(self.dataset.class_names)
-        }
-        
-        model_path = None
-        if "model" in yolact_dataset:
-            model_path = os.path.join(os.path.dirname(config.yolact_dataset_file), yolact_dataset["model"])
-            
-        print("model_path", model_path)
-        
-        self.yolact = Yolact(config_override)
-        self.yolact.cfg.print()
-        self.yolact.eval()
-        self.yolact.load_weights(model_path)
-
+        self.yolact = yolact
+        self.dataset = dataset
 
         # parser.add_argument("--track_thresh", type=float, default=0.6, help="tracking confidence threshold")
         # parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
@@ -90,8 +45,8 @@ class ObjectDetection:
         self.fps_objdet = -1.
         
         # convert class names to enums
-        labels = enum.IntEnum('label', self.dataset.class_names, start=0)
-        self.labels = labels
+        # labels = enum.IntEnum('label', self.dataset.class_names, start=0)
+        # self.labels = labels
         
 
     def get_prediction(self, img_path, worksurface_detection=None, extra_text=None):
@@ -104,12 +59,12 @@ class ObjectDetection:
         for i in np.arange(len(classes)):
                 
             detection = Detection()
-            detection.id = i
+            detection.id = int(i)
             
-            detection.label = self.labels(classes[i]) # self.dataset.class_names[classes[i]]
+            detection.label = Label(classes[i]) # self.dataset.class_names[classes[i]]
             
             detection.score = float(scores[i])
-            detection.box = boxes[i]
+            detection.box_px = boxes[i].reshape((-1,2)) # convert tlbr
             detection.mask = masks[i]
             
             # compute contour. Required for obb and graph_relations
@@ -123,33 +78,9 @@ class ObjectDetection:
                 poly = None
                 if len(detection.mask_contour) > 2:
                     poly = Polygon(detection.mask_contour)
-                
-                if not poly.is_valid:
-                    # print(explain_validity(poly))
-                    poly = make_valid(poly)
-                
-                # we sometimes get a GeometryCollection, where the first item is a MultiPolygon
-                if isinstance(poly, GeometryCollection):
-                    for i in np.arange(len(poly.geoms)):
-                        if isinstance(poly.geoms[i], MultiPolygon):
-                            poly = poly.geoms[i]
-                            break
-                        
-                # we sometimes get a MultiPolygon where the first item is usually the polygon we want
-                if isinstance(poly, MultiPolygon) or isinstance(poly, GeometryCollection): 
-                    for i in np.arange(len(poly.geoms)):
-                        if isinstance(poly.geoms[i], Polygon):
-                            poly = poly.geoms[i]
-                            break
+                    poly = make_valid_poly(poly)
 
-                # return a Polygon or None
-                if not isinstance(poly, Polygon):
-                    print("[red]poly is of type"+ str(type(poly)) + " and not Polygon![/red]")
-                    if isinstance(poly, GeometryCollection):
-                        print(list(poly.geoms))
-                    poly = None
-
-                detection.mask_polygon = poly
+                detection.polygon_px = poly
             
             detections.append(detection)
                 
@@ -159,7 +90,7 @@ class ObjectDetection:
         online_targets = self.tracker.update(boxes, scores) #? does the tracker not benefit from the predicted classes?
 
         for t in online_targets:
-            detections[t.input_id].tracking_id = t.track_id
+            detections[t.input_id].tracking_id = int(t.track_id)
             detections[t.input_id].tracking_box = t.tlbr
             detections[t.input_id].score = float(t.score)
 
@@ -170,15 +101,21 @@ class ObjectDetection:
         # calculate the oriented bounding boxes
         for detection in detections:
             corners, center, rot_quat = obb.get_obb_from_contour(detection.mask_contour)
-            detection.obb_corners = corners
-            detection.obb_center = center
-            detection.obb_rot_quat = rot_quat
+            detection.obb_px = corners
+            
+            # todo: obb_3d_px, obb_3d
+            # todo: transform should actually be (x, y, z)
+            # (transform (x, y), rotation (x, y, z, w))
+            detection.tf_px = [center, rot_quat]
             if worksurface_detection is not None and corners is not None:
-                detection.obb_corners_meters = worksurface_detection.pixels_to_meters(corners)
-                detection.obb_center_meters = worksurface_detection.pixels_to_meters(center)
+                center_meters = worksurface_detection.pixels_to_meters(center)
+                detection.tf = [center_meters, rot_quat]
+                detection.box = worksurface_detection.pixels_to_meters(detection.box_px)
+                detection.obb = worksurface_detection.pixels_to_meters(corners)
+                
             else:
-                detection.obb_corners_meters = None
-                detection.obb_center_meters = None
+                detection.obb = None
+                detection.tf = None
         
         fps_obb = -1
         if time.time() - obb_start > 0:

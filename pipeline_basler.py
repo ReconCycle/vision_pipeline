@@ -4,9 +4,8 @@ import time
 from rich import print
 import json
 
-from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
-from helpers import EnhancedJSONEncoder
+from work_surface_detection_opencv import WorkSurfaceDetection
 from config import load_config
 
 import rospy
@@ -16,9 +15,12 @@ from cv_bridge import CvBridge
 from std_msgs.msg import String
 from camera_control_msgs.srv import SetSleeping
 
+from context_action_framework.msg import Detection as ROSDetection
+from context_action_framework.msg import Detections as ROSDetections
+from context_action_framework.types import detections_to_ros
 
 class BaslerPipeline:
-    def __init__(self, camera_topic="basler", node_name="vision_basler"):
+    def __init__(self, yolact, dataset, camera_topic="basler", node_name="vision_basler"):     
         self.rate = rospy.Rate(1) # fps
 
         # don't automatically start
@@ -31,6 +33,12 @@ class BaslerPipeline:
 
         self.colour_img = None
         self.img_id = 0
+        
+        self.processed_img_id = -1  # don't keep processing the same image
+        self.t_now = None
+        
+        self.labelled_img = None
+        self.detections = None
 
         print("creating camera subscribers...")
         self.create_camera_subscribers()
@@ -39,10 +47,14 @@ class BaslerPipeline:
         print("creating service client...")
         self.create_service_client()
         print("creating basler pipeline...")
-        self.init_basler_pipeline()
+        self.init_basler_pipeline(yolact, dataset)
 
         print("waiting for pipeline to be enabled...")
 
+    def init_basler_pipeline(self, yolact, dataset):
+        self.object_detection = ObjectDetection(yolact, dataset)
+        
+        self.worksurface_detection = None
 
     def img_from_camera_callback(self, img):
         colour_img = CvBridge().imgmsg_to_cv2(img)
@@ -50,7 +62,6 @@ class BaslerPipeline:
         self.img_id += 1
 
     def create_camera_subscribers(self):
-
         img_topic = "/" + self.camera_topic + "/image_rect_color"
         self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_callback)
 
@@ -65,11 +76,34 @@ class BaslerPipeline:
     def create_publishers(self):
         self.br = CvBridge()
         self.labelled_img_publisher = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=20)
-        self.detections_publisher = rospy.Publisher("/" + self.node_name + "/detections", String, queue_size=20)
+        self.detections_publisher = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=20)
 
     def publish(self, img, detections):
+        
+        # if len(detections) > 0:
+        #     print("debug")
+        #     print("detections[0]", detections[0])
+        #     asdf = detections[0].json()
+        #     # asdf = detections[0].to_json()
+        #     print(asdf)
+        # print("DEBUG:")
+        # json_detections = Detection.schema().dumps(detections, many=True)
+        # print("my alternative...")
+        # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
+        # print("json_detections", json_detections)
+        # print("testing...")
+        # going_back = Detection.schema().loads(json_detections, many=True)
+        
+        # print("pydantic")
+        # json_detections = detections.json()
+
+        
+        print("publishing...")
+        # json_detections = "blah"
+        ros_detections = ROSDetections(detections_to_ros(detections))
+        
         self.labelled_img_publisher.publish(self.br.cv2_to_imgmsg(img))
-        self.detections_publisher.publish(String(detections))
+        self.detections_publisher.publish(ros_detections)
 
     def enable_camera(self, state):
         # enable = True, but the topic is called set_sleeping, so the inverse
@@ -81,52 +115,56 @@ class BaslerPipeline:
             else:
                 print("disabled camera:", res)
         except rospy.ServiceException as e:
-            print("Service call failed: ", e)
+            print("Service call failed (state " + str(state) + "): ", e)
 
     def enable(self, state):
         self.enable_camera(state)
         self.pipeline_enabled = state
+        if state == False:
+            self.labelled_img = None
+            self.detections = None
 
-    def init_basler_pipeline(self):
-
-        self.config = load_config()
-        print("config", self.config)
+    def get_stable_detection(self):
+        # todo: logic to get stable detection
         
-        # 1. work surface coordinates, will be initialised on first received image
-        self.worksurface_detection = None
+        # todo: wait until we get at least one detection
+        while self.detections is None:
+            print("waiting for detection...")
+            time.sleep(1) #! debug
+            
+        if self.detections is not None:            
 
-        # 2. object detection
-        self.object_detection = ObjectDetection(self.config.obj_detection)
-        self.labels = self.object_detection.labels
+            return self.labelled_img, self.detections        
 
+        else:
+            print("stable detection failed!")
+            return None, None
+        
     def run(self):
-        processed_img_id = -1  # don't keep processing the same image
-        t_now = None
-        t_prev = None
-        fps = None
-        while not rospy.is_shutdown():
-            if self.pipeline_enabled:
-                if self.colour_img is not None and processed_img_id < self.img_id:
-                    processed_img_id = self.img_id
-                    t_prev = t_now
-                    t_now = time.time()
-                    if t_prev is not None and t_now - t_prev > 0:
-                        fps = "fps_total: " + str(round(1 / (t_now - t_prev), 1)) + ", "
+        if self.pipeline_enabled:
+            if self.colour_img is not None and self.processed_img_id < self.img_id:
+                print("\n[green]running pipeline basler frame...[/green]")
+                self.processed_img_id = self.img_id
+                t_prev = self.t_now
+                self.t_now = time.time()
+                fps = None
+                if t_prev is not None and self.t_now - t_prev > 0:
+                    fps = "fps_total: " + str(round(1 / (self.t_now - t_prev), 1)) + ", "
 
-                    labelled_img, detections, json_detections = self.process_img(self.colour_img, fps)
-                    print("json_detections", json_detections)
+                labelled_img, detections = self.process_img(self.colour_img, fps)
 
-                    self.publish(labelled_img, json_detections)
-
-                else:
-                    print("Waiting to receive image.")
-                    time.sleep(0.1)
+                self.publish(labelled_img, detections)
+                
+                self.labelled_img = labelled_img
+                self.detections = detections
 
                 if self.img_id == sys.maxsize:
                     self.img_id = 0
-                    processed_img_id = -1
-            
-            self.rate.sleep()
+                    self.processed_img_id = -1
+
+            else:
+                print("Waiting to receive image (basler).")
+                time.sleep(0.1)
 
     def process_img(self, img, fps=None):
         if self.worksurface_detection is None:
@@ -136,6 +174,6 @@ class BaslerPipeline:
         
         labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection, extra_text=fps)
 
-        json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
+        # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
         
-        return labelled_img, detections, json_detections
+        return labelled_img, detections

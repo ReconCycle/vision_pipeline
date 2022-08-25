@@ -8,7 +8,6 @@ import cv2
 from gap_detection.gap_detector_clustering import GapDetectorClustering
 from object_detection import ObjectDetection
 from config import load_config
-from helpers import EnhancedJSONEncoder
 
 import rospy
 from geometry_msgs.msg import PoseStamped, PointStamped
@@ -19,9 +18,12 @@ from std_msgs.msg import String
 from camera_control_msgs.srv import SetSleeping
 import message_filters
 
+from context_action_framework.msg import Detections as ROSDetections
+from context_action_framework.msg import Gaps as ROSGaps
+from context_action_framework.types import detections_to_ros, gaps_to_ros
 
 class RealsensePipeline:
-    def __init__(self, camera_topic="realsense", node_name="vision_realsense"):
+    def __init__(self, yolact, dataset, camera_topic="realsense", node_name="vision_realsense"):
         self.rate = rospy.Rate(1)
 
         # don't automatically start
@@ -39,6 +41,13 @@ class RealsensePipeline:
         # aruco data
         self.aruco_pose = None
         self.aruco_point = None
+        
+        self.processed_img_id = -1  # don't keep processing the same image
+        self.t_now = None
+        
+        self.labelled_img = None
+        self.detections = None
+        self.gaps = None
 
         print("creating camera subscribers...")
         self.create_camera_subscribers()
@@ -47,10 +56,13 @@ class RealsensePipeline:
         print("creating service client...")
         self.create_service_client()
         print("creating realsense pipeline...")
-        self.init_realsense_pipeline()
+        self.init_realsense_pipeline(yolact, dataset)
 
         print("waiting for pipeline to be enabled...")
 
+    def init_realsense_pipeline(self, yolact, dataset):
+        self.object_detection = ObjectDetection(yolact, dataset)
+        self.gap_detector = GapDetectorClustering()
     
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):
         colour_img = CvBridge().imgmsg_to_cv2(img_msg)
@@ -92,19 +104,20 @@ class RealsensePipeline:
 
     def create_publishers(self):
         self.br = CvBridge()
-        self.labelled_img_publisher = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=20)
-        self.detections_publisher = rospy.Publisher("/" + self.node_name + "/detections", String, queue_size=20)
+        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=20)
+        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=20)
+        self.gaps_pub = rospy.Publisher("/" + self.node_name + "/gaps", ROSGaps, queue_size=1)
+        
 
         self.clustered_img_pub = rospy.Publisher("/" + self.node_name + "/cluster", Image, queue_size=20)
         self.mask_img_pub = rospy.Publisher("/" + self.node_name + "/mask", Image, queue_size=20)
         self.depth_img_pub = rospy.Publisher("/" + self.node_name + "/depth", Image, queue_size=20)
         self.lever_pose_pub = rospy.Publisher("/" + self.node_name + "/lever", PoseStamped, queue_size=1)
-        self.lever_actions_pub = rospy.Publisher("/" + self.node_name + "/lever_actions", String, queue_size=1)
 
 
-    def publish(self, img, json_detections, lever_actions, cluster_img, depth_scaled, device_mask):
-        self.labelled_img_publisher.publish(self.br.cv2_to_imgmsg(img))
-        self.detections_publisher.publish(String(json_detections))
+    def publish(self, img, detections, gaps, cluster_img, depth_scaled, device_mask):
+        self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+        self.detections_pub.publish(detections.to_json())
 
         # todo: publish all with the same timestamp
         if cluster_img is not None:
@@ -116,9 +129,11 @@ class RealsensePipeline:
 
         # publish only the most probable lever action, for now
         # we could use pose_stamped array instead to publish all the lever possibilities
-        if lever_actions is not None and len(lever_actions) > 0:
-            self.lever_pose_pub.publish(lever_actions[0].pose_stamped)
-            self.lever_actions_pub.publish(lever_actions)
+        if gaps is not None and len(gaps) > 0:
+            ros_gaps = ROSGaps(gaps_to_ros(gaps))
+            
+            self.lever_pose_pub.publish(gaps[0].pose_stamped)
+            self.gaps_pub.publish(ros_gaps)
 
     def enable_camera(self, state):
         try:
@@ -128,67 +143,79 @@ class RealsensePipeline:
             else:
                 print("disabled camera:", res)
         except rospy.ServiceException as e:
-            print("Service call failed: ", e)
+            print("Service call failed (state " + str(state) + "): ", e)
 
     def enable(self, state):
         self.enable_camera(state)
         self.pipeline_enabled = state
 
-    def init_realsense_pipeline(self):
-        self.config = load_config()
-        print("config", self.config)
+    def get_stable_detection(self, gap_detection: bool=True):
+        # todo: logic to get stable detection
+        # todo: wait until we get at least one detection
+        
+        if gap_detection:
+            while self.gaps is None or self.detections is None:
+                print("waiting for detection...")
+                time.sleep(1) #! debug
+        else:
+            while self.detections is None:
+                print("waiting for detection...")
+                time.sleep(1) #! debug
+            
+        if self.detections is not None:
+            if gap_detection:
+                return self.labelled_img, self.detections, self.gaps
+            else:
+                return self.labelled_img, self.detections, None
 
-        self.object_detection = ObjectDetection(self.config.obj_detection)
-        self.labels = self.object_detection.labels
-        self.gap_detector = GapDetectorClustering()
+        else:
+            print("stable detection failed!")
+            return None, None, None
 
     def run(self):
-        processed_img_id = -1  # don't keep processing the same image
-        t_now = None
-        t_prev = None
-        fps = None
-        while not rospy.is_shutdown():
-            if self.pipeline_enabled:
-                if self.colour_img is not None and processed_img_id < self.img_id:
-                    processed_img_id = self.img_id
-                    t_prev = t_now
-                    t_now = time.time()
-                    if t_prev is not None and t_now - t_prev > 0:
-                        fps = "fps_total: " + str(round(1 / (t_now - t_prev), 1)) + ", "
+        if self.pipeline_enabled:
+            if self.colour_img is not None and self.processed_img_id < self.img_id:
+                print("\n[green]running pipeline realsense frame...[/green]")
+                self.processed_img_id = self.img_id
+                t_prev = self.t_now
+                self.t_now = time.time()
+                fps = None
+                if t_prev is not None and self.t_now - t_prev > 0:
+                    fps = "fps_total: " + str(round(1 / (self.t_now - t_prev), 1)) + ", "
 
-                    labelled_img, detections, lever_actions, cluster_img, depth_scaled, device_mask \
-                        = self.process_img(fps=fps)
+                labelled_img, detections, gaps, cluster_img, depth_scaled, device_mask \
+                    = self.process_img(fps=fps)
 
-                    json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
+                # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
 
-                    self.publish(labelled_img, json_detections, lever_actions, cluster_img, depth_scaled, device_mask)
-
-                else:
-                    print("Waiting to receive image.")
-                    time.sleep(0.1)
+                self.publish(labelled_img, detections, gaps, cluster_img, depth_scaled, device_mask)
+                
+                self.labelled_img = labelled_img
+                self.detections = detections
+                self.gaps = gaps
 
                 if self.img_id == sys.maxsize:
                     self.img_id = 0
-                    processed_img_id = -1
-            
-            self.rate.sleep()
+                    self.processed_img_id = -1
+                
+            else:
+                print("Waiting to receive image (realsense).")
+                time.sleep(0.1)
+
 
     def process_img(self, fps=None):
-        print("running pipeline realsense frame...")
-
         # 2. apply yolact to image and get hca_back
         labelled_img, detections = self.object_detection.get_prediction(self.colour_img, extra_text=fps)
 
         # 3. apply mask to depth image and convert to pointcloud
-        lever_actions, cluster_img, depth_scaled, device_mask \
+        gaps, cluster_img, depth_scaled, device_mask \
             = self.gap_detector.lever_detector(
                 self.depth_img, 
-                detections, 
-                self.labels, 
+                detections,
                 self.camera_info, 
                 aruco_pose=self.aruco_pose, 
                 aruco_point=self.aruco_point
             )
 
-        return labelled_img, detections, lever_actions, cluster_img, depth_scaled, device_mask
+        return labelled_img, detections, gaps, cluster_img, depth_scaled, device_mask
 

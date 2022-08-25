@@ -6,50 +6,55 @@ import argparse
 import cv2
 import numpy as np
 import dataclasses
+from rich import print
 from json import JSONEncoder
 from torch import Tensor
-from shapely.geometry import Polygon
+
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from enum import IntEnum
 import itertools
 from geometry_msgs.msg import PoseStamped
 
+from shapely.geometry import LineString, Point, Polygon, MultiPolygon, GeometryCollection
+from shapely.validation import make_valid
+from shapely.validation import explain_validity
 
-class EnhancedJSONEncoder(JSONEncoder):
-    def iterencode(self, o, _one_shot=False):
+
+# class EnhancedJSONEncoder(JSONEncoder):
+#     def iterencode(self, o, _one_shot=False):
         
-        # handle IntEnum to give the name instead of the int
-        def map_intenum(obj):
-            if isinstance(obj, IntEnum):
-                # return {'name': obj.name, 'value': obj.value}
-                return obj.name
-            if isinstance(obj, dict):
-                return {k: map_intenum(v) for k, v in obj.items()}
-            if isinstance(obj, (list, tuple)):
-                return [map_intenum(v) for v in obj]
-            if dataclasses.is_dataclass(obj):
-                dataclass_dict = dataclasses.asdict(obj)
-                return {k: map_intenum(v) for k, v in dataclass_dict.items()}
+#         # handle IntEnum to give the name instead of the int
+#         def map_intenum(obj):
+#             if isinstance(obj, IntEnum):
+#                 # return {'name': obj.name, 'value': obj.value}
+#                 return obj.value
+#             if isinstance(obj, dict):
+#                 return {k: map_intenum(v) for k, v in obj.items()}
+#             if isinstance(obj, (list, tuple)):
+#                 return [map_intenum(v) for v in obj]
+#             if dataclasses.is_dataclass(obj):
+#                 dataclass_dict = dataclasses.asdict(obj)
+#                 return {k: map_intenum(v) for k, v in dataclass_dict.items()}
         
-            return obj
+#             return obj
         
-        o = map_intenum(o)
-        return super(EnhancedJSONEncoder, self).iterencode(o, _one_shot)
-    def default(self, obj):
-        if dataclasses.is_dataclass(obj):
-            return dataclasses.asdict(obj)
-        if isinstance(obj, Tensor):
-            return None
-        if isinstance(obj, Polygon):
-            return None
-        if isinstance(obj, np.integer):
-            return int(obj)
-        if isinstance(obj, np.floating):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return JSONEncoder.default(self, obj)    
+#         o = map_intenum(o)
+#         return super(EnhancedJSONEncoder, self).iterencode(o, _one_shot)
+#     def default(self, obj):
+#         if dataclasses.is_dataclass(obj):
+#             return dataclasses.asdict(obj)
+#         if isinstance(obj, Tensor):
+#             return None
+#         if isinstance(obj, Polygon):
+#             return None
+#         if isinstance(obj, np.integer):
+#             return int(obj)
+#         if isinstance(obj, np.floating):
+#             return float(obj)
+#         if isinstance(obj, np.ndarray):
+#             return obj.tolist()
+#         return JSONEncoder.default(self, obj)    
 
 
 def str2bool(v):
@@ -177,6 +182,34 @@ def img_grid(imgs, w=2, h=None, margin=0):
     # compression_params = [cv2.IMWRITE_JPEG_QUALITY, 90]
     # cv2.imwrite(name, resized, compression_params)
     return img_matrix
+
+def make_valid_poly(poly):
+    if not poly.is_valid:
+        # print(explain_validity(poly))
+        poly = make_valid(poly)
+        
+        # we sometimes get a GeometryCollection, where the first item is a MultiPolygon
+        if isinstance(poly, GeometryCollection):
+            for i in np.arange(len(poly.geoms)):
+                if isinstance(poly.geoms[i], MultiPolygon):
+                    poly = poly.geoms[i]
+                    break
+                
+        # we sometimes get a MultiPolygon where the first item is usually the polygon we want
+        if isinstance(poly, MultiPolygon) or isinstance(poly, GeometryCollection): 
+            for i in np.arange(len(poly.geoms)):
+                if isinstance(poly.geoms[i], Polygon):
+                    poly = poly.geoms[i]
+                    break
+
+        # return a Polygon or None
+        if not isinstance(poly, Polygon):
+            print("[red]poly is of type"+ str(type(poly)) + " and not Polygon![/red]")
+            if isinstance(poly, GeometryCollection):
+                print(list(poly.geoms))
+            poly = None
+    
+    return poly
 
 class Struct(object):
     """

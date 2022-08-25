@@ -36,8 +36,8 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
         
     for detection in detections:
         tracking_id = "t_id " + str(detection.tracking_id) + ", " if detection.tracking_id is not None else ""
-        tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) if detection.tracking_score is not None else ""
-        info_text +=  detection.label.name + ", " + tracking_id + tracking_score + "\n"
+        # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) if detection.tracking_score is not None else ""
+        info_text +=  detection.label.name + ", " + tracking_id + "\n"
 
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
@@ -130,9 +130,9 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
                             (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
 
     for detection in detections:
-        if detection.obb_center is not None:
-            cv2.circle(img_numpy, tuple(detection.obb_center), 5, (0, 255, 0), -1)
-            cv2.drawContours(img_numpy, [detection.obb_corners], 0, (0, 255, 0), 2)
+        if detection.tf_px is not None:
+            cv2.circle(img_numpy, tuple(detection.tf_px[0]), 5, (0, 255, 0), -1)
+            cv2.drawContours(img_numpy, [detection.obb_px], 0, (0, 255, 0), 2)
 
     if args.display_fps and fps is not None:
         # Draw the text on the CPU
@@ -157,11 +157,15 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
     if args.display_text or args.display_bboxes:
         for j in reversed(range(num_dets_to_consider)):
             detection = detections[j]
-            x1, y1, x2, y2 = detection.box
-            x1 = int(x1)
-            y1 = int(y1)
-            x2 = int(x2)
-            y2 = int(y2)
+            # x1, y1, x2, y2 = detection.box
+            # x1 = int(x1)
+            # y1 = int(y1)
+            # x2 = int(x2)
+            # y2 = int(y2)
+            x1 = int(detection.box[0, 0])
+            y1 = int(detection.box[0, 1])
+            x2 = int(detection.box[1, 0])
+            y2 = int(detection.box[1, 1])
             
             color = get_color(j).cpu().detach().numpy() *255
             color = [int(i) for i in color]
@@ -170,14 +174,14 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
                 cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
 
             if args.display_text:
-                if detection.obb_center_meters is not None:
-                    x1_m, y1_m = detection.obb_center_meters
+                if detection.tf is not None:
+                    x1_m, y1_m = detection.tf[0]
                 else:
                     x1_m, y1_m = (-1, -1)
 
                 tracking_id = "t_id " + str(detection.tracking_id) + ", " if detection.tracking_id is not None else ""
-                tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) + ", " if detection.tracking_score is not None else ""
-                text_str = '%s: %s %sscore %.2f, (%.2f, %.2f)' % (detection.label.name, tracking_id, tracking_score, detection.score, x1_m, y1_m) if args.display_scores else detection.label.name
+                # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) + ", " if detection.tracking_score is not None else ""
+                text_str = '%s: %s %.2f, (%.2f, %.2f)' % (detection.label.name, tracking_id, detection.score, x1_m, y1_m) if args.display_scores else detection.label.name
 
                 text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
                 text_w = int(text_w)

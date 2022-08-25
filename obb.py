@@ -82,10 +82,10 @@ def better_quaternion(obb_corners):
     #Rotate around z-axis by 180 degs
     #obb_rot_quat = quaternion_multiply(np.array([0,0,1,0]), obb_rot_quat)
 
-    new_obb_rot_quat = obb_rot_quat.tolist()
+    # new_obb_rot_quat = obb_rot_quat.tolist()
     # detection.obb_rot_quat = np.array([[1,0,0,0]]).tolist()
     
-    return new_obb_rot_quat
+    return obb_rot_quat
     
 
 def get_obb_using_eig(points, calcconvexhull=True):

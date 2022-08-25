@@ -23,8 +23,8 @@ from itertools import combinations, product
 import math
 import random
 # Own Modules
-from helpers import get_colour, get_colour_blue
-from context_action_framework.types import LeverAction
+from helpers import get_colour, get_colour_blue, make_valid_poly
+from context_action_framework.types import LeverAction, Label
 
 
 class GapDetectorClustering:
@@ -156,7 +156,7 @@ class GapDetectorClustering:
         return result[2], -result[0], -result[1]
 
 
-    def lever_detector(self, depth_img, detections, labels, camera_info, aruco_pose=None, aruco_point=None):
+    def lever_detector(self, depth_img, detections, camera_info, aruco_pose=None, aruco_point=None):
 
         # print("aruco_pose", aruco_pose)
         # print("aruco_point", aruco_point)
@@ -174,7 +174,7 @@ class GapDetectorClustering:
         # get the first detection that is hca_back
         detection_hca_back = None
         for detection in detections:
-            if detection.label == labels.hca_back:
+            if detection.label == Label.hca_back:
                 detection_hca_back = detection
                 break
         
@@ -188,7 +188,8 @@ class GapDetectorClustering:
             # mask depth image
             depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=device_mask)
 
-            device_poly = detection_hca_back.mask_polygon
+            #! we should probably mask with the polygon as well.
+            device_poly = detection_hca_back.polygon_px
             
             if device_poly is None:
                 return lever_actions, img, depth_scaled, device_mask
@@ -273,6 +274,8 @@ class GapDetectorClustering:
 
                     try:
                         poly = Polygon(contour.squeeze())
+                        poly = make_valid_poly(poly)
+                        
                         # todo: make valid like for the whole device
                     except AssertionError as E:
                         print("[red]error converting contour to polygon![/red]")
@@ -294,7 +297,7 @@ class GapDetectorClustering:
         # good_points = []
         lines = []
         points_min_max = []
-
+        counter = 0
         for cluster_obj1, cluster_obj2 in combinations(cluster_objs, 2):
             cnt1, poly1, area1, center1, depth1, cluster_id1 = cluster_obj1
             cnt2, poly2, area2, center2, depth2, cluster_id2 = cluster_obj2
@@ -333,6 +336,7 @@ class GapDetectorClustering:
                 # / 1000, to convert from mm to m, required for img_to_camera_coords(...)
 
                 lever_action = LeverAction()
+                lever_action.id = counter
                 lever_action.from_px = np.asarray([center_low[1], center_low[0]])
                 # lever_action.from_depth = depth_masked[center_low[1], center_low[0]] / 1000
                 lever_action.from_depth = depth_low / 1000
@@ -349,6 +353,8 @@ class GapDetectorClustering:
                 lever_action.to_camera = self.img_to_camera_coords(lever_action.to_px, 
                                                                     lever_action.to_depth, 
                                                                     camera_info)
+                
+                counter += 1
                 
                 # todo: check if Pose is 0, 0, 0
 
@@ -439,8 +445,6 @@ class GapDetectorClustering:
             font_scale = 0.4
             color = [255, 255, 255]
             cv2.putText(img, text, text_pt, font_face, font_scale, color, font_thickness, cv2.LINE_AA)
-
-        print("")
         
         return lever_actions, img, depth_scaled, device_mask
 
