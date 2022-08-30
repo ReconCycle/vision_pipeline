@@ -116,8 +116,10 @@ class RealsensePipeline:
 
 
     def publish(self, img, detections, gaps, cluster_img, depth_scaled, device_mask):
+        ros_detections = ROSDetections(detections_to_ros(detections))
+        
         self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
-        self.detections_pub.publish(detections.to_json())
+        self.detections_pub.publish(ros_detections)
 
         # todo: publish all with the same timestamp
         if cluster_img is not None:
@@ -205,7 +207,7 @@ class RealsensePipeline:
 
     def process_img(self, fps=None):
         # 2. apply yolact to image and get hca_back
-        labelled_img, detections = self.object_detection.get_prediction(self.colour_img, extra_text=fps)
+        labelled_img, detections = self.object_detection.get_prediction(self.colour_img, depth_img=self.depth_img, extra_text=fps, camera_info=self.camera_info)
 
         # 3. apply mask to depth image and convert to pointcloud
         gaps, cluster_img, depth_scaled, device_mask \

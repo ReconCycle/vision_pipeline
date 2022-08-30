@@ -159,7 +159,7 @@ class ROSPipeline():
     
 
     def vision_det_callback(self, req):
-        print("vision_gap_det_callback", req.camera, )
+        print("vision_gap_det_callback", Camera(req.camera))
         if req.camera == Camera.basler:
             
             print("enabling basler...")

@@ -9,6 +9,7 @@ import dataclasses
 from rich import print
 from json import JSONEncoder
 from torch import Tensor
+import pyrealsense2
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -19,42 +20,6 @@ from geometry_msgs.msg import PoseStamped
 from shapely.geometry import LineString, Point, Polygon, MultiPolygon, GeometryCollection
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
-
-
-# class EnhancedJSONEncoder(JSONEncoder):
-#     def iterencode(self, o, _one_shot=False):
-        
-#         # handle IntEnum to give the name instead of the int
-#         def map_intenum(obj):
-#             if isinstance(obj, IntEnum):
-#                 # return {'name': obj.name, 'value': obj.value}
-#                 return obj.value
-#             if isinstance(obj, dict):
-#                 return {k: map_intenum(v) for k, v in obj.items()}
-#             if isinstance(obj, (list, tuple)):
-#                 return [map_intenum(v) for v in obj]
-#             if dataclasses.is_dataclass(obj):
-#                 dataclass_dict = dataclasses.asdict(obj)
-#                 return {k: map_intenum(v) for k, v in dataclass_dict.items()}
-        
-#             return obj
-        
-#         o = map_intenum(o)
-#         return super(EnhancedJSONEncoder, self).iterencode(o, _one_shot)
-#     def default(self, obj):
-#         if dataclasses.is_dataclass(obj):
-#             return dataclasses.asdict(obj)
-#         if isinstance(obj, Tensor):
-#             return None
-#         if isinstance(obj, Polygon):
-#             return None
-#         if isinstance(obj, np.integer):
-#             return int(obj)
-#         if isinstance(obj, np.floating):
-#             return float(obj)
-#         if isinstance(obj, np.ndarray):
-#             return obj.tolist()
-#         return JSONEncoder.default(self, obj)    
 
 
 def str2bool(v):
@@ -98,6 +63,47 @@ def get_images_realsense(input_dir):
             depth_img = np.load(depth_img_p)
             depth_colormap = cv2.imread(depth_colormap_p)
             yield [colour_img, depth_img, depth_colormap, colour_img_p]
+
+
+def img_to_camera_coords(x_y, depth, camera_info):
+    _intrinsics = pyrealsense2.intrinsics()
+    _intrinsics.width = camera_info.width
+    _intrinsics.height = camera_info.height
+    _intrinsics.ppx = camera_info.K[2]
+    _intrinsics.ppy = camera_info.K[5]
+    _intrinsics.fx = camera_info.K[0]
+    _intrinsics.fy = camera_info.K[4]
+    #_intrinsics.model = camera_info.distortion_model
+    _intrinsics.model  = pyrealsense2.distortion.none
+    _intrinsics.coeffs = [i for i in camera_info.D]
+    
+    if len(x_y.shape) == 2:
+        # multiple pairs of x_y
+        results = []
+        for single_x_y in x_y:
+            if isinstance(depth, np.ndarray):
+                single_depth = depth[single_x_y[1], single_x_y[0]]
+            else:
+                single_depth = depth
+            result = pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, single_x_y, single_depth)
+            result = np.asarray(result)
+            #result[0]: right, result[1]: down, result[2]: forward
+            reordered_result = result[2], -result[0], -result[1]
+            
+            results.append(reordered_result)
+        
+        return np.array(results)
+    
+    else:
+        if isinstance(depth, np.ndarray):
+                single_depth = depth[x_y[0], x_y[1]]
+        else:
+            single_depth = depth
+        result = pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, x_y, single_depth)
+        result = np.asarray(result)
+
+        #result[0]: right, result[1]: down, result[2]: forward
+        return result[2], -result[0], -result[1]
 
 
 def scale_img(img, scale_percent=50):

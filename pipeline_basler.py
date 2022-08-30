@@ -78,28 +78,8 @@ class BaslerPipeline:
         self.labelled_img_publisher = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=20)
         self.detections_publisher = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=20)
 
-    def publish(self, img, detections):
-        
-        # if len(detections) > 0:
-        #     print("debug")
-        #     print("detections[0]", detections[0])
-        #     asdf = detections[0].json()
-        #     # asdf = detections[0].to_json()
-        #     print(asdf)
-        # print("DEBUG:")
-        # json_detections = Detection.schema().dumps(detections, many=True)
-        # print("my alternative...")
-        # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
-        # print("json_detections", json_detections)
-        # print("testing...")
-        # going_back = Detection.schema().loads(json_detections, many=True)
-        
-        # print("pydantic")
-        # json_detections = detections.json()
-
-        
+    def publish(self, img, detections):       
         print("publishing...")
-        # json_detections = "blah"
         ros_detections = ROSDetections(detections_to_ros(detections))
         
         self.labelled_img_publisher.publish(self.br.cv2_to_imgmsg(img))
@@ -172,7 +152,7 @@ class BaslerPipeline:
             self.worksurface_detection = WorkSurfaceDetection(img)
             # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
         
-        labelled_img, detections = self.object_detection.get_prediction(img, self.worksurface_detection, extra_text=fps)
+        labelled_img, detections = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
 
         # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
         

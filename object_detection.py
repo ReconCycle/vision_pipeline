@@ -16,9 +16,9 @@ from tracker.byte_tracker import BYTETracker
 
 import obb
 import graphics
-from helpers import Struct, make_valid_poly
+from helpers import Struct, make_valid_poly, img_to_camera_coords
 from context_action_framework.types import Detection, Label
-
+from geometry_msgs.msg import Transform, Vector3, Quaternion
 
 
 class ObjectDetection:
@@ -49,7 +49,7 @@ class ObjectDetection:
         # self.labels = labels
         
 
-    def get_prediction(self, img_path, worksurface_detection=None, extra_text=None):
+    def get_prediction(self, img_path, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None):
         t_start = time.time()
         
         frame, classes, scores, boxes, masks = self.yolact.infer(img_path)
@@ -100,19 +100,27 @@ class ObjectDetection:
         obb_start = time.time()
         # calculate the oriented bounding boxes
         for detection in detections:
-            corners, center, rot_quat = obb.get_obb_from_contour(detection.mask_contour)
+            corners, center_px, rot_quat = obb.get_obb_from_contour(detection.mask_contour)
             detection.obb_px = corners
+            detection.center_px = center_px
             
             # todo: obb_3d_px, obb_3d
-            # todo: transform should actually be (x, y, z)
-            # (transform (x, y), rotation (x, y, z, w))
-            detection.tf_px = [center, rot_quat]
+            detection.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*rot_quat))
+            
             if worksurface_detection is not None and corners is not None:
-                center_meters = worksurface_detection.pixels_to_meters(center)
-                detection.tf = [center_meters, rot_quat]
+                center_meters = worksurface_detection.pixels_to_meters(center_px)
+                detection.center = center_meters
+                detection.tf = Transform(Vector3(*center_meters, 0), Quaternion(*rot_quat))
                 detection.box = worksurface_detection.pixels_to_meters(detection.box_px)
                 detection.obb = worksurface_detection.pixels_to_meters(corners)
+            elif camera_info is not None and depth_img is not None:
+                # convert from mm to m
+                depth = depth_img / 1000
                 
+                detection.center = img_to_camera_coords(center_px, depth, camera_info)
+                detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
+                detection.box = img_to_camera_coords(detection.box_px, depth, camera_info)
+                detection.obb = img_to_camera_coords(corners, depth, camera_info)
             else:
                 detection.obb = None
                 detection.tf = None

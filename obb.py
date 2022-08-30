@@ -168,7 +168,7 @@ def get_obb_using_eig(points, calcconvexhull=True):
 
 def get_obb_using_cv(contour):
 
-    if contour is None or contour.size == 0 or len(contour) < 4:
+    if contour is None or len(contour) < 4:
         return None, None, None
     
     # https://stackoverflow.com/questions/18207181/opencv-python-draw-minarearect-rotatedrect-not-implemented
@@ -179,6 +179,17 @@ def get_obb_using_cv(contour):
     rot_quat = Rotation.from_euler('z', rot, degrees=True).as_quat()
     
     return box, center, rot_quat
+
+# def get_obb_from_poly(poly):
+#     poly_list = np.array(poly.exterior.coords).ravel().tolist()
+    
+#     corners, center, rot_quat = get_obb_using_cv(poly_list)
+    
+#     better_rot_quat = rot_quat
+#     if corners is not None:
+#         better_rot_quat = better_quaternion(corners)
+    
+#     return corners, center, better_rot_quat
 
 def get_obb_from_contour(contour):
     """ given a binary mask, calculate the oriented 
@@ -196,7 +207,7 @@ def get_obb_from_contour(contour):
     corners, center, rot_quat = get_obb_using_cv(contour)
     # corners, center, rot_quat =  get_obb_using_eig(contour)
 
-    better_rot_quat = None
+    better_rot_quat = rot_quat
     if corners is not None:
         better_rot_quat = better_quaternion(corners)
     return corners, center, better_rot_quat
