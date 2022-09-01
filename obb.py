@@ -166,32 +166,37 @@ def get_obb_using_eig(points, calcconvexhull=True):
     return corners, center, rot_quat
 
 
-def get_obb_using_cv(contour):
+def get_obb_using_cv(contour, img=None):
 
     if contour is None or len(contour) < 4:
         return None, None, None
     
     # https://stackoverflow.com/questions/18207181/opencv-python-draw-minarearect-rotatedrect-not-implemented
-    rect = cv2.minAreaRect(contour)
+    # (center(x, y), (width, height), angle of rotation) = cv2.minAreaRect(points)
+    rect = cv2.minAreaRect(contour) 
     box = np.int0(cv2.boxPoints(rect))
     center = np.int0(rect[0])
+    
+    # ! rotation is a bit funny, and we should correct for it. see here:
+    # https://stackoverflow.com/questions/15956124/minarearect-angles-unsure-about-the-angle-returned
+    
     rot = rect[2]
     rot_quat = Rotation.from_euler('z', rot, degrees=True).as_quat()
     
+    # clip so that the box is still in the bounds of the img
+    if img is not None:
+        # invert img.shape because points are x, y
+        box = clip_box_to_img_shape(box, img.shape)
+        # box = np.clip(box, a_min=np.asarray([0, 0]), a_max=np.asarray(img.shape[:2])[::-1] - 1) 
+    
     return box, center, rot_quat
 
-# def get_obb_from_poly(poly):
-#     poly_list = np.array(poly.exterior.coords).ravel().tolist()
-    
-#     corners, center, rot_quat = get_obb_using_cv(poly_list)
-    
-#     better_rot_quat = rot_quat
-#     if corners is not None:
-#         better_rot_quat = better_quaternion(corners)
-    
-#     return corners, center, better_rot_quat
+def clip_box_to_img_shape(box, img_shape):
+    box = np.clip(box, a_min=np.asarray([0, 0]), a_max=np.asarray(img_shape[:2])[::-1] - 1) 
+    return box
 
-def get_obb_from_contour(contour):
+
+def get_obb_from_contour(contour, img=None):
     """ given a binary mask, calculate the oriented 
     bounding box of the foreground object. This is done
     by calculating the outline of the object, transform
@@ -204,7 +209,7 @@ def get_obb_from_contour(contour):
     """
     
     # https://stackoverflow.com/questions/13542855/algorithm-to-find-the-minimum-area-rectangle-for-given-points-in-order-to-comput/33619018#33619018
-    corners, center, rot_quat = get_obb_using_cv(contour)
+    corners, center, rot_quat = get_obb_using_cv(contour, img)
     # corners, center, rot_quat =  get_obb_using_eig(contour)
 
     better_rot_quat = rot_quat

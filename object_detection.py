@@ -52,6 +52,10 @@ class ObjectDetection:
     def get_prediction(self, img_path, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None):
         t_start = time.time()
         
+        if depth_img is not None:
+            if img_path.shape[:2] != depth_img.shape[:2]:
+                raise ValueError("[red]image and depth image shapes do not match! [/red]")
+        
         frame, classes, scores, boxes, masks = self.yolact.infer(img_path)
         fps_nn = 1.0 / (time.time() - t_start)
 
@@ -64,11 +68,14 @@ class ObjectDetection:
             detection.label = Label(classes[i]) # self.dataset.class_names[classes[i]]
             
             detection.score = float(scores[i])
-            detection.box_px = boxes[i].reshape((-1,2)) # convert tlbr
+            
+            box_px = boxes[i].reshape((-1,2)) # convert tlbr
+            detection.box_px = obb.clip_box_to_img_shape(box_px, img_path.shape) 
             detection.mask = masks[i]
             
             # compute contour. Required for obb and graph_relations
             mask = masks[i].cpu().numpy().astype("uint8")
+            # print("mask.shape", mask.shape)
             cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if len(cnts) > 0:
                 # get the contour with the largest area. Assume this is the one containing our object
@@ -99,8 +106,8 @@ class ObjectDetection:
         
         obb_start = time.time()
         # calculate the oriented bounding boxes
-        for detection in detections:
-            corners, center_px, rot_quat = obb.get_obb_from_contour(detection.mask_contour)
+        for detection in detections:           
+            corners, center_px, rot_quat = obb.get_obb_from_contour(detection.mask_contour, img_path)
             detection.obb_px = corners
             detection.center_px = center_px
             

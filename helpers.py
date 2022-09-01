@@ -96,7 +96,7 @@ def img_to_camera_coords(x_y, depth, camera_info):
     
     else:
         if isinstance(depth, np.ndarray):
-                single_depth = depth[x_y[0], x_y[1]]
+            single_depth = depth[x_y[1], x_y[0]]
         else:
             single_depth = depth
         result = pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, x_y, single_depth)

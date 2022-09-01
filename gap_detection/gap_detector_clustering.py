@@ -253,23 +253,25 @@ class GapDetectorClustering:
                     contours.append(contour)
                     contours_small.extend(cluster_contours[1:])
 
-                    try:
-                        poly = Polygon(contour.squeeze())
-                        poly = make_valid_poly(poly)
-                        
-                        # todo: make valid like for the whole device
-                    except AssertionError as E:
-                        print("[red]error converting contour to polygon![/red]")
-                    else:
-                        area = cv2.contourArea(contour)
-                        center = self.cnt_center(contour)
-                        if center is not None:
+                    cnt_squeeze = contour.squeeze()
+                    if len(cnt_squeeze) > 3:
+                        try:
+                            poly = Polygon(cnt_squeeze)
+                            poly = make_valid_poly(poly)
                             
-                            depth = self.mean_depth(depth_masked, cluster[:, :2].astype(int))
-                            
-                            if depth is not None:
-                                cluster_obj = contour, poly, area, center, depth, index
-                                cluster_objs.append(cluster_obj)
+                            # todo: make valid like for the whole device
+                        except AssertionError as E:
+                            print("[red]error converting contour to polygon![/red]")
+                        else:
+                            area = cv2.contourArea(contour)
+                            center = self.cnt_center(contour)
+                            if center is not None:
+                                
+                                depth = self.mean_depth(depth_masked, cluster[:, :2].astype(int))
+                                
+                                if depth is not None:
+                                    cluster_obj = contour, poly, area, center, depth, index
+                                    cluster_objs.append(cluster_obj)
 
 
 
@@ -336,13 +338,13 @@ class GapDetectorClustering:
                 
                 # gap.from_det = 
                 # gap.to_det = 
-                
+
                 # todo: convert to meters
                 gap.obb = obb_px
                 # gap.obb_3d = 
 
-                gap.from_px = np.asarray([center_low[1], center_low[0]])
-                gap.to_px = np.asarray([center_high[1], center_high[0]])
+                gap.from_px = np.asarray([center_low[0], center_low[1]])
+                gap.to_px = np.asarray([center_high[0], center_high[1]])
                 
                 from_3d = img_to_camera_coords(gap.from_px, 
                                                         gap.from_depth, 
@@ -427,18 +429,18 @@ class GapDetectorClustering:
         
         for idx, gap in enumerate(gaps_bad):
             colour = tuple([int(x) for x in [0, 250, 250]])
-            cv2.arrowedLine(img, gap.from_px[::-1].astype(int),
-                            gap.to_px[::-1].astype(int), colour, 3, tipLength=0.3)
+            cv2.arrowedLine(img, gap.from_px.astype(int),
+                            gap.to_px.astype(int), colour, 3, tipLength=0.3)
             
         for idx, gap in enumerate(gaps_bad2):
             colour = tuple([int(x) for x in [0, 0, 250]])
-            cv2.arrowedLine(img, gap.from_px[::-1].astype(int),
-                            gap.to_px[::-1].astype(int), colour, 3, tipLength=0.3)
+            cv2.arrowedLine(img, gap.from_px.astype(int),
+                            gap.to_px.astype(int), colour, 3, tipLength=0.3)
 
         for idx, gap in enumerate(gaps):
             colour = tuple([int(x) for x in get_colour_blue(idx)])
-            cv2.arrowedLine(img, gap.from_px[::-1].astype(int),
-                            gap.to_px[::-1].astype(int), colour, 3, tipLength=0.3)
+            cv2.arrowedLine(img, gap.from_px.astype(int),
+                            gap.to_px.astype(int), colour, 3, tipLength=0.3)
 
         # print avg height of each cluster
         for cluster_obj in cluster_objs:
