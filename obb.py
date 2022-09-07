@@ -15,77 +15,85 @@ import time
 
 
 def quaternion_multiply(quaternion1, quaternion0):
-        x0, y0, z0, w0 = quaternion0
-        x1, y1, z1, w1 = quaternion1
+    w0, x0, y0, z0 = quaternion0
+    w1, x1, y1, z1 = quaternion1
+    return np.array([-x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
+                     x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
+                     -x1 * z0 + y1 * w0 + z1 * x0 + w1 * y0,
+                     x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0], dtype=np.float64)
 
-        # This quat is W X Y Z
-        out_quat = np.array([-x1*x0 - y1*y0 - z1*z0 + w1*w0,
-                     x1*w0 + y1*z0 - z1*y0 + w1*x0,
-                    -x1*z0 + y1*w0 + z1*x0 + w1*y0,
-                     x1*y0 - y1*x0 + z1*w0 + w1*z0], dtype=np.float64)
+# def quaternion_multiply(quaternion1, quaternion0):
+#         x0, y0, z0, w0 = quaternion0
+#         x1, y1, z1, w1 = quaternion1
 
-        # This quat is X Y Z W
-        out = out_quat[[1,2,3,0]]
-        return out
+#         # This quat is W X Y Z
+#         out_quat = np.array([-x1*x0 - y1*y0 - z1*z0 + w1*w0,
+#                      x1*w0 + y1*z0 - z1*y0 + w1*x0,
+#                     -x1*z0 + y1*w0 + z1*x0 + w1*y0,
+#                      x1*y0 - y1*x0 + z1*w0 + w1*z0], dtype=np.float64)
 
-def better_quaternion(obb_corners):
-    # for detection in detections:
-    corners = np.array(obb_corners)
-    distances = []
-    # Logger.loginfo("{}".format(corners))
+#         # This quat is X Y Z W
+#         out = out_quat[[1,2,3,0]]
+#         return out
+
+# def better_quaternion(obb_corners):
+#     # for detection in detections:
+#     corners = np.array(obb_corners)
+#     distances = []
+#     # Logger.loginfo("{}".format(corners))
     
-    # sanity check
-    if corners.shape != (4, 2):
-        return None
+#     # sanity check
+#     if corners.shape != (4, 2):
+#         return None
 
-    first_corner = corners[0]
+#     first_corner = corners[0]
 
-    for ic, corner in enumerate(corners):
-        distances.append(np.linalg.norm(corner - first_corner))
-    # Logger.loginfo("Distances: {}".format(distances))
-    distances = np.array(distances)
-    idx_edge = distances.argsort()[-2]
-    # Logger.loginfo("Index of edge: {}".format(idx_edge))
-    second_corner = corners[idx_edge]
+#     for ic, corner in enumerate(corners):
+#         distances.append(np.linalg.norm(corner - first_corner))
+#     # Logger.loginfo("Distances: {}".format(distances))
+#     distances = np.array(distances)
+#     idx_edge = distances.argsort()[-2]
+#     # Logger.loginfo("Index of edge: {}".format(idx_edge))
+#     second_corner = corners[idx_edge]
 
-    highest_y = np.argmax([first_corner[1], second_corner[1]])
-    if highest_y == 0:
-        vector_1 = first_corner - second_corner
-    elif highest_y == 1:
-        vector_1 = second_corner - first_corner
+#     highest_y = np.argmax([first_corner[1], second_corner[1]])
+#     if highest_y == 0:
+#         vector_1 = first_corner - second_corner
+#     elif highest_y == 1:
+#         vector_1 = second_corner - first_corner
 
-    unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
-    unit_vector_2 = np.array([0, 1])
-    # Logger.loginfo("Vectors: {}, {}".format(vector_1, unit_vector_2))
+#     unit_vector_1 = vector_1 / np.linalg.norm(vector_1)
+#     unit_vector_2 = np.array([0, 1])
+#     # Logger.loginfo("Vectors: {}, {}".format(vector_1, unit_vector_2))
 
-    angle = (np.arctan2(unit_vector_1[1], unit_vector_1[0]) -
-                np.arctan2(unit_vector_2[1], unit_vector_2[0]))
+#     angle = (np.arctan2(unit_vector_1[1], unit_vector_1[0]) -
+#                 np.arctan2(unit_vector_2[1], unit_vector_2[0]))
 
 
-    # If angle is too negative, add 180 degrees
-    if (angle * 180 / np.pi) < -30:
-        angle = angle + np.pi
-    # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
+#     # If angle is too negative, add 180 degrees
+#     if (angle * 180 / np.pi) < -30:
+#         angle = angle + np.pi
+#     # Logger.loginfo("Angle: {}".format(angle * 180 / np.pi))
 
-    # Below code works but z-axis is incorrect, should be rotated by 180 degs
-    angle = -angle
+#     # Below code works but z-axis is incorrect, should be rotated by 180 degs
+#     angle = -angle
 
-    obb_rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]),
-                                np.array([np.cos(angle/2)])))
+#     obb_rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,1]),
+#                                 np.array([np.cos(angle/2)])))
 
-    #rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,-1]),
-    #                           np.array([-np.cos(angle/2)])))
+#     #rot_quat = np.concatenate((np.sin(angle/2)*np.array([0,0,-1]),
+#     #                           np.array([-np.cos(angle/2)])))
 
-    #Rotate around x-axis by 180 degs
-    obb_rot_quat = quaternion_multiply(np.array([0,1,0,0]), obb_rot_quat)
+#     #Rotate around x-axis by 180 degs
+#     obb_rot_quat = quaternion_multiply(np.array([0,1,0,0]), obb_rot_quat)
 
-    #Rotate around z-axis by 180 degs
-    #obb_rot_quat = quaternion_multiply(np.array([0,0,1,0]), obb_rot_quat)
+#     #Rotate around z-axis by 180 degs
+#     #obb_rot_quat = quaternion_multiply(np.array([0,0,1,0]), obb_rot_quat)
 
-    # new_obb_rot_quat = obb_rot_quat.tolist()
-    # detection.obb_rot_quat = np.array([[1,0,0,0]]).tolist()
+#     # new_obb_rot_quat = obb_rot_quat.tolist()
+#     # detection.obb_rot_quat = np.array([[1,0,0,0]]).tolist()
     
-    return obb_rot_quat
+#     return obb_rot_quat
     
 
 def get_obb_using_eig(points, calcconvexhull=True):
@@ -176,12 +184,24 @@ def get_obb_using_cv(contour, img=None):
     rect = cv2.minAreaRect(contour) 
     box = np.int0(cv2.boxPoints(rect))
     center = np.int0(rect[0])
+    changing_width, changing_height = box_w_h(box)
+    changing_rot = rect[2]
+    
+    if changing_height > changing_width:
+        correct_rot = changing_rot
+    else:
+        correct_rot = changing_rot - 90
+
+    correct_quat = Rotation.from_euler('x', correct_rot, degrees=True).as_quat()
+
+    correct_height = changing_height
+    correct_width = changing_width
+    if changing_height < changing_width:
+        correct_height = changing_width
+        correct_width = changing_height
     
     # ! rotation is a bit funny, and we should correct for it. see here:
     # https://stackoverflow.com/questions/15956124/minarearect-angles-unsure-about-the-angle-returned
-    
-    rot = rect[2]
-    rot_quat = Rotation.from_euler('z', rot, degrees=True).as_quat()
     
     # clip so that the box is still in the bounds of the img
     if img is not None:
@@ -189,7 +209,10 @@ def get_obb_using_cv(contour, img=None):
         box = clip_box_to_img_shape(box, img.shape)
         # box = np.clip(box, a_min=np.asarray([0, 0]), a_max=np.asarray(img.shape[:2])[::-1] - 1) 
     
-    return box, center, rot_quat
+    return box, center, correct_quat
+
+def box_w_h(box):
+    return np.linalg.norm(box[0] - box[1]), np.linalg.norm(box[1] - box[2])
 
 def clip_box_to_img_shape(box, img_shape):
     box = np.clip(box, a_min=np.asarray([0, 0]), a_max=np.asarray(img_shape[:2])[::-1] - 1) 
@@ -212,7 +235,7 @@ def get_obb_from_contour(contour, img=None):
     corners, center, rot_quat = get_obb_using_cv(contour, img)
     # corners, center, rot_quat =  get_obb_using_eig(contour)
 
-    better_rot_quat = rot_quat
-    if corners is not None:
-        better_rot_quat = better_quaternion(corners)
-    return corners, center, better_rot_quat
+    # better_rot_quat = rot_quat
+    # if corners is not None:
+    #     better_rot_quat = better_quaternion(corners)
+    return corners, center, rot_quat

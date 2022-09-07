@@ -8,8 +8,9 @@ from rich import print
 from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
+from scipy.spatial.transform import Rotation
 
-from yolact_pkg.data.config import Config
+from yolact_pkg.data.config import Config, COLORS
 from yolact_pkg.yolact import Yolact
 
 from tracker.byte_tracker import BYTETracker
@@ -18,14 +19,21 @@ import obb
 import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords
 from context_action_framework.types import Detection, Label
-from geometry_msgs.msg import Transform, Vector3, Quaternion
+
+from geometry_msgs.msg import Transform, Vector3, Quaternion, Pose, PoseArray, TransformStamped
+from visualization_msgs.msg import Marker, MarkerArray
+import rospy
+import tf
+import tf2_ros
 
 
 class ObjectDetection:
-    def __init__(self, yolact, dataset):
+    def __init__(self, yolact, dataset, frame_id=""):
 
         self.yolact = yolact
         self.dataset = dataset
+        self.frame_id = frame_id
+        self.object_depth = 0.025 # in meters, the depth of the objects
 
         # parser.add_argument("--track_thresh", type=float, default=0.6, help="tracking confidence threshold")
         # parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
@@ -105,33 +113,120 @@ class ObjectDetection:
         
         
         obb_start = time.time()
+        
+        markers = MarkerArray()
+        markers.markers = []
+        
+        poses = PoseArray()
+        poses.header.frame_id = self.frame_id
+        poses.header.stamp = rospy.Time.now()
+        
         # calculate the oriented bounding boxes
         for detection in detections:           
-            corners, center_px, rot_quat = obb.get_obb_from_contour(detection.mask_contour, img_path)
-            detection.obb_px = corners
+            corners_px, center_px, rot_quat = obb.get_obb_from_contour(detection.mask_contour, img_path)
+            detection.obb_px = corners_px
             detection.center_px = center_px
             
-            # todo: obb_3d_px, obb_3d
-            detection.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*rot_quat))
+            # todo: obb_3d
+            detection.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*rot_quat))     
             
-            if worksurface_detection is not None and corners is not None:
-                center_meters = worksurface_detection.pixels_to_meters(center_px)
-                detection.center = center_meters
-                detection.tf = Transform(Vector3(*center_meters, 0), Quaternion(*rot_quat))
-                detection.box = worksurface_detection.pixels_to_meters(detection.box_px)
-                detection.obb = worksurface_detection.pixels_to_meters(corners)
-            elif camera_info is not None and depth_img is not None:
-                # convert from mm to m
-                depth = depth_img / 1000
+            if worksurface_detection is not None and corners_px is not None:
+                center = worksurface_detection.pixels_to_meters(center_px)
+                corners = worksurface_detection.pixels_to_meters(corners_px)
                 
-                detection.center = img_to_camera_coords(center_px, depth, camera_info)
-                detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
-                detection.box = img_to_camera_coords(detection.box_px, depth, camera_info)
-                detection.obb = img_to_camera_coords(corners, depth, camera_info)
+                detection.center = center
+                detection.tf = Transform(Vector3(*center, 0), Quaternion(*rot_quat))
+                detection.box = worksurface_detection.pixels_to_meters(detection.box_px)
+                detection.obb = corners
+                
+                # obb_3d calculations
+                # original obb + obb raised 2.5cm
+                corners_padded = np.pad(corners, [(0, 0), (0, 1)], mode='constant')
+                corners_padded_high = np.pad(corners, [(0, 0), (0, 1)], mode='constant', constant_values=self.object_depth)
+                corners_3d = np.concatenate((corners_padded, corners_padded_high))
+                
+                detection.obb_3d = corners_3d
+                
+            elif camera_info is not None and depth_img is not None and center_px is not None:
+                # mask depth image
+                depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
+                depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
+                depth_mean = depth_masked_np.mean()
+                
+                if isinstance(depth_mean, np.float):
+                
+                    detection.center = img_to_camera_coords(center_px, depth_mean, camera_info)
+                    detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
+                    detection.box = img_to_camera_coords(detection.box_px, depth_mean, camera_info)
+                    
+                    corners = img_to_camera_coords(corners_px, depth_mean, camera_info)
+                    # the lower corners are 2.5cm further away from the camera
+                    corners_low = img_to_camera_coords(corners_px, depth_mean - self.object_depth, camera_info)
+                    
+                    detection.obb = corners
+                    detection.obb_3d = np.concatenate((corners, corners_low))
+                
             else:
                 detection.obb = None
                 detection.tf = None
-        
+            
+            # draw the cuboids
+            if detection.tf is not None and detection.obb is not None:
+                # todo: x and y could be the wrong way around! they should be chosen depending on the rot_quat
+                changing_height = np.linalg.norm(detection.obb[0]-detection.obb[1])
+                changing_width = np.linalg.norm(detection.obb[1]-detection.obb[2])
+                
+                height = changing_height
+                width = changing_width
+                if changing_height < changing_width:
+                    height = changing_width
+                    width = changing_height
+                
+                marker = self.make_marker(detection.tf, self.object_depth, height, width, detection.id, detection.label)
+                markers.markers.append(marker)
+            
+            # draw the poses and tfs
+            if detection.tf is not None:
+                # change the angle of the pose so that it looks good for visualisation
+                rot_multiplier = Rotation.from_euler('xyz', [90, 0, 90], degrees=True).as_quat()
+                pretty_rot = obb.quaternion_multiply(rot_multiplier, rot_quat)
+                
+                pose = Pose()
+                pose.position = detection.tf.translation
+                pose.orientation = Quaternion(*pretty_rot)
+                # pose.orientation = detection.tf.rotation
+                poses.poses.append(pose)
+                
+                # publish transforms of objects
+                rot_to_arr = lambda o: np.array([o.x, o.y, o.z, o.w])
+                tra_to_arr = lambda o: np.array([o.x, o.y, o.z])  
+                
+                # ! use stamped transform
+                # br = tf.TransformBroadcaster()
+                # br.sendTransform(tra_to_arr(detection.tf.translation),
+                #     rot_to_arr(detection.tf.rotation),
+                #     rospy.Time.now(),
+                #     "obj_"+ str(detection.id),
+                #     "realsense_link")
+                
+                br = tf2_ros.TransformBroadcaster()
+                t = TransformStamped()
+
+                t.header.stamp = rospy.Time.now()
+                t.header.frame_id = self.frame_id
+                t.child_frame_id = "obj_"+ str(detection.id)
+                # t.transform.translation.x = msg.x
+                # t.transform.translation.y = msg.y
+                # t.transform.translation.z = 0.0
+                t.transform = detection.tf
+                # q = tf_conversions.transformations.quaternion_from_euler(0, 0, msg.theta)
+                # t.transform.rotation.x = q[0]
+                # t.transform.rotation.y = q[1]
+                # t.transform.rotation.z = q[2]
+                # t.transform.rotation.w = q[3]
+
+                br.sendTransform(t)
+                
         fps_obb = -1
         if time.time() - obb_start > 0:
             fps_obb = 1.0 / (time.time() - obb_start)
@@ -147,4 +242,30 @@ class ObjectDetection:
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
         self.fps_objdet = 1.0 / (time.time() - t_start)
         
-        return labelled_img, detections
+        return labelled_img, detections, markers, poses
+
+    def make_marker(self, tf, x, y, z, id, label):
+        # make a visualization marker array for the occupancy grid
+        marker = Marker()
+        marker.action = Marker.ADD
+        marker.header.frame_id = self.frame_id
+        marker.header.stamp = rospy.Time.now()
+        marker.ns = 'marker_test_%d' % Marker.CUBE
+        marker.id = id
+        marker.type = Marker.CUBE
+        
+        marker.pose.position = tf.translation
+        marker.pose.orientation = tf.rotation
+
+        marker.scale.x = x
+        marker.scale.y = y
+        marker.scale.z = z
+        
+        color = COLORS[(label.value * 5) % len(COLORS)]
+        
+        marker.color.r = color[0] / 255
+        marker.color.g = color[1] / 255
+        marker.color.b = color[2] / 255
+        marker.color.a = 0.75
+        
+        return marker

@@ -95,7 +95,10 @@ def img_to_camera_coords(x_y, depth, camera_info):
         return np.array(results)
     
     else:
+        # x, y = x_y
+        # single x, y pair
         if isinstance(depth, np.ndarray):
+            print("depth.shape", depth.shape)
             single_depth = depth[x_y[1], x_y[0]]
         else:
             single_depth = depth

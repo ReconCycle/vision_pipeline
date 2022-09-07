@@ -14,13 +14,15 @@ from std_srvs.srv import SetBool
 from cv_bridge import CvBridge
 from std_msgs.msg import String
 from camera_control_msgs.srv import SetSleeping
+from visualization_msgs.msg import MarkerArray
+from geometry_msgs.msg import PoseArray
 
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.types import detections_to_ros
 
 class BaslerPipeline:
-    def __init__(self, yolact, dataset, camera_topic="basler", node_name="vision_basler"):     
+    def __init__(self, yolact, dataset, camera_topic="basler", node_name="vision_basler", wait_for_services=True):     
         self.rate = rospy.Rate(1) # fps
 
         # don't automatically start
@@ -39,6 +41,8 @@ class BaslerPipeline:
         
         self.labelled_img = None
         self.detections = None
+        self.markers = None
+        self.poses = None
 
         print("creating camera subscribers...")
         self.create_camera_subscribers()
@@ -75,15 +79,19 @@ class BaslerPipeline:
 
     def create_publishers(self):
         self.br = CvBridge()
-        self.labelled_img_publisher = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=20)
-        self.detections_publisher = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=20)
+        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=20)
+        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=20)
+        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=20)
+        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=20)
 
-    def publish(self, img, detections):       
+    def publish(self, img, detections, markers, poses):       
         print("publishing...")
         ros_detections = ROSDetections(detections_to_ros(detections))
         
-        self.labelled_img_publisher.publish(self.br.cv2_to_imgmsg(img))
-        self.detections_publisher.publish(ros_detections)
+        self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+        self.detections_pub.publish(ros_detections)
+        self.markers_pub.publish(markers)
+        self.markers_pub.publish(poses)
 
     def enable_camera(self, state):
         # enable = True, but the topic is called set_sleeping, so the inverse
@@ -91,9 +99,9 @@ class BaslerPipeline:
         try:
             res = self.camera_service(state)
             if state:
-                print("enabled camera:", res)
+                print("enabled camera:", res.success)
             else:
-                print("disabled camera:", res)
+                print("disabled camera:", res.success)
         except rospy.ServiceException as e:
             print("Service call failed (state " + str(state) + "): ", e)
 
@@ -131,12 +139,14 @@ class BaslerPipeline:
                 if t_prev is not None and self.t_now - t_prev > 0:
                     fps = "fps_total: " + str(round(1 / (self.t_now - t_prev), 1)) + ", "
 
-                labelled_img, detections = self.process_img(self.colour_img, fps)
+                labelled_img, detections, markers, poses = self.process_img(self.colour_img, fps)
 
-                self.publish(labelled_img, detections)
+                self.publish(labelled_img, detections, markers, poses)
                 
                 self.labelled_img = labelled_img
                 self.detections = detections
+                self.markers = markers
+                self.poses = poses
 
                 if self.img_id == sys.maxsize:
                     self.img_id = 0
@@ -152,8 +162,8 @@ class BaslerPipeline:
             self.worksurface_detection = WorkSurfaceDetection(img)
             # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
         
-        labelled_img, detections = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
+        labelled_img, detections, markers, poses = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
 
         # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
         
-        return labelled_img, detections
+        return labelled_img, detections, markers, poses

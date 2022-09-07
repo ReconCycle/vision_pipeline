@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import torch
+from scipy.spatial.transform import Rotation
 # from utils import timer
 import types
 from yolact_pkg.layers.output_utils import postprocess, undo_image_transformation
@@ -13,6 +14,14 @@ iou_thresholds = [x / 100 for x in range(50, 100, 5)]
 coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
+
+def rotated_line(point, angle, length):
+    angle_rad = np.deg2rad(angle)
+    x2 = point[0] + length * np.cos(angle_rad)
+    y2 = point[1] + length * np.sin(angle_rad)
+    point2 = tuple([int(x2), int(y2)])
+
+    return point2
 
 def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
 
@@ -133,6 +142,16 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
         if detection.center_px is not None:
             cv2.circle(img_numpy, tuple(detection.center_px), 5, (0, 255, 0), -1)
             cv2.drawContours(img_numpy, [detection.obb_px], 0, (0, 255, 0), 2)
+            
+            # get the rotation as an angle
+            quat = detection.tf_px.rotation
+            quat_as_arr = lambda o: np.array([o.x, o.y, o.z, o.w])
+            rot = Rotation.from_quat(quat_as_arr(quat)).as_euler('zyx', degrees=True)
+            
+            # draw the arrow
+            point2 = rotated_line(tuple(detection.center_px), rot[2], 60)
+            cv2.arrowedLine(img_numpy, tuple(detection.center_px), point2, (0, 255, 0), 3, tipLength = 0.5)
+            
             # cv2.drawContours(img_numpy, [detection.mask_contour], 0, (0, 255, 0), 2)
 
     if args.display_fps and fps is not None:
