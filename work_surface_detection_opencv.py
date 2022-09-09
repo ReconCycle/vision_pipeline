@@ -122,7 +122,7 @@ class WorkSurfaceDetection:
         self.compute_affine_transform()
         
         # for debugging, draw everything
-        self.draw_corners_and_circles()
+        self.draw_corners_and_circles(img)
         
     def estimate_bolts_and_calibration_mounts(self):
 
@@ -194,6 +194,7 @@ class WorkSurfaceDetection:
         """
 
         for key, value in self.points_px_dict.items():
+            # iterate over corners
             if value is not None and key.startswith("corner"):
                 x, y = value
                 
@@ -209,12 +210,18 @@ class WorkSurfaceDetection:
                 blur_masked = cv2.dilate(blur_masked, kernel, iterations=1)
                 # cv2.imshow(key + "_blur+dilate", scale_img(blur_masked))
                 
+                # todo: corner detection sometimes failes and gets the corner of the circular mask instead
+                if self.debug:
+                    cv2.imshow(key + "blur", scale_img(blur_masked))
+                
                 # use Harris corner detection
                 # blockSize - It is the size of neighbourhood considered for corner detection
-                # ksize - Aperture parameter of Sobel derivative used.
-                # k - Harris detector free parameter in the equation.
-                dst = cv2.cornerHarris(blur_masked,blockSize=20, ksize=5, k=0.04)
+                # ksize - Aperture parameter of Sobel derivative used. As size increases, edges will get more blurry
+                # k - Harris detector free parameter in the equation. Bigger k, you will get less false corners. Smaller k you will get a lot more corners. Constant in the range: [0.04,0.06]
+                dst = cv2.cornerHarris(blur_masked, blockSize=20, ksize=5, k=0.04)
                 
+                # ! maybe something is going wrong in the following steps:...
+                # ! can we show the dst now before we do more steps?
                 # get better accuracy: https://docs.opencv.org/3.4/dc/d0d/tutorial_py_features_harris.html
                 dst = cv2.dilate(dst,None)
                 ret, dst = cv2.threshold(dst,0.01*dst.max(),255,0)
@@ -231,18 +238,27 @@ class WorkSurfaceDetection:
                 closest_dist = closest_dist[0]
                 closest_index = closest_index[0]
                 
-                # update corner values
-                self.points_px_dict[key] = corners[closest_index]
+                # todo: check how far the new corners are to the previously predicted corners.
+                # todo: if they are far off, then either corner detection failed, or bolt detection failed.
+                
+                # if the precise corner is close enough to the estimate then we assume there were no errors
+                if closest_dist < 20:
+                    # update corner values
+                    self.points_px_dict[key] = corners[closest_index]
+                else:
+                    print("[red]Corner detection too far off estimate! [/red]")
+                    print("[red] Using original estimate from bolt position for: " + key + "[/red]")
                 
                 # Now draw them
                 if self.debug:
                     print("img.shape", img.shape)
                     print("x, y", x, y)
                     print("harris corners shape", corners.shape)
-                    print("harris corners", corners)
+                    # print("harris corners", corners)
                     
                     print("closest_corner: dist, index", closest_dist, closest_index)
                     print("closest_corner", corners[closest_index])
+                    print("")
                     
                     res = np.hstack((centroids,corners))
                     res = np.int0(res)
@@ -308,7 +324,7 @@ class WorkSurfaceDetection:
         if self.debug:     
             print("self.points_px_dict", self.points_px_dict)
         
-    def draw_corners_and_circles(self):
+    def draw_corners_and_circles(self, img):
         # draw stuff on image
         if self.circles is not None and self.debug:
             # draw all detections in green
