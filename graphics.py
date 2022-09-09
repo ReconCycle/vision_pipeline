@@ -141,15 +141,10 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
     for detection in detections:
         if detection.center_px is not None:
             cv2.circle(img_numpy, tuple(detection.center_px), 5, (0, 255, 0), -1)
-            cv2.drawContours(img_numpy, [detection.obb_px], 0, (0, 255, 0), 2)
-            
-            # get the rotation as an angle
-            quat = detection.tf_px.rotation
-            quat_as_arr = lambda o: np.array([o.x, o.y, o.z, o.w])
-            rot = Rotation.from_quat(quat_as_arr(quat)).as_euler('zyx', degrees=True)
+            cv2.drawContours(img_numpy, [detection.obb_px], 0, (0, 255, 0), 2)          
             
             # draw the arrow
-            point2 = rotated_line(tuple(detection.center_px), rot[2], 60)
+            point2 = rotated_line(tuple(detection.center_px), detection.angle_px, 60)
             cv2.arrowedLine(img_numpy, tuple(detection.center_px), point2, (0, 255, 0), 3, tipLength = 0.5)
             
             # cv2.drawContours(img_numpy, [detection.mask_contour], 0, (0, 255, 0), 2)

@@ -63,7 +63,6 @@ class WorkSurfaceDetection:
         self.points_px_dict = None
         self.points_m_dict = None
         
-
         if isinstance(img, str):
             img = np.array(cv2.imread(img))
         else:
@@ -96,14 +95,14 @@ class WorkSurfaceDetection:
         }
                 
         self.points_m_dict = {
-            'corner0': [0, 0],                       # top-left
-            'corner1': [0.6, 0],                     # top-right
-            'corner2': [0.6, 0.6],                   # bottom-right
-            'corner3': [0, 0.6],                     # bottom-left
-            'bolt0': [0.035, 0.035],                 # top-left
-            'bolt1': [0.6 - 0.035, 0.035],           # top-right
-            'bolt2': [0.6 - 0.035, 0.6 - 0.035],     # bottom-right
-            'bolt3': [0.035, 0.6 - 0.035],           # bottom-left            
+            'corner0': [0, 0.6],                       # top-left
+            'corner1': [0.6, 0.6],                     # top-right
+            'corner2': [0.6, 0],                   # bottom-right
+            'corner3': [0, 0],                     # bottom-left
+            'bolt0': [0.035, 0.6 - 0.035],                 # top-left
+            'bolt1': [0.6 - 0.035, 0.6 - 0.035],           # top-right
+            'bolt2': [0.6 - 0.035, 0.035],     # bottom-right
+            'bolt3': [0.035, 0.035],           # bottom-left          
             'calibrationmount0': [0.3, 0.03],        # top-center
             'calibrationmount1': [0.6 - 0.03, 0.3],  # left-center
             'calibrationmount2': [0.3, 0.6 - 0.03],  # bottom-center
@@ -347,7 +346,7 @@ class WorkSurfaceDetection:
 
     def pixels_to_meters(self, coords):
         if isinstance(coords, tuple) or len(coords.shape) == 1:
-            # single coordinate pair.
+            # single coordinate pair.           
             return self.coord_transform(np.array([coords]))[0]
         else:
             # assume array of coordinate pairs. 

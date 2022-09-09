@@ -51,11 +51,6 @@ class ObjectDetection:
         self.tracker = BYTETracker(self.tracker_args)
         self.fps_graphics = -1.
         self.fps_objdet = -1.
-        
-        # convert class names to enums
-        # labels = enum.IntEnum('label', self.dataset.class_names, start=0)
-        # self.labels = labels
-        
 
     def get_prediction(self, img_path, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None):
         t_start = time.time()
@@ -116,19 +111,30 @@ class ObjectDetection:
         
         markers = MarkerArray()
         markers.markers = []
+        markers.markers.append(self.delete_all_markers())
         
         poses = PoseArray()
         poses.header.frame_id = self.frame_id
         poses.header.stamp = rospy.Time.now()
         
         # calculate the oriented bounding boxes
-        for detection in detections:           
-            corners_px, center_px, rot_quat = obb.get_obb_from_contour(detection.mask_contour, img_path)
+        for detection in detections:                
+            corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, img_path)
             detection.obb_px = corners_px
             detection.center_px = center_px
+            detection.angle_px = angle
+            
+            if worksurface_detection is not None:
+                # basler, w.r.t. vision_module
+                rotation_axis='z'
+                rot_quat = Rotation.from_euler(rotation_axis, angle, degrees=True).inv().as_quat()
+            else:
+                # realsense module, w.r.t. realsense_link
+                rotation_axis='x'
+                rot_quat = Rotation.from_euler(rotation_axis, angle, degrees=True).as_quat()
             
             # todo: obb_3d
-            detection.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*rot_quat))     
+            detection.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*rot_quat))
             
             if worksurface_detection is not None and corners_px is not None:
                 center = worksurface_detection.pixels_to_meters(center_px)
@@ -182,48 +188,38 @@ class ObjectDetection:
                     height = changing_width
                     width = changing_height
                 
-                marker = self.make_marker(detection.tf, self.object_depth, height, width, detection.id, detection.label)
+                if worksurface_detection is not None:
+                    # basler, w.r.t. worksurface_module
+                    marker = self.make_marker(detection.tf, height, width, self.object_depth, detection.id, detection.label)
+                else:
+                    # realsense, w.r.t. realsense_link
+                    marker = self.make_marker(detection.tf, self.object_depth, height, width, detection.id, detection.label)
                 markers.markers.append(marker)
             
             # draw the poses and tfs
             if detection.tf is not None:
                 # change the angle of the pose so that it looks good for visualisation
-                rot_multiplier = Rotation.from_euler('xyz', [90, 0, 90], degrees=True).as_quat()
+                if worksurface_detection is not None:
+                    # basler, w.r.t. worksurface_module
+                    rot_multiplier = Rotation.from_euler('xyz', [0, 0, 0], degrees=True).as_quat()
+                else:
+                    # realsense, w.r.t. realsense_link
+                    rot_multiplier = Rotation.from_euler('xyz', [90, 0, 90], degrees=True).as_quat()
                 pretty_rot = obb.quaternion_multiply(rot_multiplier, rot_quat)
                 
                 pose = Pose()
                 pose.position = detection.tf.translation
                 pose.orientation = Quaternion(*pretty_rot)
-                # pose.orientation = detection.tf.rotation
                 poses.poses.append(pose)
                 
-                # publish transforms of objects
-                rot_to_arr = lambda o: np.array([o.x, o.y, o.z, o.w])
-                tra_to_arr = lambda o: np.array([o.x, o.y, o.z])  
-                
-                # ! use stamped transform
-                # br = tf.TransformBroadcaster()
-                # br.sendTransform(tra_to_arr(detection.tf.translation),
-                #     rot_to_arr(detection.tf.rotation),
-                #     rospy.Time.now(),
-                #     "obj_"+ str(detection.id),
-                #     "realsense_link")
-                
+                #! move this to the pipeline.py files
                 br = tf2_ros.TransformBroadcaster()
                 t = TransformStamped()
 
                 t.header.stamp = rospy.Time.now()
                 t.header.frame_id = self.frame_id
                 t.child_frame_id = "obj_"+ str(detection.id)
-                # t.transform.translation.x = msg.x
-                # t.transform.translation.y = msg.y
-                # t.transform.translation.z = 0.0
                 t.transform = detection.tf
-                # q = tf_conversions.transformations.quaternion_from_euler(0, 0, msg.theta)
-                # t.transform.rotation.x = q[0]
-                # t.transform.rotation.y = q[1]
-                # t.transform.rotation.z = q[2]
-                # t.transform.rotation.w = q[3]
 
                 br.sendTransform(t)
                 
@@ -250,7 +246,7 @@ class ObjectDetection:
         marker.action = Marker.ADD
         marker.header.frame_id = self.frame_id
         marker.header.stamp = rospy.Time.now()
-        marker.ns = 'marker_test_%d' % Marker.CUBE
+        marker.ns = 'detection_%d' % Marker.CUBE
         marker.id = id
         marker.type = Marker.CUBE
         
@@ -269,3 +265,14 @@ class ObjectDetection:
         marker.color.a = 0.75
         
         return marker
+    
+    def delete_all_markers(self):
+        marker = Marker()
+        marker.action = Marker.DELETEALL
+        marker.header.frame_id = self.frame_id
+        marker.header.stamp = rospy.Time.now()
+        marker.ns = 'detection_%d' % Marker.CUBE
+        marker.type = Marker.CUBE
+        
+        return marker
+        

@@ -15,14 +15,16 @@ from cv_bridge import CvBridge
 from std_msgs.msg import String
 from camera_control_msgs.srv import SetSleeping
 from visualization_msgs.msg import MarkerArray
-from geometry_msgs.msg import PoseArray
+from geometry_msgs.msg import PoseArray, TransformStamped
+import tf2_ros
+import tf
 
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.types import detections_to_ros
 
 class BaslerPipeline:
-    def __init__(self, yolact, dataset, camera_topic="basler", node_name="vision_basler", wait_for_services=True):     
+    def __init__(self, yolact, dataset, camera_topic="basler", node_name="vision_basler", image_topic="image_rect_color", wait_for_services=True):     
         self.rate = rospy.Rate(1) # fps
 
         # don't automatically start
@@ -30,6 +32,7 @@ class BaslerPipeline:
 
         self.camera_topic = camera_topic
         self.node_name = node_name
+        self.image_topic = image_topic # will subscribe to camera_topic / image_topic
 
         self.img_sub = None
 
@@ -43,6 +46,10 @@ class BaslerPipeline:
         self.detections = None
         self.markers = None
         self.poses = None
+        
+        self.frame_id = "vision_module"
+        
+        self.create_static_tf(self.frame_id)
 
         print("creating camera subscribers...")
         self.create_camera_subscribers()
@@ -56,7 +63,7 @@ class BaslerPipeline:
         print("waiting for pipeline to be enabled...")
 
     def init_basler_pipeline(self, yolact, dataset):
-        self.object_detection = ObjectDetection(yolact, dataset)
+        self.object_detection = ObjectDetection(yolact, dataset, self.frame_id)
         
         self.worksurface_detection = None
 
@@ -66,14 +73,14 @@ class BaslerPipeline:
         self.img_id += 1
 
     def create_camera_subscribers(self):
-        img_topic = "/" + self.camera_topic + "/image_rect_color"
+        img_topic = "/" + self.camera_topic + "/" + self.image_topic
         self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_callback)
 
     def create_service_client(self):
         try:
             rospy.wait_for_service("/" + self.camera_topic + "/set_sleeping", 2) # 2 seconds
         except rospy.ROSException as e:
-            print("[red]Couldn't find to service![/red]")
+            print("[red]Couldn't find to service! /" + self.camera_topic + "/set_sleeping[/red]")
     
         self.camera_service = rospy.ServiceProxy("/" + self.camera_topic + "/set_sleeping", SetSleeping)
 
@@ -91,7 +98,7 @@ class BaslerPipeline:
         self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
         self.detections_pub.publish(ros_detections)
         self.markers_pub.publish(markers)
-        self.markers_pub.publish(poses)
+        self.poses_pub.publish(poses)
 
     def enable_camera(self, state):
         # enable = True, but the topic is called set_sleeping, so the inverse
@@ -103,7 +110,7 @@ class BaslerPipeline:
             else:
                 print("disabled camera:", res.success)
         except rospy.ServiceException as e:
-            print("Service call failed (state " + str(state) + "): ", e)
+            print("[red]Service call failed (state " + str(state) + "):[/red]", e)
 
     def enable(self, state):
         self.enable_camera(state)
@@ -167,3 +174,24 @@ class BaslerPipeline:
         # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
         
         return labelled_img, detections, markers, poses
+
+    def create_static_tf(self, frame_id):
+        pass
+        broadcaster = tf2_ros.StaticTransformBroadcaster()
+        static_transformStamped = TransformStamped()
+
+        static_transformStamped.header.stamp = rospy.Time.now()
+        static_transformStamped.header.frame_id = "world"
+        static_transformStamped.child_frame_id = frame_id
+
+        static_transformStamped.transform.translation.x = float(0)
+        static_transformStamped.transform.translation.y = float(0)
+        static_transformStamped.transform.translation.z = float(0)
+
+        quat = tf.transformations.quaternion_from_euler(float(0),float(0),float(0))
+        static_transformStamped.transform.rotation.x = quat[0]
+        static_transformStamped.transform.rotation.y = quat[1]
+        static_transformStamped.transform.rotation.z = quat[2]
+        static_transformStamped.transform.rotation.w = quat[3]
+
+        broadcaster.sendTransform(static_transformStamped)

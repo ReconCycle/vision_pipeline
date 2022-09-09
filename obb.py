@@ -192,8 +192,6 @@ def get_obb_using_cv(contour, img=None):
     else:
         correct_rot = changing_rot - 90
 
-    correct_quat = Rotation.from_euler('x', correct_rot, degrees=True).as_quat()
-
     correct_height = changing_height
     correct_width = changing_width
     if changing_height < changing_width:
@@ -209,7 +207,7 @@ def get_obb_using_cv(contour, img=None):
         box = clip_box_to_img_shape(box, img.shape)
         # box = np.clip(box, a_min=np.asarray([0, 0]), a_max=np.asarray(img.shape[:2])[::-1] - 1) 
     
-    return box, center, correct_quat
+    return box, center, correct_rot
 
 def box_w_h(box):
     return np.linalg.norm(box[0] - box[1]), np.linalg.norm(box[1] - box[2])
@@ -232,10 +230,10 @@ def get_obb_from_contour(contour, img=None):
     """
     
     # https://stackoverflow.com/questions/13542855/algorithm-to-find-the-minimum-area-rectangle-for-given-points-in-order-to-comput/33619018#33619018
-    corners, center, rot_quat = get_obb_using_cv(contour, img)
+    corners, center, rot = get_obb_using_cv(contour, img)
     # corners, center, rot_quat =  get_obb_using_eig(contour)
 
     # better_rot_quat = rot_quat
     # if corners is not None:
     #     better_rot_quat = better_quaternion(corners)
-    return corners, center, rot_quat
+    return corners, center, rot

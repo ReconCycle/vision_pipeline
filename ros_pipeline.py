@@ -50,7 +50,7 @@ class ROSPipeline():
         # load yolact
         yolact, dataset = self.load_yolact(self.config.obj_detection)
 
-        self.pipeline_basler = BaslerPipeline(yolact, dataset, "basler", args.node_name + "/basler", self.wait_for_services)
+        self.pipeline_basler = BaslerPipeline(yolact, dataset, "basler", args.node_name + "/basler", args.basler_image, self.wait_for_services)
         self.pipeline_realsense = RealsensePipeline(yolact, dataset, "realsense", args.node_name + "/realsense", self.wait_for_services)
         
         rospy.Service("/" + args.node_name + "/basler/enable", SetBool, self.enable_basler_callback)
@@ -220,6 +220,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--auto_start", help="Which camera: basler/realsense", nargs='?', type=str, default="")
     parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision")
+    parser.add_argument("--basler_image", help="/basler/<image topic>", type=str, nargs='?', default="image_rect_color")
     parser.add_argument("--wait_for_services", help="wait for camera services", type=str2bool, nargs='?', default=True)
     args = parser.parse_args()
 

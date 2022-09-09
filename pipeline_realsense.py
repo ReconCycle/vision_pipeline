@@ -107,7 +107,7 @@ class RealsensePipeline:
         try:
             rospy.wait_for_service("/" + self.camera_topic + "/enable", 2) # 2 seconds
         except rospy.ROSException as e:
-            print("[red]Couldn't find to service![/red]")
+            print("[red]Couldn't find to service! /" + self.camera_topic + "/enable [/red]")
         self.camera_service = rospy.ServiceProxy("/" + self.camera_topic + "/enable", SetBool)
 
     def create_publishers(self):
@@ -156,7 +156,7 @@ class RealsensePipeline:
             else:
                 print("disabled camera:", res.success)
         except rospy.ServiceException as e:
-            print("Service call failed (state " + str(state) + "): ", e)
+            print("[red]Service call failed (state " + str(state) + "):[/red]", e)
 
     def enable(self, state):
         self.enable_camera(state)
