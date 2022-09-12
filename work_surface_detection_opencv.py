@@ -63,6 +63,10 @@ class WorkSurfaceDetection:
         self.points_px_dict = None
         self.points_m_dict = None
         
+        self.font_face = cv2.FONT_HERSHEY_DUPLEX
+        self.font_scale = 1.0
+        self.font_thickness = 1
+        
         if isinstance(img, str):
             img = np.array(cv2.imread(img))
         else:
@@ -95,18 +99,22 @@ class WorkSurfaceDetection:
         }
                 
         self.points_m_dict = {
-            'corner0': [0, 0.6],                       # top-left
-            'corner1': [0.6, 0.6],                     # top-right
-            'corner2': [0.6, 0],                   # bottom-right
-            'corner3': [0, 0],                     # bottom-left
-            'bolt0': [0.035, 0.6 - 0.035],                 # top-left
-            'bolt1': [0.6 - 0.035, 0.6 - 0.035],           # top-right
-            'bolt2': [0.6 - 0.035, 0.035],     # bottom-right
-            'bolt3': [0.035, 0.035],           # bottom-left          
-            'calibrationmount0': [0.3, 0.03],        # top-center
-            'calibrationmount1': [0.6 - 0.03, 0.3],  # left-center
-            'calibrationmount2': [0.3, 0.6 - 0.03],  # bottom-center
-            'calibrationmount3': [0.03, 0.3],        # right-center
+            'corner0': [0, 0.6],                    # top-left
+            'corner1': [0.6, 0.6],                  # top-right
+            'corner2': [0.6, 0],                    # bottom-right
+            'corner3': [0, 0],                      # bottom-left
+            
+            # bolts are 0.035m in from the edge
+            'bolt0': [0.035, 0.6 - 0.035],          # top-left
+            'bolt1': [0.6 - 0.035, 0.6 - 0.035],    # top-right
+            'bolt2': [0.6 - 0.035, 0.035],          # bottom-right
+            'bolt3': [0.035, 0.035],                # bottom-left
+            
+            # calibration mounts are 0.03m in from the edge      
+            'calibrationmount0': [0.3, 0.6 - 0.03], # top-center
+            'calibrationmount1': [0.6 - 0.03, 0.3], # right-center
+            'calibrationmount2': [0.3, 0.03],       # bottom-center
+            'calibrationmount3': [0.03, 0.3],       # left-center
         }
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -180,10 +188,10 @@ class WorkSurfaceDetection:
                     if np.linalg.norm(np.array([x, y])-midpoint[:2]) < epsilon:
                         self.points_px_dict["calibrationmount" + str(i)] = [x, y, r]
        
-            if self.debug:
-                print("circles", circles)
-                print("bolts", bolts)
-                print("midpoints", midpoints)
+            # if self.debug:
+            #     print("circles", circles)
+            #     print("bolts", bolts)
+            #     print("midpoints", midpoints)
                 
         self.circles = circles
             
@@ -199,8 +207,9 @@ class WorkSurfaceDetection:
                 x, y = value
                 
                 # create a circle mask where we apply harris corner detection in
+                circle_radius = 100
                 corner_mask = np.zeros(img.shape[:2], np.uint8)
-                cv2.circle(corner_mask,(int(x), int(y)), 100, 255, thickness=-1)
+                cv2.circle(corner_mask,(int(x), int(y)), circle_radius, 255, thickness=-1)
                 img_masked = cv2.bitwise_and(img, img, mask=corner_mask) # for visualisation
                 blur_masked = cv2.bitwise_and(self.blur, self.blur, mask=corner_mask)
                 
@@ -210,9 +219,8 @@ class WorkSurfaceDetection:
                 blur_masked = cv2.dilate(blur_masked, kernel, iterations=1)
                 # cv2.imshow(key + "_blur+dilate", scale_img(blur_masked))
                 
-                # todo: corner detection sometimes failes and gets the corner of the circular mask instead
-                if self.debug:
-                    cv2.imshow(key + "blur", scale_img(blur_masked))
+                # if self.debug:
+                #     cv2.imshow(key + "blur", scale_img(blur_masked))
                 
                 # use Harris corner detection
                 # blockSize - It is the size of neighbourhood considered for corner detection
@@ -220,11 +228,9 @@ class WorkSurfaceDetection:
                 # k - Harris detector free parameter in the equation. Bigger k, you will get less false corners. Smaller k you will get a lot more corners. Constant in the range: [0.04,0.06]
                 dst = cv2.cornerHarris(blur_masked, blockSize=20, ksize=5, k=0.04)
                 
-                # ! maybe something is going wrong in the following steps:...
-                # ! can we show the dst now before we do more steps?
                 # get better accuracy: https://docs.opencv.org/3.4/dc/d0d/tutorial_py_features_harris.html
                 dst = cv2.dilate(dst,None)
-                ret, dst = cv2.threshold(dst,0.01*dst.max(),255,0)
+                ret, dst = cv2.threshold(dst,0.001*dst.max(),255,0) # was 0.01 but changed to 0.001 to see more corners
                 dst = np.uint8(dst)
                 # find centroids
                 ret, labels, stats, centroids = cv2.connectedComponentsWithStats(dst)
@@ -238,10 +244,8 @@ class WorkSurfaceDetection:
                 closest_dist = closest_dist[0]
                 closest_index = closest_index[0]
                 
-                # todo: check how far the new corners are to the previously predicted corners.
-                # todo: if they are far off, then either corner detection failed, or bolt detection failed.
-                
                 # if the precise corner is close enough to the estimate then we assume there were no errors
+                # the new position has to be within 20px of the estimate
                 if closest_dist < 20:
                     # update corner values
                     self.points_px_dict[key] = corners[closest_index]
@@ -269,7 +273,6 @@ class WorkSurfaceDetection:
                     img_masked[res[:,1],res[:,0]]=[0,0,255] # red centroids
                     img_masked[res[:,3],res[:,2]] = [0,255,0] # green corners
                 
-
                     cv2.drawMarker(img_masked, tuple(corners[closest_index].astype(int)), color=[0,255,0],
                         markerType=cv2.MARKER_CROSS,
                         markerSize=20,
@@ -305,13 +308,20 @@ class WorkSurfaceDetection:
         A_inv = np.linalg.solve(A.T.dot(A), A.T)
         self.coord_transform_inv = lambda x: self.unpad(np.dot(self.pad(x), A_inv))
         
+        max_error = np.abs(points_m_arr - self.pixels_to_meters(points_px_arr)).max()
+        
+        if max_error > 0.02:
+            print("[red]Max error in work surface position is: " + str(max_error) +"[/red]")
+        
         if self.debug:
             print("points_px_arr", points_px_arr)
             print("points_m_arr", points_m_arr)
             
             print("Target:", points_m_arr)
             print("Result:", self.pixels_to_meters(points_px_arr))
-            print("Max error:", np.abs(points_m_arr - self.pixels_to_meters(points_px_arr)).max())
+            print("Max error:", max_error)
+            
+        
 
         print("self.meters_to_pixels", self.meters_to_pixels(np.array([0.0, 0.0])))
         
@@ -319,7 +329,11 @@ class WorkSurfaceDetection:
     def estimate_corners_using_transform(self):
         for key, value in self.points_px_dict.items():
             if value is None and key.startswith("corner"):
-                self.points_px_dict[key] = self.meters_to_pixels(np.array(self.points_m_dict[key]))
+                corner_in_meters = self.meters_to_pixels(np.array(self.points_m_dict[key]))
+                self.points_px_dict[key] = corner_in_meters
+                if corner_in_meters[0] > self.img_width or corner_in_meters[0] < 0 \
+                    or corner_in_meters[1] > self.img_height or corner_in_meters[1] < 0:
+                    print("[red]Corner estimate is out of bounds! " + str(corner_in_meters[0]) + ", " + str(corner_in_meters[1]) + "[/red]")
         
         if self.debug:     
             print("self.points_px_dict", self.points_px_dict)
@@ -354,6 +368,8 @@ class WorkSurfaceDetection:
                         markerSize=20,
                         thickness=2,
                         line_type=8)
+                    
+                    cv2.putText(img, key, (int(x)-100, int(y)), self.font_face, self.font_scale, [0,0,255], self.font_thickness, cv2.LINE_AA)
 
             # cv2.imshow("0", scale_img(blur))
             # cv2.imwrite('./example_work_sufrace_detection_opencv.jpg', img)
