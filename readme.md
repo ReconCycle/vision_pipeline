@@ -4,39 +4,67 @@ Project to track heat cost allocators and the individual parts of the heat cost 
 
 ![Object Tracking](./readme_image.png)
 
-This project works best by using the [ros-vision-pipeline](https://github.com/ReconCycle/ros-vision-pipeline) Docker container.
-The camera part can be run separately in a ROS node using [ros-basler-camera](https://github.com/ReconCycle/ros-basler-camera).
 
 ## Installation
 
-Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision-pipeline/data_limited` folder.
-
-<!-- ## Camera Calibration
-
-Look at the documentation in [ros-basler-camera](https://github.com/ReconCycle/ros-basler-camera). -->
-
+1. Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision-pipeline/data_limited` folder.
+2. Setup ros-vision-pipeline](https://github.com/ReconCycle/ros-vision-pipeline).
+3. Make sure to follow the instructions for ros-vision-pipeline.
+3. Setup [ros-basler](https://github.com/ReconCycle/ros-basler) camera.
+4. Setup [ros-realsense](https://github.com/ReconCycle/ros-realsense) camera.
 
 ## Camera Calibration
 
-To calibrate the camera put a checkerboard in the view of the camera, and move the checkerboard around while taking images. The images should be of size 2900 x 2900 pixels.
-To take the images for calibration run the following in the container:
-```yaml
-command: python ros_camera_publisher.py --save=True --undistort=False --fps=1.0
+Look at the documentation in [ros-basler](https://github.com/ReconCycle/ros-basler).
+
+## Usage
+
+Run example:
 ```
-Rename the saved folder to something like "calibration_23-06-2021" and move it to the data folder.
-Then run the calibration by running:
-```yaml
-command: python image_calibration.py --input="data/calibration_23-06-2021" --board_h=9 --board_w=6
+python ros_pipeline.py --continuous=basler,realsense
 ```
-This will output the file: `calibration_file.yaml` and some `temp_*` folders to check it performed correctly. 
 
-Set the new `calibration_file.yaml` path in `config.yaml`.
+Arguments are:
+```
+  --continuous [CONTINUOUS]
+                        Which camera: basler/realsense
+  --node_name [NODE_NAME]
+                        The name of the node
+  --basler_image [BASLER_IMAGE]
+                        /basler/<image topic>
+  --wait_for_services [WAIT_FOR_SERVICES]
+                        wait for camera services
+  --rate [RATE]         hz rate to determine sleeping
+```
 
-The `image_calibration.py` can take the following parameters:
+**Publishes**:
 
-- `--board_h` (default 8) the board height
-- `--board_w` (default 6) the board width
-- `--input` (default data/calibration) input directory of images
+Basler:
+- `/vision/basler/colour`, Image
+- `/vision/basler/detections`, ROSDetections
+- `/vision/basler/markers`, MarkerArray
+- `/vision/basler/poses`, PoseArray
+
+Realsense:
+- `/vision/realsense/colour`, Image
+- `/vision/realsense/detections`, ROSDetections
+- `/vision/realsense/markers`, MarkerArray
+- `/vision/realsense/poses`, PoseArray
+
+- `/vision/realsense/gaps`, ROSGaps
+- `/vision/realsense/cluster`, Image
+- `/vision/realsense/mask`, Image
+- `/vision/realsense/depth`, Image
+- `/vision/realsense/lever`, PoseStamped
+
+**Services**:
+
+- `/vision/basler/enable` True/False
+- `/vision/realsense/enable` True/False
+
+
+
+# Dataset Creation and Training
 
 ## Labelling Images with Segmentation for use with Yolact
 
@@ -149,33 +177,7 @@ python train.py --config=real_config --resume=weights/training_15-01-2021-segmen
 
 Todo.
 
-## PyPylon
 
-This is covered more in the ROS-vision-pipeline git container.
-
-## Exporting/Importing Conda environment
-
-Export with:
-```
-conda env export > environment.yml
-```
-Import with:
-```
-conda env create -f environment.yml --debug
-```
-or possibly faster, with:
-```
-conda create -y -n pipeline-v2
-conda activate pipeline-v2
-conda install mamba -n base -c conda-forge
-mamba env update -n pipeline-v2 --file environment.yml
-```
-
-## TODOs
-
-- [ ] Try disabling mirror and or flip to improve training of side1/side2.
-- [ ] Automatically set `Pylon configuration set` instead of having to do this manually.
-- [ ] Training for Yolact should also compute the loss for the validation step and make it viewable in tensorboard
 
 <!-- ## Deeplabcut - DEPRECATED (using OpenCV instead for corner detection)
 
