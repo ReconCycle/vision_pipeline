@@ -77,26 +77,7 @@ def img_to_camera_coords(x_y, depth, camera_info):
     _intrinsics.model  = pyrealsense2.distortion.none
     _intrinsics.coeffs = [i for i in camera_info.D]
     
-    if len(x_y.shape) == 2:
-        # multiple pairs of x_y
-        results = []
-        for single_x_y in x_y:
-            if isinstance(depth, np.ndarray):
-                single_depth = depth[single_x_y[1], single_x_y[0]]
-            else:
-                single_depth = depth
-            result = pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, single_x_y, single_depth)
-            result = np.asarray(result)
-            #result[0]: right, result[1]: down, result[2]: forward
-            reordered_result = result[2], -result[0], -result[1]
-            
-            results.append(reordered_result)
-        
-        return np.array(results)
-    
-    else:
-        # x, y = x_y
-        # single x, y pair
+    def pixels_to_meters(x_y):
         if isinstance(depth, np.ndarray):
             print("depth.shape", depth.shape)
             single_depth = depth[x_y[1], x_y[0]]
@@ -107,6 +88,28 @@ def img_to_camera_coords(x_y, depth, camera_info):
 
         #result[0]: right, result[1]: down, result[2]: forward
         return result[2], -result[0], -result[1]
+    
+    def pixels_to_meters_of_arr(x_y):
+        results = []
+        for single_x_y in x_y:
+            results.append(pixels_to_meters(single_x_y))
+        return results
+    
+    if isinstance(x_y, Polygon):
+        polygon_coords = np.asarray(list(x_y.exterior.coords))
+        
+        polygon_coords_m = pixels_to_meters_of_arr(polygon_coords)
+        return Polygon(polygon_coords_m)
+
+    elif len(x_y.shape) == 2:
+        # multiple pairs of x_y
+        results_list = pixels_to_meters_of_arr(x_y)
+        return np.array(results_list)
+    
+    else:
+        # x, y = x_y
+        # single x, y pair
+        return np.asarray(pixels_to_meters(x_y))
 
 
 def scale_img(img, scale_percent=50):

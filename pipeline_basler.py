@@ -127,8 +127,7 @@ class BaslerPipeline:
             print("waiting for detection...")
             time.sleep(1) #! debug
             
-        if self.detections is not None:            
-
+        if self.detections is not None:
             return self.labelled_img, self.detections        
 
         else:

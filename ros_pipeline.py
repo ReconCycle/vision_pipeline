@@ -34,6 +34,7 @@ from context_action_framework.msg import VisionDetails
 from context_action_framework.types import detections_to_ros, gaps_to_ros
 
 
+
 class ROSPipeline():
     def __init__(self, args) -> None:
         args = self.arg_parser(args)

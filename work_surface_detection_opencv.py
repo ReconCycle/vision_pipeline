@@ -4,6 +4,7 @@ import cv2
 from rich import print
 
 from helpers import scale_img
+from shapely.geometry import Polygon
 
 
 def get_corner_bolts(pts):
@@ -376,17 +377,33 @@ class WorkSurfaceDetection:
             cv2.imshow("1", scale_img(img))
             cv2.waitKey(0)
 
-    def pixels_to_meters(self, coords):
-        if isinstance(coords, tuple) or len(coords.shape) == 1:
-            # single coordinate pair.           
+    def pixels_to_meters(self, coords, depth=None):
+        if isinstance(coords, Polygon):
+            # coords.exterior.coords[:-1] for non repeated list
+            polygon_px_coords = np.asarray(list(coords.exterior.coords))
+            polygon_coords = self.coord_transform(polygon_px_coords)
+            if depth is not None:
+                polygon_coords = np.pad(polygon_coords, [(0, 0), (0, 1)], mode='constant', constant_values=depth)
+            
+            return Polygon(polygon_coords)
+            
+        elif isinstance(coords, tuple) or len(coords.shape) == 1:
+            # single coordinate pair.
+            # todo: add depth option
             return self.coord_transform(np.array([coords]))[0]
         else:
             # assume array of coordinate pairs. 
             # Each row contains a coordinate (x, y) pair
+            # todo: add depth option
             return self.coord_transform(coords)
         
     def meters_to_pixels(self, coords):
-        if isinstance(coords, tuple) or len(coords.shape) == 1:
+        # todo: deal with depth
+        if isinstance(coords, Polygon):
+            polygon_coords = np.asarray(list(coords.exterior.coords))
+            polygon_px_coords = self.coord_transform_inv(polygon_coords)
+            return Polygon(polygon_px_coords)
+        elif isinstance(coords, tuple) or len(coords.shape) == 1:
             # single coordinate pair.
             return self.coord_transform_inv(np.array([coords]))[0]
         else:

@@ -144,8 +144,10 @@ class ObjectDetection:
                 detection.tf = Transform(Vector3(*center, 0), Quaternion(*rot_quat))
                 detection.box = worksurface_detection.pixels_to_meters(detection.box_px)
                 detection.obb = corners
+                detection.polygon = worksurface_detection.pixels_to_meters(detection.polygon_px, depth=self.object_depth)
                 
                 # obb_3d calculations
+                # first convert to x, y, z coords by adding 0 to each coord for z
                 # original obb + obb raised 2.5cm
                 corners_padded = np.pad(corners, [(0, 0), (0, 1)], mode='constant')
                 corners_padded_high = np.pad(corners, [(0, 0), (0, 1)], mode='constant', constant_values=self.object_depth)
@@ -153,7 +155,7 @@ class ObjectDetection:
                 
                 detection.obb_3d = corners_3d
                 
-            elif camera_info is not None and depth_img is not None and center_px is not None:
+            elif camera_info is not None and depth_img is not None and center_px is not None and corners_px is not None:
                 # mask depth image
                 depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
                 depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
@@ -164,11 +166,11 @@ class ObjectDetection:
                     detection.center = img_to_camera_coords(center_px, depth_mean, camera_info)
                     detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
                     detection.box = img_to_camera_coords(detection.box_px, depth_mean, camera_info)
+                    detection.polygon = img_to_camera_coords(detection.polygon_px, depth_mean, camera_info)
                     
                     corners = img_to_camera_coords(corners_px, depth_mean, camera_info)
                     # the lower corners are 2.5cm further away from the camera
                     corners_low = img_to_camera_coords(corners_px, depth_mean - self.object_depth, camera_info)
-                    
                     detection.obb = corners
                     detection.obb_3d = np.concatenate((corners, corners_low))
                 
