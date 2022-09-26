@@ -39,10 +39,12 @@ class ROSPipeline():
     def __init__(self, args) -> None:
         args = self.arg_parser(args)
         self.node_name = args.node_name
+        self.continuous = args.continuous
         self.wait_for_services = args.wait_for_services
+        self.rate_int = args.rate
 
         rospy.init_node(args.node_name)
-        self.rate = rospy.Rate(1)
+        self.rate = rospy.Rate(self.rate_int)
         
         # load config
         self.config = load_config()
@@ -57,9 +59,9 @@ class ROSPipeline():
         rospy.Service("/" + args.node_name + "/basler/enable", SetBool, self.enable_basler_callback)
         rospy.Service("/" + args.node_name + "/realsense/enable", SetBool, self.enable_realsense_callback)
         
-        if "realsense" in args.auto_start:
+        if "realsense" in self.continuous:
             self.pipeline_realsense.enable(True)
-        if "basler" in args.auto_start:
+        if "basler" in self.continuous:
             self.pipeline_basler.enable(True)
 
         def exit_handler():
@@ -136,6 +138,11 @@ class ROSPipeline():
 
     def enable_basler_callback(self, req):
         state = req.data
+        if "basler" in self.continuous:
+            msg = "won't start/stop basler. Running in continuous mode."
+            print(msg)
+            return True, msg
+        
         if state:
             print("starting pipeline...")
             self.pipeline_basler.enable(True)
@@ -149,6 +156,11 @@ class ROSPipeline():
     
     def enable_realsense_callback(self, req):
         state = req.data
+        if "realsense" in self.continuous:
+            msg = "won't start/stop basler. Running in continuous mode."
+            print(msg)
+            return True, msg
+        
         if state:
             print("starting pipeline...")
             self.pipeline_realsense.enable(True)
@@ -211,7 +223,9 @@ class ROSPipeline():
     @staticmethod
     def arg_parser(args):
         print("node_name:", args.node_name)
-        print("auto_start:", args.auto_start, "\n")
+        print("continuous:", args.continuous, "\n")
+        print("basler_image:", args.basler_image, "\n")
+        print("wait_for_services:", args.wait_for_services, "\n")
 
         return args
 
@@ -219,10 +233,11 @@ class ROSPipeline():
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--auto_start", help="Which camera: basler/realsense", nargs='?', type=str, default="")
+    parser.add_argument("--continuous", help="Which camera: basler/realsense", nargs='?', type=str, default="")
     parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision")
     parser.add_argument("--basler_image", help="/basler/<image topic>", type=str, nargs='?', default="image_rect_color")
     parser.add_argument("--wait_for_services", help="wait for camera services", type=str2bool, nargs='?', default=True)
+    parser.add_argument("--rate", help="hz rate to determine sleeping", type=int, nargs='?', default=1)
     args = parser.parse_args()
 
     ros_pipeline =  ROSPipeline(args)
