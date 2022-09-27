@@ -28,11 +28,12 @@ Run example:
 ```
 python ros_pipeline.py --continuous=basler,realsense
 ```
+The basler and realsense cameras will now publish continuously.
 
-Arguments are:
+All the possible arguments are:
 ```
   --continuous [CONTINUOUS]
-                        Which camera: basler/realsense
+                        Which camera(s) to run continuously: basler/realsense
   --node_name [NODE_NAME]
                         The name of the node
   --basler_image [BASLER_IMAGE]
@@ -67,6 +68,7 @@ Realsense:
 - `/vision/basler/enable` True/False
 - `/vision/realsense/enable` True/False
 
+The services only have an effect if the `continuous` parameter is not set for that camera.
 
 
 # Dataset Creation and Training
