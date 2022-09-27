@@ -33,6 +33,7 @@ class BaslerPipeline:
         self.camera_topic = camera_topic
         self.node_name = node_name
         self.image_topic = image_topic # will subscribe to camera_topic / image_topic
+        self.wait_for_services = wait_for_services
 
         self.img_sub = None
 
@@ -77,8 +78,12 @@ class BaslerPipeline:
         self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_callback)
 
     def create_service_client(self):
+        timeout = 2 # 2 second timeout
+        if self.wait_for_services:
+            timeout = None
         try:
-            rospy.wait_for_service("/" + self.camera_topic + "/set_sleeping", 2) # 2 seconds
+            print("waiting for service: /" + self.camera_topic + "/set_sleeping ...")
+            rospy.wait_for_service("/" + self.camera_topic + "/set_sleeping", timeout)
         except rospy.ROSException as e:
             print("[red]Couldn't find to service! /" + self.camera_topic + "/set_sleeping[/red]")
     

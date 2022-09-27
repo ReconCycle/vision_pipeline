@@ -32,6 +32,7 @@ class RealsensePipeline:
 
         self.camera_topic = camera_topic
         self.node_name = node_name
+        self.wait_for_services = wait_for_services
 
         # realsense data
         self.colour_img = None
@@ -104,8 +105,12 @@ class RealsensePipeline:
         ts2.registerCallback(self.aruco_callback)
 
     def create_service_client(self):
+        timeout = 2 # 2 second timeout
+        if self.wait_for_services:
+            timeout = None
         try:
-            rospy.wait_for_service("/" + self.camera_topic + "/enable", 2) # 2 seconds
+            print("waiting for service: /" + self.camera_topic + "/enable ...")
+            rospy.wait_for_service("/" + self.camera_topic + "/enable", timeout) # 2 seconds
         except rospy.ROSException as e:
             print("[red]Couldn't find to service! /" + self.camera_topic + "/enable [/red]")
         self.camera_service = rospy.ServiceProxy("/" + self.camera_topic + "/enable", SetBool)
