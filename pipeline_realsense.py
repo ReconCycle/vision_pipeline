@@ -215,7 +215,10 @@ class RealsensePipeline:
                 
             else:
                 print("Waiting to receive image (realsense).")
-                time.sleep(0.1)
+                #! shouldn't need to do this but the realsense camera sometimes stops working
+                if self.pipeline_enabled:
+                    print("resending rosservice call /realsense/enable True")
+                    self.enable_camera(True)
 
 
     def process_img(self, fps=None):

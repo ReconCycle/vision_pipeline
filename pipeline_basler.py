@@ -160,7 +160,7 @@ class BaslerPipeline:
 
             else:
                 print("Waiting to receive image (basler).")
-                time.sleep(0.1)
+
 
     def process_img(self, img, fps=None):
         if self.worksurface_detection is None:

@@ -144,11 +144,11 @@ class ROSPipeline():
             return True, msg
         
         if state:
-            print("starting pipeline...")
+            print("starting basler pipeline...")
             self.pipeline_basler.enable(True)
             msg = args.node_name + " started."
         else:
-            print("stopping pipeline...")
+            print("stopping basler pipeline...")
             self.pipeline_basler.enable(False)
             msg = args.node_name + " stopped."
         
@@ -162,11 +162,11 @@ class ROSPipeline():
             return True, msg
         
         if state:
-            print("starting pipeline...")
+            print("starting realsense pipeline...")
             self.pipeline_realsense.enable(True)
             msg = args.node_name + " started."
         else:
-            print("stopping pipeline...")
+            print("stopping realsense pipeline...")
             self.pipeline_realsense.enable(False)
             msg = args.node_name + " stopped."
         

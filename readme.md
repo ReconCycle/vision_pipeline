@@ -43,20 +43,26 @@ All the possible arguments are:
   --rate [RATE]         hz rate to determine sleeping
 ```
 
+Without the continuous flag, we can enable/disable the cameras by calling the ros service:
+```
+rosservice call /vision/realsense/enable True
+```
+
 **Publishes**:
 
 Basler:
+
 - `/vision/basler/colour`, Image
 - `/vision/basler/detections`, ROSDetections
 - `/vision/basler/markers`, MarkerArray
 - `/vision/basler/poses`, PoseArray
 
 Realsense:
+
 - `/vision/realsense/colour`, Image
 - `/vision/realsense/detections`, ROSDetections
 - `/vision/realsense/markers`, MarkerArray
 - `/vision/realsense/poses`, PoseArray
-
 - `/vision/realsense/gaps`, ROSGaps
 - `/vision/realsense/cluster`, Image
 - `/vision/realsense/mask`, Image
