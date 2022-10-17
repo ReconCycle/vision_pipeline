@@ -6,10 +6,13 @@ import commentjson
 from rich import print
 import cv2
 
+from yolact_pkg.utils.augmentations import SSDAugmentation, BaseTransform
 from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
-from yolact_pkg.eval import infer, annotate_img
+from yolact_pkg.eval import infer, annotate_img, evaluate, parse_args
+from yolact_pkg.data.config import MEANS
 from yolact_pkg.train import train
+from yolact_pkg.data.coco import COCODetection, detection_collate
 import torch
 
 # from tracker.byte_tracker import BYTETracker
@@ -23,7 +26,8 @@ from helpers import Struct
 
 if __name__ == '__main__':
     
-    print("dir()", dir())
+    # print("dir()", dir())
+    torch.cuda.empty_cache()
     
     
     dataset = Config({
@@ -48,7 +52,7 @@ if __name__ == '__main__':
         # If not specified, this just assumes category ids start at 1 and increase sequentially.
         'label_map': None
     })
-
+    
     config_override = {
         'name': 'yolact_base',
 
@@ -58,14 +62,14 @@ if __name__ == '__main__':
 
         # Image Size
         'max_size': 1100, #! I changed this, was 550
-
+        
         'save_path': 'data_full/yolact/2022-10-17_kalo_qundis/',
-
+        
         # we can override args used in eval.py:
         'score_threshold': 0.1,
         'top_k': 10
     }
-
+    
     # we can override training args here:
     training_args_override = {
         "batch_size": 2, #! I changed this, was 8
@@ -73,29 +77,40 @@ if __name__ == '__main__':
         # "resume": 
         "validation_size": 100,
     }
-
+    
     yolact = Yolact(config_override)
     
     ###########################################
     # Training                                #
     ###########################################
     
-    print("run training...")
-    train(yolact, training_args_override)
+    # print("run training...")
+    # train(yolact, training_args_override)
     
     ###########################################
     # Inference                               #
     ###########################################
     
-    # yolact.eval()
-    # yolact.load_weights("./yolact_weights/training_2021-11-05-13꞉09/yolact_base_36_2200.pth")
-    
-    # frame, classes, scores, boxes, masks = yolact.infer(".data/coco/train_images/00000.jpg")
-    # # or: frame, classes, scores, boxes, masks = yolact.infer(yolact, cv2.imread(".data/coco/train_images/00000.jpg"))
-    
+    yolact.eval()
+    yolact.load_weights("./data_limited/yolact/2022-05-02_kalo_qundis/yolact_base_274_202125.pth")
+
+    # frame, classes, scores, boxes, masks = yolact.infer("/root/datasets/2022-05-02_kalo_qundis/coco/JPEGImages/1066.jpg")
+
     # annotated_img = annotate_img(frame, classes, scores, boxes, masks)
-    
+
     # cv2.namedWindow("output", cv2.WINDOW_NORMAL)
     # cv2.imshow("output",annotated_img)
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
+    # 
+    # todo: evaluation
+    # for key, val in training_args_override.items():
+    #     # args[key] = val
+    #     setattr(args, key, val)
+    
+    val_dataset = COCODetection(image_path=yolact.cfg.dataset.valid_images,
+                                info_file=yolact.cfg.dataset.valid_info,
+                                transform=BaseTransform(MEANS))
+    
+    parse_args()
+    evaluate(yolact, val_dataset)
