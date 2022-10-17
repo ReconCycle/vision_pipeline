@@ -116,6 +116,7 @@ class BaslerPipeline:
     def publish(self, img, detections, markers, poses):       
         print("publishing...")
         
+        #self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
         timestamp = rospy.Time.now()
         header = rospy.Header()
         header.stamp = timestamp
@@ -123,9 +124,10 @@ class BaslerPipeline:
         
         img_msg = self.br.cv2_to_imgmsg(img)
         img_msg.header.stamp = timestamp
-        self.labelled_img_pub.publish(img_msg)
-        
-        #self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+        if self.publish_labeled_img:
+            self.labelled_img_pub.publish(img_msg)
+            # self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+            
         self.detections_pub.publish(ros_detections)
         
         for marker in markers.markers:
@@ -134,8 +136,7 @@ class BaslerPipeline:
         
         poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
-        if self.publish_labeled_img:
-            self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+
 
 
     def enable_camera(self, state):

@@ -169,10 +169,9 @@ class RealsensePipeline:
         
         img_msg = self.br.cv2_to_imgmsg(img)
         img_msg.header.stamp = timestamp
-        self.labelled_img_pub.publish(img_msg)
-        
         if self.publish_labeled_img:
-            self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+            self.labelled_img_pub.publish(img_msg)
+        
         self.detections_pub.publish(ros_detections)
         for marker in markers.markers:
             marker.header.stamp = timestamp
@@ -183,9 +182,9 @@ class RealsensePipeline:
         if cluster_img is not None:
             cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
             cluster_img_msg.header.stamp = timestamp
-            self.clustered_img_pub.publish(cluster_img_msg)
             if self.publish_cluster_img:
-                self.clustered_img_pub.publish(self.br.cv2_to_imgmsg(cluster_img))
+                self.clustered_img_pub.publish(cluster_img_msg)
+                # self.clustered_img_pub.publish(self.br.cv2_to_imgmsg(cluster_img))
         if device_mask is not None:
             device_mask_msg = self.br.cv2_to_imgmsg(device_mask)
             device_mask_msg.header.stamp = timestamp
@@ -193,9 +192,9 @@ class RealsensePipeline:
         if depth_scaled is not None:
             depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled)
             depth_scaled_msg.header.stamp = timestamp
-            self.depth_img_pub.publish(depth_scaled_msg)
             if self.publish_depth_img:
-                self.depth_img_pub.publish(self.br.cv2_to_imgmsg(depth_scaled))
+                self.depth_img_pub.publish(depth_scaled_msg)
+                # self.depth_img_pub.publish(self.br.cv2_to_imgmsg(depth_scaled))
 
         # publish only the most probable lever action, for now
         # we could use pose_stamped array instead to publish all the lever possibilities
