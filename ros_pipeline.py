@@ -181,7 +181,7 @@ class ROSPipeline():
             self.pipeline_basler.enable(True)
             
             print("getting basler detection")
-            labelled_img, detections = self.pipeline_basler.get_stable_detection()
+            img, detections = self.pipeline_basler.get_stable_detection()
             
             # todo: get detections
             # todo: wait until movement/results are stable
@@ -193,9 +193,9 @@ class ROSPipeline():
             
             if detections is not None:
                 vision_details = VisionDetails(False, detections_to_ros(detections), [])
-                return VisionDetectionResponse(True, vision_details)
+                return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(img))
             else:
-                return VisionDetectionResponse(False, VisionDetails())
+                return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(img))
             
             
         elif req.camera == Camera.realsense:
@@ -206,16 +206,16 @@ class ROSPipeline():
             # todo: get detections
             # todo: wait until movement/results are stable
             print("getting realsense detection")
-            labelled_img, detections, gaps = self.pipeline_realsense.get_stable_detection(gap_detection=req.gap_detection)
+            img, detections, gaps = self.pipeline_realsense.get_stable_detection(gap_detection=req.gap_detection)
             
             print("disabling realsense...")
             self.pipeline_realsense.enable(False)
 
             if detections is not None:
                 vision_details = VisionDetails(req.gap_detection, detections_to_ros(detections), gaps_to_ros(gaps))
-                return VisionDetectionResponse(True, vision_details)
+                return VisionDetectionResponse(True, vision_details, img)
             else:
-                return VisionDetectionResponse(False, VisionDetails())
+                return VisionDetectionResponse(False, VisionDetails(), img)
 
     def vision_service_server(self):
         rospy.Service("/" + self.node_name + "/vision_get_detection", VisionDetection, self.vision_det_callback)

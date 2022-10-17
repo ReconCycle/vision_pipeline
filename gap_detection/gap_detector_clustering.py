@@ -449,7 +449,7 @@ class GapDetectorClustering:
         for cluster_obj in cluster_objs:
             _, _, _, center, depth, _ = cluster_obj
             if not np.isnan(depth):
-                text = str(np.int(round(depth, 0)))
+                text = str(round(depth, 2))
             else:
                 text = "NaN"
             text_pt = center

@@ -98,11 +98,23 @@ class BaslerPipeline:
 
     def publish(self, img, detections, markers, poses):       
         print("publishing...")
-        ros_detections = ROSDetections(detections_to_ros(detections))
         
-        self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+        timestamp = rospy.Time.now()
+        header = rospy.Header()
+        header.stamp = timestamp
+        ros_detections = ROSDetections(header, detections_to_ros(detections))
+        
+        img_msg = self.br.cv2_to_imgmsg(img)
+        img_msg.header.stamp = timestamp
+        self.labelled_img_pub.publish(img_msg)
+        
         self.detections_pub.publish(ros_detections)
+        
+        for marker in markers.markers:
+            marker.header.stamp = timestamp    
         self.markers_pub.publish(markers)
+        
+        poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
 
     def enable_camera(self, state):
@@ -111,9 +123,9 @@ class BaslerPipeline:
         try:
             res = self.camera_service(state)
             if state:
-                print("enabled camera:", res.success)
+                print("enabled basler camera:", res.success)
             else:
-                print("disabled camera:", res.success)
+                print("disabled basler camera:", res.success)
         except rospy.ServiceException as e:
             print("[red]Service call failed (state " + str(state) + "):[/red]", e)
 
@@ -129,11 +141,11 @@ class BaslerPipeline:
         
         # todo: wait until we get at least one detection
         while self.detections is None:
-            print("waiting for detection...")
+            print("waiting for detection (basler)...")
             time.sleep(1) #! debug
-            
+        
         if self.detections is not None:
-            return self.labelled_img, self.detections        
+            return self.colour_img, self.detections        
 
         else:
             print("stable detection failed!")
@@ -152,16 +164,18 @@ class BaslerPipeline:
 
                 labelled_img, detections, markers, poses = self.process_img(self.colour_img, fps)
 
-                self.publish(labelled_img, detections, markers, poses)
-                
-                self.labelled_img = labelled_img
-                self.detections = detections
-                self.markers = markers
-                self.poses = poses
+                # recheck if pipeline is enabled
+                if self.pipeline_enabled:
+                    self.publish(labelled_img, detections, markers, poses)
+                    
+                    self.labelled_img = labelled_img
+                    self.detections = detections
+                    self.markers = markers
+                    self.poses = poses
 
-                if self.img_id == sys.maxsize:
-                    self.img_id = 0
-                    self.processed_img_id = -1
+                    if self.img_id == sys.maxsize:
+                        self.img_id = 0
+                        self.processed_img_id = -1
 
             else:
                 print("Waiting to receive image (basler).")

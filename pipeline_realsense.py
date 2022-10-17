@@ -130,36 +130,54 @@ class RealsensePipeline:
         self.lever_pose_pub = rospy.Publisher("/" + self.node_name + "/lever", PoseStamped, queue_size=1)
 
     def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask):
-        ros_detections = ROSDetections(detections_to_ros(detections))
         
-        self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+        # all messages are published with the same timestamp
+        timestamp = rospy.Time.now()
+        header = rospy.Header()
+        header.stamp = timestamp
+        ros_detections = ROSDetections(header, detections_to_ros(detections))
+        
+        img_msg = self.br.cv2_to_imgmsg(img)
+        img_msg.header.stamp = timestamp
+        self.labelled_img_pub.publish(img_msg)
+        
         self.detections_pub.publish(ros_detections)
+        for marker in markers.markers:
+            marker.header.stamp = timestamp
         self.markers_pub.publish(markers)
+        poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
-
-        # todo: publish all with the same timestamp
+        
         if cluster_img is not None:
-            self.clustered_img_pub.publish(self.br.cv2_to_imgmsg(cluster_img))
+            cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
+            cluster_img_msg.header.stamp = timestamp
+            self.clustered_img_pub.publish(cluster_img_msg)
         if device_mask is not None:
-            self.mask_img_pub.publish(self.br.cv2_to_imgmsg(device_mask))
+            device_mask_msg = self.br.cv2_to_imgmsg(device_mask)
+            device_mask_msg.header.stamp = timestamp
+            self.mask_img_pub.publish(device_mask_msg)
         if depth_scaled is not None:
-            self.depth_img_pub.publish(self.br.cv2_to_imgmsg(depth_scaled))
+            depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled)
+            depth_scaled_msg.header.stamp = timestamp
+            self.depth_img_pub.publish(depth_scaled_msg)
 
         # publish only the most probable lever action, for now
         # we could use pose_stamped array instead to publish all the lever possibilities
         if gaps is not None and len(gaps) > 0:
-            ros_gaps = ROSGaps(gaps_to_ros(gaps))
+            gaps_msg = ROSGaps(header, gaps_to_ros(gaps))
+            lever_pose_msg = gaps[0].pose_stamped
+            lever_pose_msg.header.stamp = timestamp
             
-            self.lever_pose_pub.publish(gaps[0].pose_stamped)
-            self.gaps_pub.publish(ros_gaps)
+            self.lever_pose_pub.publish(lever_pose_msg)
+            self.gaps_pub.publish(gaps_msg)
 
     def enable_camera(self, state):
         try:
             res = self.camera_service(state)
             if state:
-                print("enabled camera:", res.success)
+                print("enabled realsense camera:", res.success)
             else:
-                print("disabled camera:", res.success)
+                print("disabled realsense camera:", res.success)
         except rospy.ServiceException as e:
             print("[red]Service call failed (state " + str(state) + "):[/red]", e)
 
@@ -173,18 +191,18 @@ class RealsensePipeline:
         
         if gap_detection:
             while self.gaps is None or self.detections is None:
-                print("waiting for detection...")
+                print("waiting for detection (realsense)...")
                 time.sleep(1) #! debug
         else:
             while self.detections is None:
-                print("waiting for detection...")
+                print("waiting for detection (realsense)...")
                 time.sleep(1) #! debug
             
         if self.detections is not None:
             if gap_detection:
-                return self.labelled_img, self.detections, self.gaps
+                return self.colour_img, self.detections, self.gaps
             else:
-                return self.labelled_img, self.detections, None
+                return self.colour_img, self.detections, None
 
         else:
             print("stable detection failed!")
@@ -204,19 +222,19 @@ class RealsensePipeline:
                 labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask \
                     = self.process_img(fps=fps)
 
-                # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
-
                 self.publish(labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask)
                 
-                self.labelled_img = labelled_img
-                self.detections = detections
-                self.markers = markers
-                self.poses = poses
-                self.gaps = gaps
-                
-                if self.img_id == sys.maxsize:
-                    self.img_id = 0
-                    self.processed_img_id = -1
+                # recheck if pipeline is enabled
+                if self.pipeline_enabled:
+                    self.labelled_img = labelled_img
+                    self.detections = detections
+                    self.markers = markers
+                    self.poses = poses
+                    self.gaps = gaps
+                    
+                    if self.img_id == sys.maxsize:
+                        self.img_id = 0
+                        self.processed_img_id = -1
                 
             else:
                 print("Waiting to receive image (realsense).")
