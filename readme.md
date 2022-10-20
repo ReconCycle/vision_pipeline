@@ -73,8 +73,9 @@ Realsense:
 
 - `/vision/basler/enable` True/False
 - `/vision/realsense/enable` True/False
+- `/vision/vision_get_detection` VisionDetection.srv (from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
 
-The services only have an effect if the `continuous` parameter is not set for that camera.
+The `/vision/vision_get_detection` service provides a single stable detection result from the requested camera.
 
 
 # Dataset Creation and Training
