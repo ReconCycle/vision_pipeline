@@ -68,6 +68,36 @@ class RealsensePipeline:
         self.init_realsense_pipeline(yolact, dataset)
 
         print("waiting for pipeline to be enabled...")
+        
+        # Checking the rosparam server for whether to publish labeled imgs etc.
+        self.publish_labeled_img = False
+        self.publish_depth_img = False
+        self.publish_cluster_img = False
+ 
+        self.publish_labeled_rosparamname = '/vision/realsense/publish_labeled_img'
+        self.publish_depth_rosparamname = '/vision/realsense/publish_depth_img'
+        self.publish_cluster_rosparamname = '/vision/realsense/publish_cluster_img'
+
+        self.last_rosparam_check_time = time.time() # Keeping track of when we last polled the rosparam server
+        self.rosparam_check_dt_seconds = 1 # Check rosparam server every 1 second for changes.
+        try:
+            self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
+            self.publish_depth_img = rospy.get_param(self.publish_depth_rosparamname)
+            self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
+        except:
+            rospy.set_param(self.publish_labeled_rosparamname, False)
+            rospy.set_param(self.publish_depth_rosparamname, False)
+            rospy.set_param(self.publish_cluster_rosparamname, False)
+
+    def check_rosparam_server(self):
+        """ Check the rosparam server for whether we want to publish labeled imgs, IF enough time has elapsed between now and last check. """
+        cur_t = time.time()
+        if cur_t - self.last_rosparam_check_time > self.rosparam_check_dt_seconds:
+            self.last_rosparam_check_time = cur_t
+  
+            self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
+            self.publish_depth_img = rospy.get_param(self.publish_depth_rosparamname)
+            self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
 
     def init_realsense_pipeline(self, yolact, dataset):
         self.object_detection = ObjectDetection(yolact, dataset, self.frame_id)
@@ -141,6 +171,8 @@ class RealsensePipeline:
         img_msg.header.stamp = timestamp
         self.labelled_img_pub.publish(img_msg)
         
+        if self.publish_labeled_img:
+            self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
         self.detections_pub.publish(ros_detections)
         for marker in markers.markers:
             marker.header.stamp = timestamp
@@ -152,6 +184,8 @@ class RealsensePipeline:
             cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
             cluster_img_msg.header.stamp = timestamp
             self.clustered_img_pub.publish(cluster_img_msg)
+            if self.publish_cluster_img:
+                self.clustered_img_pub.publish(self.br.cv2_to_imgmsg(cluster_img))
         if device_mask is not None:
             device_mask_msg = self.br.cv2_to_imgmsg(device_mask)
             device_mask_msg.header.stamp = timestamp
@@ -160,6 +194,8 @@ class RealsensePipeline:
             depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled)
             depth_scaled_msg.header.stamp = timestamp
             self.depth_img_pub.publish(depth_scaled_msg)
+            if self.publish_depth_img:
+                self.depth_img_pub.publish(self.br.cv2_to_imgmsg(depth_scaled))
 
         # publish only the most probable lever action, for now
         # we could use pose_stamped array instead to publish all the lever possibilities
@@ -211,6 +247,9 @@ class RealsensePipeline:
     def run(self):
         if self.pipeline_enabled:
             if self.colour_img is not None and self.processed_img_id < self.img_id:
+                
+                self.check_rosparam_server() # Periodically check rosparam server for whether we wish to publish labeled, depth and cluster imgs
+                
                 print("\n[green]running pipeline realsense frame...[/green]")
                 self.processed_img_id = self.img_id
                 t_prev = self.t_now

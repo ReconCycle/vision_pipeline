@@ -63,11 +63,28 @@ class BaslerPipeline:
 
         print("waiting for pipeline to be enabled...")
 
+        # Checking the rosparam server for whether to publish labeled imgs etc.
+        self.publish_labeled_img = False
+        self.publish_labeled_rosparamname = '/vision/basler/publish_labeled_img'
+        self.last_rosparam_check_time = time.time() # Keeping track of when we last polled the rosparam server
+        self.rosparam_check_dt_seconds = 1 # Check rosparam server every 1 second for changes.
+        try:
+            self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
+        except:
+            rospy.set_param(self.publish_labeled_rosparamname, False)
+    
     def init_basler_pipeline(self, yolact, dataset):
         self.object_detection = ObjectDetection(yolact, dataset, self.frame_id)
         
         self.worksurface_detection = None
 
+    def check_rosparam_server(self):
+        """ Check the rosparam server for whether we want to publish labeled imgs, IF enough time has elapsed between now and last check. """
+        cur_t = time.time()
+        if cur_t - self.last_rosparam_check_time > self.rosparam_check_dt_seconds:
+            self.last_rosparam_check_time = cur_t
+            self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
+    
     def img_from_camera_callback(self, img):
         colour_img = CvBridge().imgmsg_to_cv2(img)
         self.colour_img = np.array(colour_img)
@@ -108,6 +125,7 @@ class BaslerPipeline:
         img_msg.header.stamp = timestamp
         self.labelled_img_pub.publish(img_msg)
         
+        #self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
         self.detections_pub.publish(ros_detections)
         
         for marker in markers.markers:
@@ -116,6 +134,9 @@ class BaslerPipeline:
         
         poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
+        if self.publish_labeled_img:
+            self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
+
 
     def enable_camera(self, state):
         # enable = True, but the topic is called set_sleeping, so the inverse
@@ -154,6 +175,8 @@ class BaslerPipeline:
     def run(self):
         if self.pipeline_enabled:
             if self.colour_img is not None and self.processed_img_id < self.img_id:
+                self.check_rosparam_server() # Check rosparam server for whether to publish labeled imgs
+               
                 print("\n[green]running pipeline basler frame...[/green]")
                 self.processed_img_id = self.img_id
                 t_prev = self.t_now
