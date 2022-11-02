@@ -58,8 +58,18 @@ def main():
         image = rotated_line(tuple((100, 100)), 0, 50, image) # 0 degrees
         image = rotated_line(tuple((100, 100)), 45, 50, image) # 45 degrees
 
+        cv2.putText(image, "0 deg",
+                            tuple((110, 100)), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
+
+        cv2.putText(image, "45 deg",
+                            tuple((110, 130)), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
+
         image = rotated_line(center, correct_angle, 60, image, colour=(0, 255, 0))
         image = rotated_line(center, rot, 50, image)
+
+        cv2.putText(image, "rot: " + str(correct_angle),
+                            tuple((600, 550)), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
+        
 
         cv2.imshow("rectangles", image)
 
