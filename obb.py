@@ -187,6 +187,8 @@ def get_obb_using_cv(contour, img=None):
     changing_width, changing_height = box_w_h(box)
     changing_rot = rect[2]
     
+    #  rotation is a bit funny, and we correct for it. see here:
+    # https://stackoverflow.com/questions/15956124/minarearect-angles-unsure-about-the-angle-returned
     if changing_height > changing_width:
         correct_rot = changing_rot
     else:
@@ -198,9 +200,10 @@ def get_obb_using_cv(contour, img=None):
         correct_height = changing_width
         correct_width = changing_height
     
-    # ! rotation is a bit funny, and we should correct for it. see here:
-    # https://stackoverflow.com/questions/15956124/minarearect-angles-unsure-about-the-angle-returned
-    
+    # if the width or height of the rectangle is 0, then we return None
+    if np.isclose(correct_height, 0.0) or np.isclose(correct_width, 0.0):
+        return None, None, None
+
     # clip so that the box is still in the bounds of the img
     if img is not None:
         # invert img.shape because points are x, y
@@ -237,3 +240,14 @@ def get_obb_from_contour(contour, img=None):
     # if corners is not None:
     #     better_rot_quat = better_quaternion(corners)
     return corners, center, rot
+
+def get_obb_from_mask(mask):
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if len(cnts) > 0:
+        # get the contour with the largest area. Assume this is the one containing our object
+        cnt = max(cnts, key = cv2.contourArea)
+        mask_contour = np.squeeze(cnt)
+        
+        return get_obb_from_contour(mask_contour)
+
+    return None, None, None
