@@ -9,23 +9,15 @@ import cv2
 from yolact_pkg.utils.augmentations import SSDAugmentation, BaseTransform
 from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
-from yolact_pkg.eval import infer, annotate_img, evaluate, parse_args
+from yolact_pkg.eval import infer, annotate_img, evaluate, parse_args, calc_map_classwise
 from yolact_pkg.data.config import MEANS
 from yolact_pkg.train import train
 from yolact_pkg.data.coco import COCODetection, detection_collate
 import torch
 
-# from tracker.byte_tracker import BYTETracker
-# from graph_relations import GraphRelations
-
-# import obb
-# import graphics
 from config import load_config
-from helpers import Struct
 
-
-if __name__ == '__main__':
-    
+def eval_aps():
     # print("dir()", dir())
     torch.cuda.empty_cache()
     
@@ -34,12 +26,12 @@ if __name__ == '__main__':
         'name': 'Base Dataset',
 
         # Training images and annotations
-        'train_images': '/root/datasets/2022-05-02_kalo_qundis/coco',
-        'train_info':   '/root/datasets/2022-05-02_kalo_qundis/coco/_train.json',
+        'train_images': '/home/sruiz/datasets2/reconcycle/2022-05-02_kalo_qundis/coco',
+        'train_info':   '/home/sruiz/datasets2/reconcycle/2022-05-02_kalo_qundis/coco/_train.json',
 
         # Validation images and annotations.
-        'valid_images': '/root/datasets/2022-05-02_kalo_qundis/coco',
-        'valid_info':   '/root/datasets/2022-05-02_kalo_qundis/coco/_test.json',
+        'valid_images': '/home/sruiz/datasets2/reconcycle/2022-05-02_kalo_qundis/coco',
+        'valid_info':   '/home/sruiz/datasets2/reconcycle/2022-05-02_kalo_qundis/coco/_test.json',
 
         # Whether or not to load GT. If this is False, eval.py quantitative evaluation won't work.
         'has_gt': True,
@@ -104,13 +96,21 @@ if __name__ == '__main__':
     # cv2.destroyAllWindows()
     # 
     # todo: evaluation
-    # for key, val in training_args_override.items():
-    #     # args[key] = val
-    #     setattr(args, key, val)
     
     val_dataset = COCODetection(image_path=yolact.cfg.dataset.valid_images,
                                 info_file=yolact.cfg.dataset.valid_info,
                                 transform=BaseTransform(MEANS))
     
-    parse_args()
-    evaluate(yolact, val_dataset)
+    args = parse_args()
+    
+    # print("args", args)
+    all_maps, ap_data = evaluate(yolact, val_dataset)
+    # print("all_maps", all_maps)
+    
+    # print("ap_data", ap_data)
+    print(len(yolact.cfg.dataset.class_names), yolact.cfg.dataset.class_names)
+
+    all_maps2, _ = calc_map_classwise(yolact, ap_data)
+    
+if __name__ == '__main__':
+    eval_aps()

@@ -30,12 +30,12 @@ if __name__ == '__main__':
         'name': 'Base Dataset',
 
         # Training images and annotations
-        'train_images': '/root/datasets/2022-05-02_kalo_qundis/coco',
-        'train_info':   '/root/datasets/2022-05-02_kalo_qundis/coco/_train.json',
+        'train_images': '/home/sruiz/datasets2/reconcycle/2022-05-02_kalo_qundis/coco',
+        'train_info':   '/home/sruiz/datasets2/reconcycle/2022-05-02_kalo_qundis/coco/_train.json',
 
         # Validation images and annotations.
-        'valid_images': '/root/datasets/2022-05-02_kalo_qundis/coco',
-        'valid_info':   '/root/datasets/2022-05-02_kalo_qundis/coco/_test.json',
+        'valid_images': '/home/sruiz/datasets2/reconcycle/2022-05-02_kalo_qundis/coco',
+        'valid_info':   '/home/sruiz/datasets2/reconcycle/2022-05-02_kalo_qundis/coco/_test.json',
 
         # Whether or not to load GT. If this is False, eval.py quantitative evaluation won't work.
         'has_gt': True,
@@ -58,9 +58,9 @@ if __name__ == '__main__':
 
         # Image Size
         'max_size': 1100, #! I changed this, was 550
-
+        
         'save_path': 'data_full/yolact/2022-10-17_kalo_qundis/',
-
+        
         # we can override args used in eval.py:
         'score_threshold': 0.1,
         'top_k': 10
