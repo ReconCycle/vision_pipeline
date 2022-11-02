@@ -25,7 +25,7 @@ from context_action_framework.types import detections_to_ros
 
 class BaslerPipeline:
     def __init__(self, yolact, dataset, camera_topic="basler", node_name="vision_basler", image_topic="image_rect_color", wait_for_services=True):     
-        self.rate = rospy.Rate(1) # fps
+        self.rate = rospy.Rate(3) # fps
 
         # don't automatically start
         self.pipeline_enabled = False
@@ -108,10 +108,10 @@ class BaslerPipeline:
 
     def create_publishers(self):
         self.br = CvBridge()
-        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=1)
-        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=1)
-        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=1)
-        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=1)
+        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=2)
+        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=2)
+        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=2)
+        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=2)
 
     def publish(self, img, detections, markers, poses):       
         print("publishing...")

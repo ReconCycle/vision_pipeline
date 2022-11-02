@@ -25,7 +25,7 @@ from context_action_framework.types import detections_to_ros, gaps_to_ros
 
 class RealsensePipeline:
     def __init__(self, yolact, dataset, camera_topic="realsense", node_name="vision_realsense", wait_for_services=True):
-        self.rate = rospy.Rate(1)
+        self.rate = rospy.Rate(10)
 
         # don't automatically start
         self.pipeline_enabled = False
