@@ -117,16 +117,16 @@ class RealsensePipeline:
 
     def create_publishers(self):
         self.br = CvBridge()
-        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=20)
-        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=20)
-        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=20)
-        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=20)
+        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=1)
+        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=1)
+        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=1)
+        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=1)
         
         self.gaps_pub = rospy.Publisher("/" + self.node_name + "/gaps", ROSGaps, queue_size=1)
         
-        self.clustered_img_pub = rospy.Publisher("/" + self.node_name + "/cluster", Image, queue_size=20)
-        self.mask_img_pub = rospy.Publisher("/" + self.node_name + "/mask", Image, queue_size=20)
-        self.depth_img_pub = rospy.Publisher("/" + self.node_name + "/depth", Image, queue_size=20)
+        self.clustered_img_pub = rospy.Publisher("/" + self.node_name + "/cluster", Image, queue_size=1)
+        self.mask_img_pub = rospy.Publisher("/" + self.node_name + "/mask", Image, queue_size=1)
+        self.depth_img_pub = rospy.Publisher("/" + self.node_name + "/depth", Image, queue_size=1)
         self.lever_pose_pub = rospy.Publisher("/" + self.node_name + "/lever", PoseStamped, queue_size=1)
 
     def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask):

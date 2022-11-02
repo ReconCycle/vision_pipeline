@@ -91,10 +91,10 @@ class BaslerPipeline:
 
     def create_publishers(self):
         self.br = CvBridge()
-        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=20)
-        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=20)
-        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=20)
-        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=20)
+        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=1)
+        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=1)
+        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=1)
+        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=1)
 
     def publish(self, img, detections, markers, poses):       
         print("publishing...")
