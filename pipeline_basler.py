@@ -37,6 +37,8 @@ class BaslerPipeline:
 
         self.img_sub = None
 
+        # basler data
+        self.camera_acquisition_stamp = None
         self.colour_img = None
         self.img_id = 0
         
@@ -85,8 +87,9 @@ class BaslerPipeline:
             self.last_rosparam_check_time = cur_t
             self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
     
-    def img_from_camera_callback(self, img):
-        colour_img = CvBridge().imgmsg_to_cv2(img)
+    def img_from_camera_callback(self, img_msg):
+        self.camera_acquisition_stamp = img_msg.header.stamp
+        colour_img = CvBridge().imgmsg_to_cv2(img_msg)
         self.colour_img = np.array(colour_img)
         self.img_id += 1
 
@@ -120,7 +123,7 @@ class BaslerPipeline:
         timestamp = rospy.Time.now()
         header = rospy.Header()
         header.stamp = timestamp
-        ros_detections = ROSDetections(header, detections_to_ros(detections))
+        ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
         
         img_msg = self.br.cv2_to_imgmsg(img)
         img_msg.header.stamp = timestamp
@@ -167,11 +170,11 @@ class BaslerPipeline:
             time.sleep(1) #! debug
         
         if self.detections is not None:
-            return self.colour_img, self.detections        
+            return self.camera_acquisition_stamp, self.colour_img, self.detections
 
         else:
             print("stable detection failed!")
-            return None, None
+            return None, None, None
         
     def run(self):
         if self.pipeline_enabled:

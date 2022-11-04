@@ -35,6 +35,7 @@ class RealsensePipeline:
         self.wait_for_services = wait_for_services
 
         # realsense data
+        self.camera_acquisition_stamp = None
         self.colour_img = None
         self.depth_img = None
         self.camera_info = None
@@ -104,6 +105,7 @@ class RealsensePipeline:
         self.gap_detector = GapDetectorClustering()
     
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):
+        self.camera_acquisition_stamp = img_msg.header.stamp
         colour_img = CvBridge().imgmsg_to_cv2(img_msg)
         colour_img = cv2.cvtColor(colour_img, cv2.COLOR_BGR2RGB)
         self.colour_img = np.array(colour_img)
@@ -165,7 +167,7 @@ class RealsensePipeline:
         timestamp = rospy.Time.now()
         header = rospy.Header()
         header.stamp = timestamp
-        ros_detections = ROSDetections(header, detections_to_ros(detections))
+        ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
         
         img_msg = self.br.cv2_to_imgmsg(img)
         img_msg.header.stamp = timestamp
@@ -235,13 +237,13 @@ class RealsensePipeline:
             
         if self.detections is not None:
             if gap_detection:
-                return self.colour_img, self.detections, self.gaps
+                return self.camera_acquisition_stamp, self.colour_img, self.detections, self.gaps
             else:
-                return self.colour_img, self.detections, None
+                return self.camera_acquisition_stamp, self.colour_img, self.detections, None
 
         else:
             print("stable detection failed!")
-            return None, None, None
+            return None, None, None, None
 
     def run(self):
         if self.pipeline_enabled:
