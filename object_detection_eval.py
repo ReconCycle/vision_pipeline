@@ -15,9 +15,17 @@ from yolact_pkg.train import train
 from yolact_pkg.data.coco import COCODetection, detection_collate
 import torch
 
-from config import load_config
+# from tracker.byte_tracker import BYTETracker
+# from graph_relations import GraphRelations
 
-def eval_aps():
+# import obb
+# import graphics
+from config import load_config
+from helpers import Struct
+
+
+if __name__ == '__main__':
+    
     # print("dir()", dir())
     torch.cuda.empty_cache()
     
@@ -96,21 +104,13 @@ def eval_aps():
     # cv2.destroyAllWindows()
     # 
     # todo: evaluation
+    # for key, val in training_args_override.items():
+    #     # args[key] = val
+    #     setattr(args, key, val)
     
     val_dataset = COCODetection(image_path=yolact.cfg.dataset.valid_images,
                                 info_file=yolact.cfg.dataset.valid_info,
                                 transform=BaseTransform(MEANS))
     
-    args = parse_args()
-    
-    # print("args", args)
-    all_maps, ap_data = evaluate(yolact, val_dataset)
-    # print("all_maps", all_maps)
-    
-    # print("ap_data", ap_data)
-    print(len(yolact.cfg.dataset.class_names), yolact.cfg.dataset.class_names)
-
-    all_maps2, _ = calc_map_classwise(yolact, ap_data)
-    
-if __name__ == '__main__':
-    eval_aps()
+    parse_args()
+    evaluate(yolact, val_dataset)

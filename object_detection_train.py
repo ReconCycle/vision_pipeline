@@ -58,9 +58,9 @@ if __name__ == '__main__':
 
         # Image Size
         'max_size': 1100, #! I changed this, was 550
-        
+
         'save_path': 'data_full/yolact/2022-10-17_kalo_qundis/',
-        
+
         # we can override args used in eval.py:
         'score_threshold': 0.1,
         'top_k': 10
