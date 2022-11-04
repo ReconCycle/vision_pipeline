@@ -77,6 +77,17 @@ Realsense:
 
 The `/vision/vision_get_detection` service provides a single stable detection result from the requested camera.
 
+For example, to get one Basler detection, run:
+
+```
+rosservice call /vision/vision_get_detection 0 False
+```
+To get a Realsense detection, run:
+```
+rosservice call /vision/vision_get_detection 1 True
+```
+where True provides the gaps as well.
+
 
 # Dataset Creation and Training
 
