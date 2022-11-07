@@ -3,12 +3,15 @@ import numpy as np
 import time
 from rich import print
 import json
+import rospy
+import tf2_ros
+import tf
+import copy
 
 from object_detection import ObjectDetection
 from work_surface_detection_opencv import WorkSurfaceDetection
 from config import load_config
 
-import rospy
 from sensor_msgs.msg import Image
 from std_srvs.srv import SetBool
 from cv_bridge import CvBridge
@@ -16,16 +19,27 @@ from std_msgs.msg import String
 from camera_control_msgs.srv import SetSleeping
 from visualization_msgs.msg import MarkerArray
 from geometry_msgs.msg import PoseArray, TransformStamped
-import tf2_ros
-import tf
+
 
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.types import detections_to_ros
+from context_action_framework.types import Label
+
+from obb import obb_px_to_quat
+
 
 class BaslerPipeline:
     def __init__(self, yolact, dataset, camera_topic="basler", node_name="vision_basler", image_topic="image_rect_color", wait_for_services=True):     
-        self.rate = rospy.Rate(3) # fps
+        
+        self.parent_frame = 'vision_table_zero' # When publishing transforms, this is the base/parent frame from which they are published.
+        
+        self.target_fps = 2
+        self.min_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
+        self.last_run_time = time.time()
+        #self.rate = rospy.Rate(1) # fps.
+
+        self.tf_broadcaster = tf.TransformBroadcaster()
 
         # don't automatically start
         self.pipeline_enabled = False
@@ -74,6 +88,8 @@ class BaslerPipeline:
             self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
         except:
             rospy.set_param(self.publish_labeled_rosparamname, False)
+
+        rospy.loginfo("Pipeline_basler: x = 0.6 -x, hack for table rotation. FIX")
     
     def init_basler_pipeline(self, yolact, dataset):
         self.object_detection = ObjectDetection(yolact, dataset, self.frame_id)
@@ -111,16 +127,21 @@ class BaslerPipeline:
 
     def create_publishers(self):
         self.br = CvBridge()
-        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=2)
-        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=2)
-        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=2)
-        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=2)
+        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=1)
+        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=1)
+        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=1)
+        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=1)
 
-    def publish(self, img, detections, markers, poses):       
+    def publish(self, img, detections, markers, poses): 
+        
+        cur_t = rospy.Time.now()
+        #delay = self.camera_acquisition_stamp - cur_t
+        #rospy.loginfo("Basler Delay: {}".format(delay))
+      
         print("publishing...")
         
         #self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
-        timestamp = rospy.Time.now()
+        timestamp = cur_t
         header = rospy.Header()
         header.stamp = timestamp
         ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
@@ -140,7 +161,22 @@ class BaslerPipeline:
         poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
 
+        # Publish the TFs
+        self.publish_transforms(detections, timestamp)
 
+    def publish_transforms(self, detections, timestamp):
+        for detection in detections:
+            translation = copy.deepcopy(detection.tf.translation)   # Table should be rotated in config but that is a lot more work
+            translation.y = 0.6 - translation.y # Hack, fix table rotation later.
+            translation.z = 0
+            rotation = obb_px_to_quat(detection.obb_px)
+            
+            tr = (translation.x, translation.y, translation.z)
+
+            child_frame = '%s_%s_%s'%(Label(detection.label).name, detection.id,   self.parent_frame)
+
+            self.tf_broadcaster.sendTransform(tr, rotation, rospy.Time.now(), child_frame, self.parent_frame)
+            
 
     def enable_camera(self, state):
         # enable = True, but the topic is called set_sleeping, so the inverse
@@ -177,14 +213,19 @@ class BaslerPipeline:
             return None, None, None
         
     def run(self):
-        if self.pipeline_enabled:
+        t = time.time()
+
+        if (self.pipeline_enabled) and ((t - self.last_run_time) > self.min_dt):
+            
             if self.colour_img is not None and self.processed_img_id < self.img_id:
+                self.last_run_time = t # reset timer
+
                 self.check_rosparam_server() # Check rosparam server for whether to publish labeled imgs
-               
+                
                 print("\n[green]running pipeline basler frame...[/green]")
                 self.processed_img_id = self.img_id
                 t_prev = self.t_now
-                self.t_now = time.time()
+                self.t_now = t
                 fps = None
                 if t_prev is not None and self.t_now - t_prev > 0:
                     fps = "fps_total: " + str(round(1 / (self.t_now - t_prev), 1)) + ", "

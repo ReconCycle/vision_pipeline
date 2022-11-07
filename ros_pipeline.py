@@ -41,10 +41,10 @@ class ROSPipeline():
         self.node_name = args.node_name
         self.continuous = args.continuous
         self.wait_for_services = args.wait_for_services
-        self.rate_int = args.rate
+        #self.rate_int = args.rate
 
         rospy.init_node(args.node_name)
-        self.rate = rospy.Rate(self.rate_int)
+        #self.rate = rospy.Rate(self.rate_int)
         
         # load config
         self.config = load_config()
@@ -134,7 +134,7 @@ class ROSPipeline():
             self.pipeline_basler.run()
             self.pipeline_realsense.run()
             
-            self.rate.sleep()
+            #self.rate.sleep() # Now the sleeping is done within these two separate pipelines. We might want, for example, a higher FPS from realsense.
 
     def enable_basler_callback(self, req):
         state = req.data

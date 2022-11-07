@@ -4,12 +4,15 @@ import time
 from rich import print
 import json
 import cv2
+import rospy
+import tf
+import copy
+import yaml
 
 from gap_detection.gap_detector_clustering import GapDetectorClustering
 from object_detection import ObjectDetection
 from config import load_config
 
-import rospy
 from geometry_msgs.msg import PoseStamped, PointStamped, PoseArray
 from sensor_msgs.msg import Image, CameraInfo
 from std_srvs.srv import SetBool
@@ -21,11 +24,30 @@ from visualization_msgs.msg import MarkerArray
 
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.msg import Gaps as ROSGaps
-from context_action_framework.types import detections_to_ros, gaps_to_ros
+from context_action_framework.types import detections_to_ros, gaps_to_ros, Label
+
+from obb import obb_px_to_quat
 
 class RealsensePipeline:
-    def __init__(self, yolact, dataset, camera_topic="realsense", node_name="vision_realsense", wait_for_services=True):
-        self.rate = rospy.Rate(10)
+    def __init__(self, yolact, dataset, camera_topic="realsense", node_name="vision_realsense", parent_frame = '/panda_2/realsense', wait_for_services=True):
+
+        #self.parent_frame = parent_frame # When publishing TFs, this will be the parent frame.
+        self.parent_frame = '/panda_2/realsense'
+        self.tf_name_suffix = 'realsense' # We will make the detections' TF be called for example 'battery_0_realsense'
+
+        self.camera_height_param = '/vision/realsense_height' # Get height from camera to table/surface
+        self.calib_fn = '/root/vision-pipeline/realsense_calib/realsense_calib.yaml'
+        init_p, D, K, self.P, w, h = self.parse_calib_yaml(self.calib_fn)
+
+        self.target_fps = 4
+        self.min_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
+        self.last_run_time = time.time()
+        self.max_allowed_delay_in_seconds = 0.4 # If cur_t - img_t is larger than this, ignore the detections.
+    
+
+        #self.rate = rospy.Rate(1) # Is ignored. Rate is set in ros_pipeline.py
+
+        self.tf_broadcaster = tf.TransformBroadcaster()
 
         # don't automatically start
         self.pipeline_enabled = False
@@ -162,9 +184,18 @@ class RealsensePipeline:
         self.lever_pose_pub = rospy.Publisher("/" + self.node_name + "/lever", PoseStamped, queue_size=1)
 
     def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask):
-        
+
+        cur_t = rospy.Time.now()
+        delay = (self.camera_acquisition_stamp.nsecs - cur_t.nsecs)*0.000000001 # Ah yes, the secs. I do the secs all the time.
+
+        #rospy.loginfo("RS Delay: {}".format(delay))
+        if np.abs(delay) > self.max_allowed_delay_in_seconds:
+            rospy.loginfo("RS ignoring img, delay: {}".format(round(delay,2)))
+            return 0        
+
+
         # all messages are published with the same timestamp
-        timestamp = rospy.Time.now()
+        timestamp = cur_t
         header = rospy.Header()
         header.stamp = timestamp
         ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
@@ -180,6 +211,8 @@ class RealsensePipeline:
         self.markers_pub.publish(markers)
         poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
+
+        self.publish_transforms(detections, timestamp)
         
         if cluster_img is not None:
             cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
@@ -207,6 +240,46 @@ class RealsensePipeline:
             
             self.lever_pose_pub.publish(lever_pose_msg)
             self.gaps_pub.publish(gaps_msg)
+
+    def publish_transforms(self, detections, timestamp):
+        try:   
+            for detection in detections:
+                X,Y,Z = self.uv_to_XY(u = detection.center_px[0], v = detection.center_px[1], Z = None, get_z_from_rosparam = True)
+
+                translation = copy.deepcopy(detection.tf.translation)                
+                translation.x = X; translation.y = Y; translation.z = Z
+                rotation = obb_px_to_quat(detection.obb_px)
+                #print(str(Label(detection.label).name))
+                #print(str(detection.id))
+                #print(self.parent_frame)
+                tr = (translation.x, translation.y, translation.z)
+
+                child_frame = '%s_%s_%s'%(Label(detection.label).name, detection.id, self.tf_name_suffix)
+                #rospy.loginfo("Child frame: {}".format(child_frame))
+                self.tf_broadcaster.sendTransform(tr, rotation, timestamp, child_frame, self.parent_frame)
+        except:
+            # Sometimes when camera is turned off, detections[0] will be none
+            # TODO : improve exception handling and focus on specific exceptions.
+            rospy.loginfo("Exception in pipeline_realsense!")
+    
+    def uv_to_XY(self, u,v, Z = 0.35, get_z_from_rosparam = True):
+        """Convert pixel coordinated (u,v) from realsense camera into real world coordinates X,Y,Z """
+	    
+        assert self.P.shape == (3,4)
+	    
+        if get_z_from_rosparam:
+            Z = rospy.get_param(self.camera_height_param)
+	    
+        fx = self.P[0,0]
+        fy = self.P[1,1]
+
+        x = (u - (self.P[0,2])) / fx
+        y = (v - (self.P[1,2])) / fy
+
+        X = (Z * x)
+        Y = (Z * y)
+        Z = Z
+        return X, Y, Z
 
     def enable_camera(self, state):
         try:
@@ -246,15 +319,18 @@ class RealsensePipeline:
             return None, None, None, None
 
     def run(self):
-        if self.pipeline_enabled:
+        t = time.time()
+        if self.pipeline_enabled and ((t - self.last_run_time) > self.min_dt) :
+
             if self.colour_img is not None and self.processed_img_id < self.img_id:
+                self.last_run_time = t # reset timer 
                 
                 self.check_rosparam_server() # Periodically check rosparam server for whether we wish to publish labeled, depth and cluster imgs
                 
                 print("\n[green]running pipeline realsense frame...[/green]")
                 self.processed_img_id = self.img_id
                 t_prev = self.t_now
-                self.t_now = time.time()
+                self.t_now = t
                 fps = None
                 if t_prev is not None and self.t_now - t_prev > 0:
                     fps = "fps_total: " + str(round(1 / (self.t_now - t_prev), 1)) + ", "
@@ -299,4 +375,24 @@ class RealsensePipeline:
             )
 
         return labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask
+
+    def parse_calib_yaml(self, fn):
+        """Parse camera calibration file (which is hand-made using ros camera_calibration) """
+
+        with open(fn, "r") as stream:
+            try:
+                data = yaml.safe_load(stream)
+            except yaml.YAMLError as exc:
+                print(exc)
+        data = data['Realsense']
+        init_p = data['init_robot_pos']
+        #print(data)
+        w  = data['coeffs'][0]['width']
+        h = data['coeffs'][0]['height']
+    
+        D = np.array(data['coeffs'][0]['D'])
+        K = np.array(data['coeffs'][0]['K']).reshape(3,3)
+        P = np.array(data['coeffs'][0]['P']).reshape(3,4)
+    
+        return init_p, D, K, P, w, h 
 

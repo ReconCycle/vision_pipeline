@@ -12,7 +12,51 @@ from scipy.spatial.transform import Rotation
 import cv2
 import os
 import time
+import tf
 
+def obb_px_to_quat(px):
+    p1 = px[0]
+    p2 = px[1]
+    p3 = px[2]
+    p4 = px[3]
+
+    #p1 = np.array([px[0],px[1]])
+    #p2 = np.array([px[2],px[3]])
+    #p3 = np.array([px[4],px[5]])
+    #p4 = np.array([px[6],px[7]])
+    
+    d_edge_1 = np.linalg.norm(p2 - p1)
+    
+    d_edge_2 = np.linalg.norm(p4 - p1)
+    
+    if d_edge_1 > d_edge_2:
+        long_edge = p1,p2
+        short_edge = p1, p4
+    else:
+        long_edge = p1,p4
+        short_edge = p1,p2
+    
+    # Assert that long_edge[0,0] is BIGGER than long_edge[1,0] (That one X is always bigger
+    if long_edge[0][0] < long_edge[1][0]:
+        nl = long_edge[1], long_edge[0]
+        long_edge = nl
+    
+    # We get the angle of the LONG edge.
+    a = long_edge[0][0] - long_edge[1][0]
+    b = long_edge[0][1] - long_edge[1][1]
+    
+    
+    angle = np.arctan2(b,a)
+    #ang = 180*angle / np.pi
+    #rospy.loginfo("angle:{}".format(ang))
+    
+    rot = tf.transformations.quaternion_from_euler(np.pi, 0, angle)
+    #rot = rot[[3,0,1,2]]
+    
+    
+    #rospy.loginfo("D1:{}".format(d_edge_1))
+    #rospy.loginfo("D2:{}".format(d_edge_2))
+    return rot
 
 def quaternion_multiply(quaternion1, quaternion0):
     w0, x0, y0, z0 = quaternion0
