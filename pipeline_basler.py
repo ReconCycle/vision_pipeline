@@ -8,9 +8,10 @@ import tf2_ros
 import tf
 import copy
 
+from helpers import path, rotate_img
 from object_detection import ObjectDetection
 from work_surface_detection_opencv import WorkSurfaceDetection
-from config import load_config
+from aruco_detection import ArucoDetection
 
 from sensor_msgs.msg import Image
 from std_srvs.srv import SetBool
@@ -30,9 +31,8 @@ from obb import obb_px_to_quat
 
 
 class BaslerPipeline:
-    def __init__(self, yolact, dataset, camera_topic="basler", node_name="vision_basler", image_topic="image_rect_color", wait_for_services=True):     
-        
-        self.parent_frame = 'vision_table_zero' # When publishing transforms, this is the base/parent frame from which they are published.
+    def __init__(self, yolact, dataset, config):
+        self.config = config
         
         self.target_fps = 2
         self.min_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
@@ -43,22 +43,21 @@ class BaslerPipeline:
 
         # don't automatically start
         self.pipeline_enabled = False
-
-        self.camera_topic = camera_topic
-        self.node_name = node_name
-        self.image_topic = image_topic # will subscribe to camera_topic / image_topic
-        self.wait_for_services = wait_for_services
-
+        
+        self.basler_topic = path(self.config.node_name, self.config.basler.topic) # /vision/basler
+        
         self.img_sub = None
 
-        # basler data
+        # latest basler data
         self.camera_acquisition_stamp = None
         self.colour_img = None
         self.img_id = 0
         
-        self.processed_img_id = -1  # don't keep processing the same image
         self.t_now = None
         
+        # processed image data
+        self.processed_img_id = -1  # don't keep processing the same image
+        self.processed_colour_img = None
         self.labelled_img = None
         self.detections = None
         self.markers = None
@@ -80,8 +79,8 @@ class BaslerPipeline:
         print("waiting for pipeline to be enabled...")
 
         # Checking the rosparam server for whether to publish labeled imgs etc.
-        self.publish_labeled_img = False
-        self.publish_labeled_rosparamname = '/vision/basler/publish_labeled_img'
+        self.publish_labeled_img = self.config.basler.publish_labelled_img
+        self.publish_labeled_rosparamname = path(self.basler_topic, "publish_labeled_img")
         self.last_rosparam_check_time = time.time() # Keeping track of when we last polled the rosparam server
         self.rosparam_check_dt_seconds = 1 # Check rosparam server every 1 second for changes.
         try:
@@ -105,34 +104,35 @@ class BaslerPipeline:
     
     def img_from_camera_callback(self, img_msg):
         self.camera_acquisition_stamp = img_msg.header.stamp
-        colour_img = CvBridge().imgmsg_to_cv2(img_msg)
-        self.colour_img = np.array(colour_img)
+        colour_img = np.array(CvBridge().imgmsg_to_cv2(img_msg))
+        self.colour_img = rotate_img(colour_img, self.config.basler.rotate_img)
         self.img_id += 1
+        print("basler: received realsense image! id:", self.img_id)
 
     def create_camera_subscribers(self):
-        img_topic = "/" + self.camera_topic + "/" + self.image_topic
+        img_topic = path(self.config.basler.camera_node, self.config.basler.image_topic)
         self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_callback)
 
     def create_service_client(self):
         timeout = 2 # 2 second timeout
-        if self.wait_for_services:
+        if self.config.basler.wait_for_services:
             timeout = None
         try:
-            print("waiting for service: /" + self.camera_topic + "/set_sleeping ...")
-            rospy.wait_for_service("/" + self.camera_topic + "/set_sleeping", timeout)
+            print("waiting for service: " + path(self.config.basler.camera_node, "set_sleeping") + " ...")
+            rospy.wait_for_service(path(self.config.basler.camera_node, "set_sleeping"), timeout)
         except rospy.ROSException as e:
-            print("[red]Couldn't find to service! /" + self.camera_topic + "/set_sleeping[/red]")
+            print("[red]Couldn't find to service! " + path(self.config.basler.camera_node, "set_sleeping") + "[/red]")
     
-        self.camera_service = rospy.ServiceProxy("/" + self.camera_topic + "/set_sleeping", SetSleeping)
+        self.camera_service = rospy.ServiceProxy(path(self.config.basler.camera_node, "set_sleeping"), SetSleeping)
 
     def create_publishers(self):
         self.br = CvBridge()
-        self.labelled_img_pub = rospy.Publisher("/" + self.node_name + "/colour", Image, queue_size=1)
-        self.detections_pub = rospy.Publisher("/" + self.node_name + "/detections", ROSDetections, queue_size=1)
-        self.markers_pub = rospy.Publisher("/" + self.node_name + "/markers", MarkerArray, queue_size=1)
-        self.poses_pub = rospy.Publisher("/" + self.node_name + "/poses", PoseArray, queue_size=1)
+        self.labelled_img_pub = rospy.Publisher(path(self.basler_topic, "colour"), Image, queue_size=1)
+        self.detections_pub = rospy.Publisher(path(self.basler_topic, "detections"), ROSDetections, queue_size=1)
+        self.markers_pub = rospy.Publisher(path(self.basler_topic, "markers"), MarkerArray, queue_size=1)
+        self.poses_pub = rospy.Publisher(path(self.basler_topic, "poses"), PoseArray, queue_size=1)
 
-    def publish(self, img, detections, markers, poses): 
+    def publish(self, img, detections, markers, poses):
         
         cur_t = rospy.Time.now()
         #delay = self.camera_acquisition_stamp - cur_t
@@ -155,7 +155,7 @@ class BaslerPipeline:
         self.detections_pub.publish(ros_detections)
         
         for marker in markers.markers:
-            marker.header.stamp = timestamp    
+            marker.header.stamp = timestamp
         self.markers_pub.publish(markers)
         
         poses.header.stamp = timestamp
@@ -173,9 +173,9 @@ class BaslerPipeline:
             
             tr = (translation.x, translation.y, translation.z)
 
-            child_frame = '%s_%s_%s'%(Label(detection.label).name, detection.id,   self.parent_frame)
+            child_frame = '%s_%s_%s'%(Label(detection.label).name, detection.id,   self.config.basler.parent_frame)
 
-            self.tf_broadcaster.sendTransform(tr, rotation, rospy.Time.now(), child_frame, self.parent_frame)
+            self.tf_broadcaster.sendTransform(tr, rotation, rospy.Time.now(), child_frame, self.config.basler.parent_frame)
             
 
     def enable_camera(self, state):
@@ -184,11 +184,11 @@ class BaslerPipeline:
         try:
             res = self.camera_service(state)
             if state:
-                print("enabled basler camera:", res.success)
+                print("basler: enabled camera:", res.success)
             else:
-                print("disabled basler camera:", res.success)
+                print("basler: disabled camera:", res.success)
         except rospy.ServiceException as e:
-            print("[red]Service call failed (state " + str(state) + "):[/red]", e)
+            print("[red]basler: Service call failed (state " + str(state) + "):[/red]", e)
 
     def enable(self, state):
         self.enable_camera(state)
@@ -202,15 +202,15 @@ class BaslerPipeline:
         
         # todo: wait until we get at least one detection
         while self.detections is None:
-            print("waiting for detection (basler)...")
-            time.sleep(1) #! debug
+            print("basler: waiting for detection...")
+            time.sleep(0.1) #! debug
         
         if self.detections is not None:
-            return self.camera_acquisition_stamp, self.colour_img, self.detections
+            return self.camera_acquisition_stamp, self.colour_img, self.detections, self.processed_img_id
 
         else:
-            print("stable detection failed!")
-            return None, None, None
+            print("basler: stable detection failed!")
+            return None, None, None, None
         
     def run(self):
         t = time.time()
@@ -222,8 +222,11 @@ class BaslerPipeline:
 
                 self.check_rosparam_server() # Check rosparam server for whether to publish labeled imgs
                 
-                print("\n[green]running pipeline basler frame...[/green]")
-                self.processed_img_id = self.img_id
+                processing_img_id = self.img_id
+                processing_colour_img = np.copy(self.colour_img)
+                
+                print("\n[green]basler: running pipeline on img: "+ str(processing_img_id) +"...[/green]")
+
                 t_prev = self.t_now
                 self.t_now = t
                 fps = None
@@ -236,6 +239,8 @@ class BaslerPipeline:
                 if self.pipeline_enabled:
                     self.publish(labelled_img, detections, markers, poses)
                     
+                    self.processed_img_id = processing_img_id
+                    self.processed_colour_img = processing_colour_img
                     self.labelled_img = labelled_img
                     self.detections = detections
                     self.markers = markers
@@ -244,20 +249,26 @@ class BaslerPipeline:
                     if self.img_id == sys.maxsize:
                         self.img_id = 0
                         self.processed_img_id = -1
+                
+                    print("[green]basler: published img: "+ str(processing_img_id) +", num. dets: " + str(len(detections)) + "[/green]")
+                else:
+                    print("[green]basler: aborted publishing on img: " + str(processing_img_id) + " bc pipeline disabled[/green]")
 
             else:
-                print("Waiting to receive image (basler).")
+                print("basler: Waiting to receive image.")
 
 
     def process_img(self, img, fps=None):
         if self.worksurface_detection is None:
-            print("detecting work surface...")
+            print("basler: detecting work surface...")
             self.worksurface_detection = WorkSurfaceDetection(img)
             # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
         
         labelled_img, detections, markers, poses = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
 
-        # json_detections = json.dumps(detections, cls=EnhancedJSONEncoder)
+        if self.config.basler.detect_arucos:
+            self.aruco_detection = ArucoDetection()
+            labelled_img = self.aruco_detection.run(labelled_img, worksurface_detection=self.worksurface_detection)
         
         return labelled_img, detections, markers, poses
 

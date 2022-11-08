@@ -24,7 +24,7 @@ from config import load_config
 from pipeline_basler import BaslerPipeline
 from pipeline_realsense import RealsensePipeline
 # from gap_detection.nn_gap_detector import NNGapDetector
-from helpers import str2bool
+from helpers import str2bool, path
 
 from context_action_framework.srv import VisionDetection, VisionDetectionResponse, VisionDetectionRequest
 from context_action_framework.types import Camera
@@ -36,32 +36,28 @@ from context_action_framework.types import detections_to_ros, gaps_to_ros
 
 
 class ROSPipeline():
-    def __init__(self, args) -> None:
-        args = self.arg_parser(args)
-        self.node_name = args.node_name
-        self.continuous = args.continuous
-        self.wait_for_services = args.wait_for_services
-        #self.rate_int = args.rate
-
-        rospy.init_node(args.node_name)
-        #self.rate = rospy.Rate(self.rate_int)
-        
+    def __init__(self) -> None:
         # load config
         self.config = load_config()
         print("config", self.config)
+
+        rospy.init_node(self.config.node_name)
         
         # load yolact
         yolact, dataset = self.load_yolact(self.config.obj_detection)
 
-        self.pipeline_basler = BaslerPipeline(yolact, dataset, "basler", args.node_name + "/basler", args.basler_image, self.wait_for_services)
-        self.pipeline_realsense = RealsensePipeline(yolact, dataset, "realsense", args.node_name + "/realsense", self.wait_for_services)
+        self.pipeline_basler = BaslerPipeline(yolact, dataset, self.config)
+        self.pipeline_realsense = RealsensePipeline(yolact, dataset, self.config)
         
-        rospy.Service("/" + args.node_name + "/basler/enable", SetBool, self.enable_basler_callback)
-        rospy.Service("/" + args.node_name + "/realsense/enable", SetBool, self.enable_realsense_callback)
+        basler_topic_enable = path(self.config.node_name, self.config.basler.topic, "enable")
+        realsense_topic_enable = path(self.config.node_name, self.config.realsense.topic, "enable")
         
-        if "realsense" in self.continuous:
+        rospy.Service(basler_topic_enable, SetBool, self.enable_basler_callback)
+        rospy.Service(realsense_topic_enable, SetBool, self.enable_realsense_callback)
+        
+        if self.config.realsense.run_continuous:
             self.pipeline_realsense.enable(True)
-        if "basler" in self.continuous:
+        if self.config.basler.run_continuous:
             self.pipeline_basler.enable(True)
 
         def exit_handler():
@@ -79,19 +75,17 @@ class ROSPipeline():
         print("running loop...")
         self.run_loop()
         
-    def load_yolact(self, config):
+    def load_yolact(self, yolact_config):
         yolact_dataset = None
         
-        if config is None:
-            config = load_config().obj_detection
         
-        if os.path.isfile(config.yolact_dataset_file):
-            print("loading", config.yolact_dataset_file)
-            with open(config.yolact_dataset_file, "r") as read_file:
+        if os.path.isfile(yolact_config.yolact_dataset_file):
+            print("loading", yolact_config.yolact_dataset_file)
+            with open(yolact_config.yolact_dataset_file, "r") as read_file:
                 yolact_dataset = commentjson.load(read_file)
                 print("yolact_dataset", yolact_dataset)
         else:
-            raise Exception("config.yolact_dataset_file is incorrect: " +  str(config.yolact_dataset_file))
+            raise Exception("config.yolact_dataset_file is incorrect: " +  str(yolact_config.yolact_dataset_file))
                 
         dataset = Config(yolact_dataset)
         
@@ -111,13 +105,13 @@ class ROSPipeline():
             
             # the save path should contain resnet101_reducedfc.pth
             'save_path': './data_limited/yolact/',
-            'score_threshold': config.yolact_score_threshold,
+            'score_threshold': yolact_config.yolact_score_threshold,
             'top_k': len(dataset.class_names)
         }
         
         model_path = None
         if "model" in yolact_dataset:
-            model_path = os.path.join(os.path.dirname(config.yolact_dataset_file), yolact_dataset["model"])
+            model_path = os.path.join(os.path.dirname(yolact_config.yolact_dataset_file), yolact_dataset["model"])
             
         print("model_path", model_path)
         
@@ -134,41 +128,41 @@ class ROSPipeline():
             self.pipeline_basler.run()
             self.pipeline_realsense.run()
             
-            #self.rate.sleep() # Now the sleeping is done within these two separate pipelines. We might want, for example, a higher FPS from realsense.
+            # Now the sleeping is done within these two separate pipelines. We might want, for example, a higher FPS from realsense.
 
     def enable_basler_callback(self, req):
         state = req.data
-        if "basler" in self.continuous:
-            msg = "won't start/stop basler. Running in continuous mode."
+        if self.config.basler.run_continuous:
+            msg = "basler: won't start/stop. Running in continuous mode."
             print(msg)
             return True, msg
         
         if state:
-            print("starting basler pipeline...")
+            print("basler: starting pipeline...")
             self.pipeline_basler.enable(True)
-            msg = args.node_name + " started."
+            msg = self.config.node_name + " started."
         else:
-            print("stopping basler pipeline...")
+            print("basler: stopping pipeline...")
             self.pipeline_basler.enable(False)
-            msg = args.node_name + " stopped."
+            msg = self.config.node_name + " stopped."
         
         return True, msg
     
     def enable_realsense_callback(self, req):
         state = req.data
-        if "realsense" in self.continuous:
-            msg = "won't start/stop basler. Running in continuous mode."
+        if self.config.realsense.run_continuous:
+            msg = "basler: won't start/stop. Running in continuous mode."
             print(msg)
             return True, msg
         
         if state:
-            print("starting realsense pipeline...")
+            print("realsense: starting pipeline...")
             self.pipeline_realsense.enable(True)
-            msg = args.node_name + " started."
+            msg = self.config.node_name + " started."
         else:
-            print("stopping realsense pipeline...")
+            print("realsense: stopping pipeline...")
             self.pipeline_realsense.enable(False)
-            msg = args.node_name + " stopped."
+            msg = self.config.node_name + " stopped."
         
         return True, msg
     
@@ -177,19 +171,20 @@ class ROSPipeline():
         print("vision_gap_det_callback", Camera(req.camera))
         if req.camera == Camera.basler:
             
-            print("enabling basler...")
+            print("basler: enabling...")
             self.pipeline_basler.enable(True)
             
-            print("getting basler detection")
-            camera_acq_stamp, img, detections = self.pipeline_basler.get_stable_detection()
+            print("basler: getting detection")
+            camera_acq_stamp, img, detections, img_id = self.pipeline_basler.get_stable_detection()
+            print("[blue]basler:: received stable detection, img_id:" + str(img_id) + "[/blue]")
             
             # todo: get detections
             # todo: wait until movement/results are stable
             
-            print("disabling basler...")
+            print("basler: disabling...")
             self.pipeline_basler.enable(False)
             
-            print("returning detection")
+            print("basler: returning detection")
             
             if detections is not None:
                 header = rospy.Header()
@@ -197,21 +192,22 @@ class ROSPipeline():
                 vision_details = VisionDetails(header, camera_acq_stamp, False, detections_to_ros(detections), [])
                 return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(img))
             else:
-                print("returning empty response!")
+                print("basler: returning empty response!")
                 return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(img))
             
             
         elif req.camera == Camera.realsense:
             
-            print("enabling realsense...")
+            print("realsense: enabling...")
             self.pipeline_realsense.enable(True)
             
             # todo: get detections
             # todo: wait until movement/results are stable
-            print("getting realsense detection")
-            camera_acq_stamp, img, detections, gaps = self.pipeline_realsense.get_stable_detection(gap_detection=req.gap_detection)
+            print("realsense: getting detection")
+            camera_acq_stamp, img, detections, gaps, img_id = self.pipeline_realsense.get_stable_detection(gap_detection=req.gap_detection)
+            print("[blue]realsense: received stable detection, img_id:" + str(img_id) + "[/blue]")
             
-            print("disabling realsense...")
+            print("realsense: disabling...")
             self.pipeline_realsense.enable(False)
 
             if detections is not None:
@@ -220,30 +216,12 @@ class ROSPipeline():
                 vision_details = VisionDetails(header, camera_acq_stamp, req.gap_detection, detections_to_ros(detections), gaps_to_ros(gaps))
                 return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(img))
             else:
-                print("returning empty response!")
+                print("realsense: returning empty response!")
                 return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(img))
 
     def vision_service_server(self):
-        rospy.Service("/" + self.node_name + "/vision_get_detection", VisionDetection, self.vision_det_callback)
-
-    @staticmethod
-    def arg_parser(args):
-        print("node_name:", args.node_name)
-        print("continuous:", args.continuous, "\n")
-        print("basler_image:", args.basler_image, "\n")
-        print("wait_for_services:", args.wait_for_services, "\n")
-
-        return args
+        rospy.Service(path(self.config.node_name, "vision_get_detection"), VisionDetection, self.vision_det_callback)
 
 
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--continuous", help="Which camera: basler/realsense", nargs='?', type=str, default="")
-    parser.add_argument("--node_name", help="The name of the node", nargs='?', type=str, default="vision")
-    parser.add_argument("--basler_image", help="/basler/<image topic>", type=str, nargs='?', default="image_rect_color")
-    parser.add_argument("--wait_for_services", help="wait for camera services", type=str2bool, nargs='?', default=True)
-    parser.add_argument("--rate", help="hz rate to determine sleeping", type=int, nargs='?', default=1)
-    args = parser.parse_args()
-
-    ros_pipeline =  ROSPipeline(args)
+    ros_pipeline =  ROSPipeline()

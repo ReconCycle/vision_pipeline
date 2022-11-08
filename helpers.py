@@ -10,6 +10,7 @@ from rich import print
 from json import JSONEncoder
 from torch import Tensor
 import pyrealsense2
+import re
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -54,7 +55,7 @@ def get_images_realsense(input_dir):
 
         if len(images_paths) % 3 == 0:
             images_paths = np.array(images_paths).reshape((-1, 3))
-        else: 
+        else:
             print("Error: number of images in directory not a multiple of 3!")
         
         for colour_img_p, depth_img_p, depth_colormap_p in images_paths:
@@ -208,7 +209,7 @@ def make_valid_poly(poly):
                     break
                 
         # we sometimes get a MultiPolygon where the first item is usually the polygon we want
-        if isinstance(poly, MultiPolygon) or isinstance(poly, GeometryCollection): 
+        if isinstance(poly, MultiPolygon) or isinstance(poly, GeometryCollection):
             for i in np.arange(len(poly.geoms)):
                 if isinstance(poly.geoms[i], Polygon):
                     poly = poly.geoms[i]
@@ -223,6 +224,33 @@ def make_valid_poly(poly):
     
     return poly
 
+def rotate_img(img, angle_deg):
+    if angle_deg == 0:
+        return img
+    if angle_deg == 90:
+        return cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+    elif angle_deg == 180:
+        return cv2.rotate(img, cv2.ROTATE_180)
+    elif angle_deg == 270:
+        return cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    else:
+        print("[red]Provide rotation multiple of 90 degrees! [/red]")
+        return img
+
+def path(*sub_paths):
+    """
+    Joins paths together, removing extra slashes
+    """
+    # join path together
+    path_str = ""
+    for sub_path in sub_paths:
+        path_str += "/" + sub_path
+        
+    # remove duplicate slashes
+    path_str = re.sub('/+', '/', path_str)
+
+    return path_str
+
 class Struct(object):
     """
     Holds the configuration for anything you want it to.
@@ -235,7 +263,7 @@ class Struct(object):
             setattr(self, name, self._wrap(value))
 
     def _wrap(self, value):
-        if isinstance(value, (tuple, list, set, frozenset)): 
+        if isinstance(value, (tuple, list, set, frozenset)):
             return type(value)([self._wrap(v) for v in value])
         else:
             return Struct(value) if isinstance(value, dict) else value
