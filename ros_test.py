@@ -24,7 +24,7 @@ from context_action_framework.msg import CutBlock, LeverBlock, MoveBlock, PushBl
 
 
 class ROSTest():
-    def __init__(self) -> None:  
+    def __init__(self) -> None:
 
         print("starting ROS Test for Vision Pipeline")
         
@@ -41,13 +41,13 @@ class ROSTest():
         print("waiting for vision_get_detection ...")
         rospy.wait_for_service("/" + self.vision_topic + "/vision_get_detection")
         print("vision module online")
-        self.detection_service = rospy.ServiceProxy("/" + self.vision_topic + "/vision_get_detection", VisionDetection)    
+        self.detection_service = rospy.ServiceProxy("/" + self.vision_topic + "/vision_get_detection", VisionDetection)
     
     def run_test(self):
         
         if not rospy.is_shutdown():
             # get detection
-            det_response = self.detection_service(Camera.realsense, False)
+            det_response = self.detection_service(Camera.realsense, True)
             
             # provide the details for next request
             success = det_response.success
