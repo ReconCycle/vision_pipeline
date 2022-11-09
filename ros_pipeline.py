@@ -21,6 +21,7 @@ import message_filters
 from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
 
+from object_reid import ObjectReId
 from config import load_config
 from pipeline_basler import BaslerPipeline
 from pipeline_realsense import RealsensePipeline
@@ -46,9 +47,12 @@ class ROSPipeline():
         
         # load yolact
         yolact, dataset = self.load_yolact(self.config.obj_detection)
+        
+        # load object reid
+        object_reid = ObjectReId()
 
-        self.pipeline_basler = BaslerPipeline(yolact, dataset, self.config)
-        self.pipeline_realsense = RealsensePipeline(yolact, dataset, self.config)
+        self.pipeline_basler = BaslerPipeline(yolact, dataset, object_reid, self.config)
+        self.pipeline_realsense = RealsensePipeline(yolact, dataset, object_reid, self.config)
         
         basler_topic_enable = path(self.config.node_name, self.config.basler.topic, "enable")
         realsense_topic_enable = path(self.config.node_name, self.config.realsense.topic, "enable")

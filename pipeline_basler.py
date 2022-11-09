@@ -32,7 +32,7 @@ from obb import obb_px_to_quat
 
 
 class BaslerPipeline:
-    def __init__(self, yolact, dataset, config):
+    def __init__(self, yolact, dataset, object_reid, config):
         self.config = config
         
         self.target_fps = 2
@@ -75,7 +75,7 @@ class BaslerPipeline:
         print("creating service client...")
         self.create_service_client()
         print("creating basler pipeline...")
-        self.init_basler_pipeline(yolact, dataset)
+        self.init_basler_pipeline(yolact, dataset, object_reid)
 
         print("waiting for pipeline to be enabled...")
 
@@ -87,12 +87,12 @@ class BaslerPipeline:
         try:
             self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
         except:
-            rospy.set_param(self.publish_labeled_rosparamname, False)
+            rospy.set_param(self.publish_labeled_rosparamname, self.publish_labeled_img)
 
         rospy.loginfo("Pipeline_basler: x = 0.6 -x, hack for table rotation. FIX")
     
-    def init_basler_pipeline(self, yolact, dataset):
-        self.object_detection = ObjectDetection(yolact, dataset, self.frame_id)
+    def init_basler_pipeline(self, yolact, dataset, object_reid):
+        self.object_detection = ObjectDetection(yolact, dataset, object_reid, self.frame_id)
         
         self.worksurface_detection = None
 

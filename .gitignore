@@ -8,6 +8,7 @@ data_limited/
 datasets_symlink
 camera_images/
 labelled_images/
+object_templates/
 
 __pycache__/
 .vscode/

@@ -14,7 +14,7 @@ from yolact_pkg.data.config import Config, COLORS
 from yolact_pkg.yolact import Yolact
 
 from tracker.byte_tracker import BYTETracker
-
+from graph_relations import GraphRelations, exists_detection, compute_iou
 import obb
 import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords
@@ -28,18 +28,14 @@ import tf2_ros
 
 
 class ObjectDetection:
-    def __init__(self, yolact, dataset, frame_id=""):
+    def __init__(self, yolact, dataset, object_reid, frame_id=""):
 
         self.yolact = yolact
         self.dataset = dataset
         self.frame_id = frame_id
         self.object_depth = 0.025 # in meters, the depth of the objects
-
-        # parser.add_argument("--track_thresh", type=float, default=0.6, help="tracking confidence threshold")
-        # parser.add_argument("--track_buffer", type=int, default=30, help="the frames for keep lost tracks")
-        # parser.add_argument("--match_thresh", type=float, default=0.9, help="matching threshold for tracking")
-        # parser.add_argument("--min-box-area", type=float, default=100, help='filter out tiny boxes')
-        # parser.add_argument("--mot20", dest="mot20", default=False, action="store_true", help="test mot20.")
+        
+        self.object_reid = object_reid
 
         self.tracker_args = SimpleNamespace()
         self.tracker_args.track_thresh = 0.1
@@ -52,14 +48,14 @@ class ObjectDetection:
         self.fps_graphics = -1.
         self.fps_objdet = -1.
 
-    def get_prediction(self, img_path, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None):
+    def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None):
         t_start = time.time()
         
         if depth_img is not None:
-            if img_path.shape[:2] != depth_img.shape[:2]:
+            if colour_img.shape[:2] != depth_img.shape[:2]:
                 raise ValueError("[red]image and depth image shapes do not match! [/red]")
         
-        frame, classes, scores, boxes, masks = self.yolact.infer(img_path)
+        frame, classes, scores, boxes, masks = self.yolact.infer(colour_img)
         fps_nn = 1.0 / (time.time() - t_start)
 
         detections = []
@@ -73,7 +69,7 @@ class ObjectDetection:
             detection.score = float(scores[i])
             
             box_px = boxes[i].reshape((-1,2)) # convert tlbr
-            detection.box_px = obb.clip_box_to_img_shape(box_px, img_path.shape) 
+            detection.box_px = obb.clip_box_to_img_shape(box_px, colour_img.shape)
             detection.mask = masks[i]
             
             # compute contour. Required for obb and graph_relations
@@ -118,8 +114,8 @@ class ObjectDetection:
         poses.header.stamp = rospy.Time.now()
         
         # calculate the oriented bounding boxes
-        for detection in detections:                
-            corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, img_path)
+        for detection in detections:
+            corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, colour_img)
             detection.obb_px = corners_px
             detection.center_px = center_px
             detection.angle_px = angle
@@ -177,7 +173,20 @@ class ObjectDetection:
             else:
                 detection.obb = None
                 detection.tf = None
-            
+        
+        # todo: remove objects that don't fit certain constraints, eg. too small, too thin, too big
+        graph_relations = GraphRelations(detections)
+        
+        # form groups, adds group_id property to detections
+        graph_relations.make_groups()
+        
+        # todo: track groups
+        
+        # object re-id
+        self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=False)
+        
+        # drawing stuff
+        for detection in detections:
             # draw the cuboids
             if detection.tf is not None and detection.obb is not None:
                 # todo: x and y could be the wrong way around! they should be chosen depending on the rot_quat

@@ -30,7 +30,7 @@ from context_action_framework.types import detections_to_ros, gaps_to_ros, Label
 from obb import obb_px_to_quat
 
 class RealsensePipeline:
-    def __init__(self, yolact, dataset, config):
+    def __init__(self, yolact, dataset, object_reid, config):
         self.config = config
 
         self.realsense_topic = path(self.config.node_name, self.config.realsense.topic) # /vision/realsense
@@ -88,7 +88,7 @@ class RealsensePipeline:
         print("creating service client...")
         self.create_service_client()
         print("creating realsense pipeline...")
-        self.init_realsense_pipeline(yolact, dataset)
+        self.init_realsense_pipeline(yolact, dataset, object_reid)
 
         print("waiting for pipeline to be enabled...")
         
@@ -122,8 +122,8 @@ class RealsensePipeline:
             self.publish_depth_img = rospy.get_param(self.publish_depth_rosparamname)
             self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
 
-    def init_realsense_pipeline(self, yolact, dataset):
-        self.object_detection = ObjectDetection(yolact, dataset, self.frame_id)
+    def init_realsense_pipeline(self, yolact, dataset, object_reid):
+        self.object_detection = ObjectDetection(yolact, dataset, object_reid, self.frame_id)
         self.gap_detector = GapDetectorClustering()
     
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):
