@@ -12,4 +12,4 @@ labelled_images/
 __pycache__/
 .vscode/
 .catkin_tools/
-
+.idea/
