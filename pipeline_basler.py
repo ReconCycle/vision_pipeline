@@ -7,6 +7,7 @@ import rospy
 import tf2_ros
 import tf
 import copy
+import asyncio
 
 from helpers import path, rotate_img
 from object_detection import ObjectDetection
@@ -107,7 +108,7 @@ class BaslerPipeline:
         colour_img = np.array(CvBridge().imgmsg_to_cv2(img_msg))
         self.colour_img = rotate_img(colour_img, self.config.basler.rotate_img)
         self.img_id += 1
-        print("basler: received realsense image! id:", self.img_id)
+        # print("basler: received realsense image! id:", self.img_id)
 
     def create_camera_subscribers(self):
         img_topic = path(self.config.basler.camera_node, self.config.basler.image_topic)
@@ -197,13 +198,12 @@ class BaslerPipeline:
             self.labelled_img = None
             self.detections = None
 
-    def get_stable_detection(self):
+    async def get_stable_detection(self):
         # todo: logic to get stable detection
         
-        # todo: wait until we get at least one detection
+        # wait until we get at least one detection
         while self.detections is None:
-            print("basler: waiting for detection...")
-            time.sleep(0.1) #! debug
+            await asyncio.sleep(0.01)
         
         if self.detections is not None:
             return self.camera_acquisition_stamp, self.colour_img, self.detections, self.processed_img_id
@@ -254,8 +254,8 @@ class BaslerPipeline:
                 else:
                     print("[green]basler: aborted publishing on img: " + str(processing_img_id) + " bc pipeline disabled[/green]")
 
-            else:
-                print("basler: Waiting to receive image.")
+            # else:
+                # print("basler: Waiting to receive image.")
 
 
     def process_img(self, img, fps=None):

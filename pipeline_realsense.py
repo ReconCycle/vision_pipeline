@@ -8,6 +8,7 @@ import rospy
 import tf
 import copy
 import yaml
+import asyncio
 
 from helpers import path, rotate_img
 from gap_detection.gap_detector_clustering import GapDetectorClustering
@@ -135,7 +136,7 @@ class RealsensePipeline:
         
         self.camera_info = camera_info
         self.img_id += 1
-        print("realsense: received realsense image! id:", self.img_id)
+        # print("realsense: received realsense image! id:", self.img_id)
 
     def aruco_callback(self, aruco_pose_ros, aruco_point_ros):
         self.aruco_pose = aruco_pose_ros.pose
@@ -303,18 +304,16 @@ class RealsensePipeline:
         self.enable_camera(state)
         self.pipeline_enabled = state
 
-    def get_stable_detection(self, gap_detection: bool=True):
+    async def get_stable_detection(self, gap_detection: bool=True):
         # todo: logic to get stable detection
-        # todo: wait until we get at least one detection
         
+        #  wait until we get at least one detection
         if gap_detection:
             while self.gaps is None or self.detections is None:
-                print("realsense: waiting for detection...")
-                time.sleep(0.1) #! debug
+                await asyncio.sleep(0.01)
         else:
             while self.detections is None:
-                print("realsense: waiting for detection...")
-                time.sleep(0.1) #! debug
+                await asyncio.sleep(0.01)
             
         if self.detections is not None:
             if gap_detection:
@@ -369,9 +368,9 @@ class RealsensePipeline:
                 else:
                     print("[green]realsense: aborted publishing on img: " + str(processing_img_id) + " bc pipeline disabled[/green]")
                 
-            else:
-                print("realsense: Waiting to receive image.", self.processed_img_id, self.img_id)
-                time.sleep(1) # debug
+            # else:
+                # print("realsense: Waiting to receive image.", self.processed_img_id, self.img_id)
+                # time.sleep(1) # debug
                 #! shouldn't need to do this but the realsense camera sometimes stops working
                 # if self.pipeline_enabled:
                     # print("resending rosservice call /realsense/enable True")

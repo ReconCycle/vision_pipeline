@@ -8,6 +8,7 @@ import time
 import atexit
 from rich import print
 import commentjson
+import asyncio
 
 import rospy
 from std_srvs.srv import SetBool
@@ -175,10 +176,9 @@ class ROSPipeline():
             self.pipeline_basler.enable(True)
             
             print("basler: getting detection")
-            camera_acq_stamp, img, detections, img_id = self.pipeline_basler.get_stable_detection()
-            print("[blue]basler:: received stable detection, img_id:" + str(img_id) + "[/blue]")
+            camera_acq_stamp, img, detections, img_id = asyncio.run(self.pipeline_basler.get_stable_detection())
+            print("[blue]basler: received stable detection, img_id:" + str(img_id) + "[/blue]")
             
-            # todo: get detections
             # todo: wait until movement/results are stable
             
             print("basler: disabling...")
@@ -201,10 +201,9 @@ class ROSPipeline():
             print("realsense: enabling...")
             self.pipeline_realsense.enable(True)
             
-            # todo: get detections
             # todo: wait until movement/results are stable
             print("realsense: getting detection")
-            camera_acq_stamp, img, detections, gaps, img_id = self.pipeline_realsense.get_stable_detection(gap_detection=req.gap_detection)
+            camera_acq_stamp, img, detections, gaps, img_id = asyncio.run(self.pipeline_realsense.get_stable_detection(gap_detection=req.gap_detection))
             print("[blue]realsense: received stable detection, img_id:" + str(img_id) + "[/blue]")
             
             print("realsense: disabling...")
