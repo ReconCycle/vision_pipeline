@@ -9,7 +9,7 @@ from enum import IntEnum
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Any
 from scipy.spatial.transform import Rotation
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
 
@@ -169,6 +169,7 @@ class ObjectReId:
         unknown_templates = []
         
         for detection_hca_back in detections_hca_back:
+            # todo: we could use the groups instead
             dets = []
             print("detected hca_back")
             dets = graph_relations.get_all_inside(detection_hca_back)
@@ -179,6 +180,7 @@ class ObjectReId:
             img_cropped, center_cropped = self.get_det_img(img, detection_hca_back)
             unknown_imgs.append(img_cropped)
             
+            # todo: I need the OBB here, to ignore keypoints outside of OBB
             keypoints, descriptors = self.calculate_sift(img_cropped, center_cropped, detection_hca_back, visualise)
             
             # add this property
@@ -203,10 +205,11 @@ class ObjectReId:
                 # compare
                 tp_dets = object_template.detections
                 
+                # todo: does rotation 180 degrees matter for sift?
                 # sift is largely rotation invariant
                 uk_img = unknown_imgs[unknown_template_id]
                 tp_img = self.template_imgs[object_template_id]
-                sift_score = self.calculate_sift_results(uk_img, unknown_template, tp_img, object_template, visualise)
+                sift_score = self.calculate_sift_results(uk_img, unknown_template, tp_img, object_template, False, visualise)
                 
                 # rotate over symmetry
                 for rotate_180 in [True, False]:
@@ -349,6 +352,7 @@ class ObjectReId:
                 # poly_px += np.array([100, 150]) + np.array([idx*200, 0])
                 # cv2.drawContours(img_info, [poly_px], 0, (0, 255, 0), 2)
                 
+                
                 cv2.putText(img_info, tp_det.label.name, obb_px[0], font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
         
         # show unknown detections
@@ -372,7 +376,7 @@ class ObjectReId:
                 cv2.putText(img_info, id_text, [10 + idx*column_spacing, row_spacing + 90], font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
 
             for unknown_det in unknown_template.detections:
-                # obb = self.rotated_and_centered_obb(component.obb, detection_hca_back.center, detection_hca_back.tf.rotation)
+                pass
                 obb_px = self.m_to_px(unknown_det.obb_normed)
                 obb_px += np.array([100 + idx*column_spacing, row_spacing + 190])
                 cv2.drawContours(img_info, [obb_px], 0, (0, 0, 255), 2)
@@ -533,10 +537,10 @@ class ObjectReId:
     
     
     def calculate_sift(self, img_cropped, center_cropped, hca_back, visualise=False):
-        # todo: ignore keypoints outside hca_back
+
         keypoints, descriptors = self.sift.detectAndCompute(img_cropped, None)
-        
-        # print("keypoints", keypoints)
+        keypoints_in_poly = []
+        descriptors_in_poly = []
 
         # unrotated obb:
         # obb = hca_back.obb_px - hca_back.center_px + center_cropped
@@ -546,24 +550,33 @@ class ObjectReId:
         # rotated obb:
         obb2 = self.rotated_and_centered_obb(hca_back.obb_px, hca_back.center_px, hca_back.tf.rotation, center_cropped)
         obb2_arr = np.array(obb2).astype(int)
+        obb2_poly = Polygon(obb2_arr)
         
-        cv2.drawContours(img_cropped, [obb2_arr], 0, (0, 255, 0), 2)
-        
+        # rotated polygon
         # poly = self.rotated_and_centered_obb(hca_back.polygon_px, hca_back.center_px, hca_back.tf.rotation, center_cropped)
         # poly_arr = np.array(poly.exterior.coords).astype(int)
         # print("poly_arr", poly_arr)
         
-        im_with_keypoints = cv2.drawKeypoints(img_cropped,
-                                                keypoints,
-                                                np.array([]),
-                                                (0, 0, 255),
-                                                cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+        # only include keypoints that are inside the obb
+        for keypoint, descriptor in zip(keypoints, descriptors):
+            if obb2_poly.contains(Point(*keypoint.pt)):
+                keypoints_in_poly.append(keypoint)
+                descriptors_in_poly.append(descriptor)
         
-        # todo: only include keypoints that are inside the obb
+        # descriptors is an array, keypoints is a list
+        descriptors_in_poly = np.array(descriptors_in_poly)
+
         if visualise:
+            img_cropped_copy = img_cropped.copy()
+            cv2.drawContours(img_cropped_copy, [obb2_arr], 0, (0, 255, 0), 2)
+            im_with_keypoints = cv2.drawKeypoints(img_cropped_copy,
+                                                    keypoints_in_poly,
+                                                    np.array([]),
+                                                    (0, 0, 255),
+                                                    cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
             cv2.imshow("keypoints", im_with_keypoints)
 
-        return keypoints, descriptors
+        return keypoints_in_poly, descriptors_in_poly
     
     @staticmethod
     def calculate_sift_matches(des1, des2):
@@ -606,20 +619,45 @@ class ObjectReId:
             return 0
     
     @staticmethod
-    def get_sift_plot(image1, image2, keypoint1, keypoint2,matches):
+    def get_sift_plot(image1, image2, keypoints1, keypoints2, matches):
         matchPlot = cv2.drawMatchesKnn(
             image1,
-            keypoint1,
+            keypoints1,
             image2,
-            keypoint2,
+            keypoints2,
             matches,
             None,
             [255,255,255],
             flags=2
         )
-        return matchPlot
+        # get matching points
+        pts1_matches = np.array([keypoints1[match[0].queryIdx].pt for match in matches])
+        pts2_matches = np.array([keypoints2[match[0].trainIdx].pt for match in matches])
+        
+        # todo: ignore matching points outside bounding box
+        
+        # print("pts1_matches.shape", pts1_matches.shape)
+        # print("keypoint2_matches.shape", pts2_matches.shape)
+        
+        # compute affine transform
+        A, res, rank, s = np.linalg.lstsq(pts1_matches, pts2_matches, rcond=None)
+        affine_transform = lambda x: np.dot(x, A)
+        
+        print("affine_transform(pts2_matches).shape", affine_transform(pts2_matches).shape)
+        
+        # find mean error
+        abs_diff = np.abs(pts1_matches - affine_transform(pts2_matches))
+        mean_error = np.mean(abs_diff)
+        max_error = np.max(abs_diff)
+        median_error = np.median(abs_diff)
+        
+        print("mean_error", mean_error)
+        print("median_error", median_error)
+        print("max_error", max_error)
+        
+        return matchPlot, mean_error, median_error, max_error
     
-    def calculate_sift_results(self, uk_img, unknown_template, tp_img, object_template, visualise=False):
+    def calculate_sift_results(self, uk_img, unknown_template, tp_img, object_template, rotated, visualise=False):
         keypoint1 = unknown_template.sift_keypoints
         descriptor1 = unknown_template.sift_descriptors
         keypoint2 = object_template.sift_keypoints
@@ -635,7 +673,7 @@ class ObjectReId:
         score = self.calculate_sift_score(len(matches),len(keypoint1),len(keypoint2))
         
         if len(matches) > 0 and visualise:
-            plot = self.get_sift_plot(uk_img, tp_img, keypoint1, keypoint2, matches)
+            plot, mean_error, median_error, max_error = self.get_sift_plot(uk_img, tp_img, keypoint1, keypoint2, matches)
             
             cv2.putText(plot, "unknown: " + str(unknown_template.id), [10, 20], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             
@@ -646,6 +684,10 @@ class ObjectReId:
             cv2.putText(plot, "num. keypoints 1: " + str(len(keypoint1)), [10, 80], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             cv2.putText(plot, "num. keypoints 2: " + str(len(keypoint2)), [10, 100], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             
-            cv2.imshow("sift_result_" + str(unknown_template.id) + "_" + str(object_template.id), plot)
+            cv2.putText(plot, "mean_error: " + str(np.round(mean_error, 2)), [10, 120], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
+            cv2.putText(plot, "median_error: " + str(np.round(median_error, 2)), [10, 140], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
+            cv2.putText(plot, "max_error: " + str(np.round(max_error, 2)), [10, 160], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
+            
+            cv2.imshow("sift_result_" + str(unknown_template.id) + "_" + str(object_template.id) + "_" + str(int(rotated)), plot)
         
         return score
