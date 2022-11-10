@@ -264,6 +264,9 @@ class BaslerPipeline:
             self.worksurface_detection = WorkSurfaceDetection(img)
             # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
         
+        # debug
+        self.worksurface_detection.draw_corners_and_circles(img)
+        
         labelled_img, detections, markers, poses = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
 
         if self.config.basler.detect_arucos:

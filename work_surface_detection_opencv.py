@@ -75,7 +75,7 @@ class WorkSurfaceDetection:
             
         if img is not None:
             self.run_detection(img)
-        else: 
+        else:
             print("No image found!")
 
 
@@ -111,7 +111,7 @@ class WorkSurfaceDetection:
             'bolt2': [0.6 - 0.035, 0.035],          # bottom-right
             'bolt3': [0.035, 0.035],                # bottom-left
             
-            # calibration mounts are 0.03m in from the edge      
+            # calibration mounts are 0.03m in from the edge
             'calibrationmount0': [0.3, 0.6 - 0.03], # top-center
             'calibrationmount1': [0.6 - 0.03, 0.3], # right-center
             'calibrationmount2': [0.3, 0.03],       # bottom-center
@@ -282,7 +282,7 @@ class WorkSurfaceDetection:
                     
                     cv2.imshow(key, scale_img(img_masked))
 
-    def compute_affine_transform(self): 
+    def compute_affine_transform(self):
 
         # create arrays for affine transform
         points_px_arr = []
@@ -336,12 +336,12 @@ class WorkSurfaceDetection:
                     or corner_in_meters[1] > self.img_height or corner_in_meters[1] < 0:
                     print("[red]Corner estimate is out of bounds! " + str(corner_in_meters[0]) + ", " + str(corner_in_meters[1]) + "[/red]")
         
-        if self.debug:     
+        if self.debug:
             print("self.points_px_dict", self.points_px_dict)
         
     def draw_corners_and_circles(self, img):
         # draw stuff on image
-        if self.circles is not None and self.debug:
+        if self.circles is not None:
             # draw all detections in green
             for (x, y, r) in self.circles:
                 # Draw the circle in the output image
@@ -374,6 +374,7 @@ class WorkSurfaceDetection:
 
             # cv2.imshow("0", scale_img(blur))
             # cv2.imwrite('./example_work_sufrace_detection_opencv.jpg', img)
+        if self.debug:
             cv2.imshow("1", scale_img(img))
             cv2.waitKey(0)
 
@@ -392,7 +393,7 @@ class WorkSurfaceDetection:
             # todo: add depth option
             return self.coord_transform(np.array([coords]))[0]
         else:
-            # assume array of coordinate pairs. 
+            # assume array of coordinate pairs.
             # Each row contains a coordinate (x, y) pair
             # todo: add depth option
             return self.coord_transform(coords)
@@ -407,7 +408,7 @@ class WorkSurfaceDetection:
             # single coordinate pair.
             return self.coord_transform_inv(np.array([coords]))[0]
         else:
-            # assume array of coordinate pairs. 
+            # assume array of coordinate pairs.
             # Each row contains a coordinate (x, y) pair
             return self.coord_transform_inv(coords)
         
