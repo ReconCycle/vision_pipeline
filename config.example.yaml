@@ -12,6 +12,8 @@ basler:
   wait_for_services: True
   detect_arucos: False
   parent_frame: "vision_table_zero" # When publishing transforms, this is the base/parent frame from which they are published.
+  work_surface_ignore_border_width: 100
+  show_work_surface_detection: True
 
 realsense:
   rotate_img: 0 # specify in degrees
@@ -33,5 +35,5 @@ realsense:
 
 # yolact config
 obj_detection:
-  yolact_dataset_file: data_limited/yolact/real_from_synthetic_2021-07-07/dataset.json
+  yolact_dataset_file: data_limited/yolact/2022-05-02_kalo_qundis/dataset.json
   yolact_score_threshold: 0.55

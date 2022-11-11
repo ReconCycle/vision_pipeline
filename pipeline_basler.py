@@ -261,13 +261,13 @@ class BaslerPipeline:
     def process_img(self, img, fps=None):
         if self.worksurface_detection is None:
             print("basler: detecting work surface...")
-            self.worksurface_detection = WorkSurfaceDetection(img)
-            # self.worksurface_detection = WorkSurfaceDetection(img, self.config.dlc)
-        
-        # debug
-        self.worksurface_detection.draw_corners_and_circles(img)
+            self.worksurface_detection = WorkSurfaceDetection(img, self.config.basler.work_surface_ignore_border_width)
         
         labelled_img, detections, markers, poses = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
+
+        # debug
+        if self.config.basler.show_work_surface_detection:
+            self.worksurface_detection.draw_corners_and_circles(labelled_img)
 
         if self.config.basler.detect_arucos:
             self.aruco_detection = ArucoDetection()

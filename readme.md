@@ -10,7 +10,7 @@ Project to track heat cost allocators and the individual parts of the heat cost 
 1. `git clone git@github.com:ReconCycle/vision-pipeline.git`
 2. `git submodule update --init --recursive`
 3. Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision-pipeline/data_limited` folder.
-4. `cp config.example.yaml config.yaml` 
+4. `cp config.example.yaml config.yaml`
 
 Additionally:
 
@@ -87,6 +87,18 @@ To get a Realsense detection, run:
 rosservice call /vision/vision_get_detection 1 True
 ```
 where True provides the gaps as well.
+
+** Camera Services:**
+
+- `rosservice call /basler/set_sleeping` True/False
+- `rosservice call /realsense/enable` True/False
+
+## Config Parameters
+
+To start:
+```bash
+cp config.example.yaml config.yaml
+```
 
 
 # Dataset Creation and Training
@@ -175,7 +187,7 @@ For training on less data, reduce the save_interval. On few real images use `--s
 
 6. After training on synthetic data, train using the synthetic weights, but on real data.
 
-Make sure that the class labels of the real data match those of the synthetic data. Use Cocoviewer to get the order of the class labels for the real data. 
+Make sure that the class labels of the real data match those of the synthetic data. Use Cocoviewer to get the order of the class labels for the real data.
 Example:
 ```
 NDDS_COCO_CLASSES = ('background', 'back', 'battery', 'front', 'internals', 'pcb', 'side2', 'side1')
@@ -184,7 +196,7 @@ NDDS_COCO_CLASSES = ('background', 'back', 'battery', 'front', 'internals', 'pcb
 NDDS_COCO_LABEL_MAP = {1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8,}
 
 # From looking at COCOViewer, we get the following order of the real class labels (with the corresponding label IDs on the next line):
-# REAL_CLASSES = ('background', 'front', 'back', 'side1', 'side2', 'battery', 'pcb', 'internals') 
+# REAL_CLASSES = ('background', 'front', 'back', 'side1', 'side2', 'battery', 'pcb', 'internals')
 #                0             1        2       3        4        5          6      7
 # Actually what we want is for the class labels to be in the same order as in NDDS_COCO_CLASSES. To do this we create the REAL_LABEL_MAP as follows:
 REAL_LABEL_MAP = {0: 1, 1: 4, 2: 2, 3: 8, 4: 7, 5: 3, 6: 6, 7: 5}
