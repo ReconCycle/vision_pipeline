@@ -2,6 +2,8 @@ rate: 1
 node_name: "vision"
 
 basler:
+  target_fps: 2
+  max_allowed_delay_in_seconds: 1.0
   rotate_img: 180 # specify in degrees
   topic: "basler" # topic that we publish to: /node_name/topic
   camera_node: "/basler" # camera topic
@@ -16,6 +18,8 @@ basler:
   show_work_surface_detection: True
 
 realsense:
+  target_fps: 2
+  max_allowed_delay_in_seconds: 1.0
   rotate_img: 0 # specify in degrees
   topic: "realsense" # topic that we publish to: /node_name/topic
   camera_node: "/realsense" # camera node

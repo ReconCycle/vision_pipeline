@@ -133,10 +133,6 @@ class ROSPipeline():
 
     def enable_basler_callback(self, req):
         state = req.data
-        if self.config.basler.run_continuous:
-            msg = "basler: won't start/stop. Running in continuous mode."
-            print(msg)
-            return True, msg
         
         if state:
             print("basler: starting pipeline...")
@@ -151,10 +147,6 @@ class ROSPipeline():
     
     def enable_realsense_callback(self, req):
         state = req.data
-        if self.config.realsense.run_continuous:
-            msg = "basler: won't start/stop. Running in continuous mode."
-            print(msg)
-            return True, msg
         
         if state:
             print("realsense: starting pipeline...")

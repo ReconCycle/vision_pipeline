@@ -24,28 +24,20 @@ Look at the documentation in [ros-basler](https://github.com/ReconCycle/ros-basl
 
 ## Usage
 
+Set the parameters you want in `config.yaml`.
+
 Run example:
 ```
-python ros_pipeline.py --continuous=basler,realsense
-```
-The basler and realsense cameras will now publish continuously.
-
-All the possible arguments are:
-```
-  --continuous [CONTINUOUS]
-                        Which camera(s) to run continuously: basler/realsense
-  --node_name [NODE_NAME]
-                        The name of the node
-  --basler_image [BASLER_IMAGE]
-                        /basler/<image topic>
-  --wait_for_services [WAIT_FOR_SERVICES]
-                        wait for camera services
-  --rate [RATE]         hz rate to determine sleeping
+python ros_pipeline.py
 ```
 
-Without the continuous flag, we can enable/disable the cameras by calling the ros service:
+To enable the pipeline for realsense or basler use:
 ```
 rosservice call /vision/realsense/enable True
+```
+or
+```
+rosservice call /vision/basler/enable True
 ```
 
 **Publishes**:
@@ -92,13 +84,6 @@ where True provides the gaps as well.
 
 - `rosservice call /basler/set_sleeping` True/False
 - `rosservice call /realsense/enable` True/False
-
-## Config Parameters
-
-To start:
-```bash
-cp config.example.yaml config.yaml
-```
 
 
 # Dataset Creation and Training

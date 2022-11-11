@@ -35,12 +35,14 @@ class BaslerPipeline:
     def __init__(self, yolact, dataset, config):
         self.config = config
         
-        self.target_fps = 1
+        # time stuff
+        self.target_fps = self.config.basler.target_fps
+        self.max_allowed_delay_in_seconds = self.config.basler.max_allowed_delay_in_seconds
         self.min_run_pipeline_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
-        self.last_run_time = time.time()
-        #self.rate = rospy.Rate(1) # fps.
+        self.last_run_time = rospy.get_rostime().to_sec()
 
         self.tf_broadcaster = tf.TransformBroadcaster()
+        self.frame_id = self.config.basler.parent_frame
 
         # don't automatically start
         self.pipeline_enabled = False
@@ -54,11 +56,6 @@ class BaslerPipeline:
         self.img_msg = None
         self.img_id = 0
         self.last_stale_id = 0 # Keep track of the ID for last stale img so we dont print several errors for same img
-
-        
-        self.t_now = None
-
-        self.max_allowed_delay_in_seconds = 1
         
         # processed image data
         self.processed_img_id = -1  # don't keep processing the same image
@@ -67,8 +64,6 @@ class BaslerPipeline:
         self.detections = None
         self.markers = None
         self.poses = None
-        
-        self.frame_id = self.config.basler.parent_frame
         
         self.create_static_tf(self.frame_id)
 
@@ -109,7 +104,7 @@ class BaslerPipeline:
     
     def img_from_camera_callback(self, img_msg):
         self.camera_acquisition_stamp = img_msg.header.stamp
-        self.img_msg = img_msg 
+        self.img_msg = img_msg
         self.img_id += 1
 
     def create_camera_subscribers(self):
@@ -155,7 +150,7 @@ class BaslerPipeline:
         
         for marker in markers.markers:
             marker.header.stamp = timestamp
-            marker.ns = self.config.basler.parent_frame 
+            marker.ns = self.config.basler.parent_frame
             marker.lifetime = rospy.Duration(1) # Each marker is valid for 1 second max.
 
         self.markers_pub.publish(markers)
@@ -216,38 +211,42 @@ class BaslerPipeline:
         
     def run(self):
 
-        if not self.pipeline_enabled: 
+        if not self.pipeline_enabled:
             #print("[green]basler: aborted bc pipeline disabled[/green]")
             return 0
 
-        if self.img_msg is None: 
+        if self.img_msg is None:
             #print("basler: Waiting to receive image.")
+            return 0
+        
+        # check we haven't processed this frame already
+        if self.processed_img_id >= self.img_id:
             return 0
 
         # Pipeline is enabled and we have an image
-        t = time.time()
+        t = rospy.get_rostime().to_sec()
  
         # Check if the image is stale
-        cam_img_delay = t - self.camera_acquisition_stamp.secs
-        if (cam_img_delay > self.max_allowed_delay_in_seconds): 
+        cam_img_delay = t - self.camera_acquisition_stamp.to_sec()
+        if (cam_img_delay > self.max_allowed_delay_in_seconds):
             # So we dont print several times for the same image
             if self.img_id != self.last_stale_id:
                 print("Basler STALE img ID %d, not processing. Delay: %.2f"% (self.img_id, cam_img_delay))
                 self.last_stale_id = self.img_id
-            return 0 
+            return 0
 
         # Check that more than minimal time has elapsed since last running the pipeline
-        dt = np.abs(t - self.last_run_time)       
+        dt = np.abs(t - self.last_run_time)
         if (dt < self.min_run_pipeline_dt):
             #print("Basler not running due to minimal dt")
             return 0
+        
+        t_prev = self.last_run_time
         self.last_run_time = t
-
 
         # All the checks passes, run the pipeline
         colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg))
         self.colour_img = rotate_img(colour_img, self.config.basler.rotate_img)
-
                             
         self.check_rosparam_server() # Check rosparam server for whether to publish labeled imgs
         
@@ -256,11 +255,9 @@ class BaslerPipeline:
         
         #print("\n[green]basler: running pipeline on img: "+ str(processing_img_id) +"...[/green]")
         #print("\n[green]basler: delay is %.2f[/green]"%cam_img_delay)
-        t_prev = self.t_now
-        self.t_now = t
         fps = None
-        if t_prev is not None and self.t_now - t_prev > 0:
-            fps = "fps_total: " + str(round(1 / (self.t_now - t_prev), 1)) + ", "
+        if t_prev is not None and self.last_run_time - t_prev > 0:
+            fps = "fps_total: " + str(round(1 / (self.last_run_time - t_prev), 1)) + ", "
 
         labelled_img, detections, markers, poses = self.process_img(self.colour_img, fps)
 
