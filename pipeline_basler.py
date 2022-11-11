@@ -34,7 +34,7 @@ class BaslerPipeline:
     def __init__(self, yolact, dataset, config):
         self.config = config
         
-        self.target_fps = 3
+        self.target_fps = 1
         self.min_run_pipeline_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
         self.last_run_time = time.time()
         #self.rate = rospy.Rate(1) # fps.
@@ -223,6 +223,7 @@ class BaslerPipeline:
         # Check if the image is stale
         cam_img_delay = t - self.camera_acquisition_stamp.secs
         if (cam_img_delay > self.max_allowed_delay_in_seconds): 
+            # So we dont print several times for the same image
             if self.img_id != self.last_stale_id:
                 print("Basler STALE img ID %d, not processing. Delay: %.2f"% (self.img_id, cam_img_delay))
                 self.last_stale_id = self.img_id
@@ -233,12 +234,13 @@ class BaslerPipeline:
         if (dt < self.min_run_pipeline_dt):
             #print("Basler not running due to minimal dt")
             return 0
+        self.last_run_time = t
+
 
         # All the checks passes, run the pipeline
         colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg))
         self.colour_img = rotate_img(colour_img, self.config.basler.rotate_img)
 
-        self.last_run_time = t
                             
         self.check_rosparam_server() # Check rosparam server for whether to publish labeled imgs
         
