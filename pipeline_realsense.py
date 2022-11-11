@@ -43,7 +43,7 @@ class RealsensePipeline:
         self.target_fps = 4
         self.min_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
         self.last_run_time = time.time()
-        self.max_allowed_delay_in_seconds = 0.4 # If cur_t - img_t is larger than this, ignore the detections.
+        self.max_allowed_delay_in_seconds = 0.6 # If cur_t - img_t is larger than this, ignore the detections.
 
         self.tf_broadcaster = tf.TransformBroadcaster()
 
@@ -135,7 +135,9 @@ class RealsensePipeline:
         
         self.camera_info = camera_info
         self.img_id += 1
-        print("realsense: received realsense image! id:", self.img_id)
+        
+        # This will really print a lot.
+        #print("realsense: received realsense image! id:", self.img_id)
 
     def aruco_callback(self, aruco_pose_ros, aruco_point_ros):
         self.aruco_pose = aruco_pose_ros.pose
@@ -209,14 +211,44 @@ class RealsensePipeline:
             self.labelled_img_pub.publish(img_msg)
         
         self.detections_pub.publish(ros_detections)
+
         for marker in markers.markers:
             marker.header.stamp = timestamp
+            marker.header.frame_id = self.config.realsense.parent_frame
+            marker.ns = self.config.realsense.topic
+            marker.lifetime = rospy.Duration(1)
+            # Hack to change coordinates. Z should point away from the camera
+            x = marker.pose.position.x
+            y = marker.pose.position.y
+            z = marker.pose.position.z
+
+            marker.pose.position.x = -y
+            marker.pose.position.y = -z
+            marker.pose.position.z = x
+            # Modifying the quaternion
+            x = marker.pose.orientation.x
+            y = marker.pose.orientation.y
+            z = marker.pose.orientation.z
+            w = marker.pose.orientation.w
+            
+            q_diff = tf.transformations.quaternion_from_euler(1.5708, 0 ,0)
+            q_old = [x,y,z,w]
+            q_new = tf.transformations.quaternion_multiply(q_diff, q_old)
+            # Rotate quaternion by 90 degs
+            
+            marker.pose.orientation.w = q_new[0]
+            marker.pose.orientation.x = q_new[1]
+            marker.pose.orientation.y = q_new[2]
+            marker.pose.orientation.z = q_new[3]
+
+
         self.markers_pub.publish(markers)
         poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
-
-        self.publish_transforms(detections, timestamp)
-        
+        try:
+            self.publish_transforms(detections, timestamp)
+        except AttributeError as e:
+            rospy.loginfo("Attribute error in pipeline_realsense: {}".format(e))
         if cluster_img is not None:
             cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
             cluster_img_msg.header.stamp = timestamp
@@ -249,6 +281,9 @@ class RealsensePipeline:
             translation = copy.deepcopy(detection.tf.translation)
             translation.x = X; translation.y = Y; translation.z = Z
             rotation = obb_px_to_quat(detection.obb_px)
+            #rotation = detection.tf.rotation
+            #rotation = [rotation.x, rotation.y, rotation.z, rotation.w]
+
             #print(str(Label(detection.label).name))
             #print(str(detection.id))
             #print(self.config.realsense.parent_frame)
