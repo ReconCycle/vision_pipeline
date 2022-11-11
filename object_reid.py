@@ -53,7 +53,7 @@ class ObjectReId:
         self.template_imgs = []
         self.counter = 0
         
-        self.OVERALL_SCORE_THRESHOLD = 0.15
+        self.OVERALL_SCORE_THRESHOLD = 0.10
         self.IOU_SCORE_THRESHOLD = 0.75
         self.SIFT_THRESHOLD = 0.20
         
@@ -254,11 +254,12 @@ class ObjectReId:
                     ious = [tp_match[2] for tp_match in score.tp_matches]
                     score.iou_score = np.sum(ious) / (len(ious) + len(score.tp_missing) * 0.5 + len(score.unknown_missing) * 0.5)
                     
+                    # todo: design better overall score
                     score.overall_score = score.iou_score * score.sift_score
                     
                     scores_list.append(score)
                 
-            # ! compute overall score
+            
             iou_scores = np.array([score.iou_score for score in scores_list])
             sift_scores = np.array([score.sift_score for score in scores_list])
             overall_scores = np.array([score.overall_score for score in scores_list])
@@ -359,15 +360,15 @@ class ObjectReId:
         cv2.putText(img_info, "Unknown Objects:", [10, row_spacing], font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
         for idx, unknown_template in enumerate(unknown_templates):
             if best_iou_scores[idx] is not None:
-                id_text = "iou, id: " + str(best_iou_scores[idx].object_template.id) + " with prob: " + str(round(best_iou_scores[idx].iou_score, 2))
+                id_text = "iou, id: " + str(best_iou_scores[idx].object_template.id) + ", p=" + str(round(best_iou_scores[idx].iou_score, 2))
                 cv2.putText(img_info, id_text, [10 + idx*column_spacing, row_spacing + 30], font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
                 
             if best_sift_scores[idx] is not None:
-                id_text = "sift, id: " + str(best_sift_scores[idx].object_template.id) + " with prob: " + str(round(best_sift_scores[idx].sift_score, 3))
+                id_text = "sift, id: " + str(best_sift_scores[idx].object_template.id) + ", p=" + str(round(best_sift_scores[idx].sift_score, 3))
                 cv2.putText(img_info, id_text, [10 + idx*column_spacing, row_spacing + 50], font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
                 
             if best_overall_scores[idx] is not None:
-                id_text = "overall, id: " + str(best_overall_scores[idx].object_template.id) + " with prob: " + str(round(best_sift_scores[idx].sift_score, 3))
+                id_text = "overall, id: " + str(best_overall_scores[idx].object_template.id) + ", p=" + str(round(best_sift_scores[idx].overall_score, 3))
                 cv2.putText(img_info, id_text, [10 + idx*column_spacing, row_spacing + 70], font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
             
             id_pair = next((new_id_pair for new_id_pair in new_id_pairs if new_id_pair[1] == idx), None)
@@ -612,11 +613,42 @@ class ObjectReId:
             return []
     
     @staticmethod
-    def calculate_sift_score(num_matches, num_keypoint1, num_keypoint2):
-        if num_matches > 0 and num_keypoint1 > 0 and num_keypoint2 > 0:
-            return num_matches/min(num_keypoint1, num_keypoint2)
-        else:
-            return 0
+    def calculate_sift_error(keypoints1, keypoints2, matches):
+        # get matching points
+        pts1_matches = np.array([keypoints1[match[0].queryIdx].pt for match in matches])
+        pts2_matches = np.array([keypoints2[match[0].trainIdx].pt for match in matches])
+        
+        # todo: compute keypoint locations in world coordinates. Then our error will also be in meters.
+        
+        #! BUG: sometimes there are 4 matches, but in the visualiser, there are only 3. What is going on?
+        
+        # compute affine transform
+        # https://en.wikipedia.org/wiki/Affine_transformation
+        # we want to find A and b to solve: y = Ax + b
+        pad = lambda x: np.hstack([x, np.ones((x.shape[0], 1))])
+        unpad = lambda x: x[:, :-1]
+        # Solve the least squares problem X * A = Y
+        # to find our transformation matrix A
+        X = pad(pts1_matches)
+        # print("X.shape", X.shape)
+        Y = pad(pts2_matches)
+        # print("Y.shape", X.shape)
+        A, res, rank, s = np.linalg.lstsq(X, Y, rcond=None)
+        affine_transform = lambda x: unpad(np.dot(pad(x), A))
+        
+        # print("affine_transform(pts1_matches).shape", affine_transform(pts1_matches).shape)
+        
+        # find mean error
+        abs_diff = np.abs(pts2_matches - affine_transform(pts1_matches))
+        mean_error = np.mean(abs_diff)
+        max_error = np.max(abs_diff)
+        median_error = np.median(abs_diff)
+        
+        # print("mean_error", mean_error)
+        # print("median_error", median_error)
+        # print("max_error", max_error)
+        
+        return mean_error, median_error, max_error
     
     @staticmethod
     def get_sift_plot(image1, image2, keypoints1, keypoints2, matches):
@@ -630,60 +662,53 @@ class ObjectReId:
             [255,255,255],
             flags=2
         )
-        # get matching points
-        pts1_matches = np.array([keypoints1[match[0].queryIdx].pt for match in matches])
-        pts2_matches = np.array([keypoints2[match[0].trainIdx].pt for match in matches])
-        
-        # todo: ignore matching points outside bounding box
-        
-        # print("pts1_matches.shape", pts1_matches.shape)
-        # print("keypoint2_matches.shape", pts2_matches.shape)
-        
-        # compute affine transform
-        A, res, rank, s = np.linalg.lstsq(pts1_matches, pts2_matches, rcond=None)
-        affine_transform = lambda x: np.dot(x, A)
-        
-        print("affine_transform(pts2_matches).shape", affine_transform(pts2_matches).shape)
-        
-        # find mean error
-        abs_diff = np.abs(pts1_matches - affine_transform(pts2_matches))
-        mean_error = np.mean(abs_diff)
-        max_error = np.max(abs_diff)
-        median_error = np.median(abs_diff)
-        
-        print("mean_error", mean_error)
-        print("median_error", median_error)
-        print("max_error", max_error)
-        
-        return matchPlot, mean_error, median_error, max_error
+        return matchPlot
     
     def calculate_sift_results(self, uk_img, unknown_template, tp_img, object_template, rotated, visualise=False):
-        keypoint1 = unknown_template.sift_keypoints
-        descriptor1 = unknown_template.sift_descriptors
-        keypoint2 = object_template.sift_keypoints
-        descriptor2 = object_template.sift_descriptors
+        keypoints1 = unknown_template.sift_keypoints
+        descriptors1 = unknown_template.sift_descriptors
+        keypoints2 = object_template.sift_keypoints
+        descriptors2 = object_template.sift_descriptors
         
-        if descriptor1 is None:
+        if descriptors1 is None:
             print("descriptor 1 is none!")
+            return 0.0
     
-        if descriptor2 is None:
+        if descriptors2 is None:
             print("descriptor 2 is none!")
+            return 0.0
         
-        matches = self.calculate_sift_matches(descriptor1, descriptor2)
-        score = self.calculate_sift_score(len(matches),len(keypoint1),len(keypoint2))
+        matches = self.calculate_sift_matches(descriptors1, descriptors2)
+        
+        # 3 matches will always score perfectly because of affine transform
+        # let's say we want at least 5 matches to work
+        if len(matches) <= 5:
+            print("not enough matches for SIFT")
+            # todo: return something else than 0.0, more like undefined.
+            return 0.0
+        
+        mean_error, median_error, max_error = self.calculate_sift_error(keypoints1, keypoints2, matches)
+        
+        # a median error of less than 0.5 is good
+        strength = 1.0 # increase strength for harsher score function
+        score = 1/(strength*median_error + 1)
+        
+        # penalty for few matches
+        if len(matches) < 10:
+            score = np.clip(score - 0.1, 0, 1)
         
         if len(matches) > 0 and visualise:
-            plot, mean_error, median_error, max_error = self.get_sift_plot(uk_img, tp_img, keypoint1, keypoint2, matches)
+            plot = self.get_sift_plot(uk_img, tp_img, keypoints1, keypoints2, matches)
             
             cv2.putText(plot, "unknown: " + str(unknown_template.id), [10, 20], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             
             cv2.putText(plot, "template: " + str(object_template.id), [400 + 10, 20], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             
             cv2.putText(plot, "sift score: " + str(round(score, 3)), [10, 40], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
-            cv2.putText(plot, "num. matches: " + str(len(matches)), [10, 60], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
-            cv2.putText(plot, "num. keypoints 1: " + str(len(keypoint1)), [10, 80], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
-            cv2.putText(plot, "num. keypoints 2: " + str(len(keypoint2)), [10, 100], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
+            cv2.putText(plot, "num. keypoints 1: " + str(len(keypoints1)), [10, 80], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
+            cv2.putText(plot, "num. keypoints 2: " + str(len(keypoints2)), [10, 100], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             
+            cv2.putText(plot, "num. matches: " + str(len(matches)), [10, 60], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             cv2.putText(plot, "mean_error: " + str(np.round(mean_error, 2)), [10, 120], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             cv2.putText(plot, "median_error: " + str(np.round(median_error, 2)), [10, 140], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             cv2.putText(plot, "max_error: " + str(np.round(max_error, 2)), [10, 160], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
