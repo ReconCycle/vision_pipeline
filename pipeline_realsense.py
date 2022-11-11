@@ -32,19 +32,22 @@ from obb import obb_px_to_quat
 class RealsensePipeline:
     def __init__(self, yolact, dataset, object_reid, config):
         self.config = config
+        
+        # time stuff
+        self.target_fps = self.config.realsense.target_fps
+        self.max_allowed_delay_in_seconds = self.config.realsense.max_allowed_delay_in_seconds
+        self.min_run_pipeline_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
+        self.last_run_time = rospy.get_rostime().to_sec()
+        self.t_camera_service_called = -1 # time camera_service was last called
 
         self.realsense_topic = path(self.config.node_name, self.config.realsense.topic) # /vision/realsense
         
         self.tf_name_suffix = 'realsense' # We will make the detections' TF be called for example 'battery_0_realsense'
+        self.frame_id = "realsense_link"
 
         self.camera_height = self.config.realsense.camera_height
         self.camera_height_rosparamname = '/vision/realsense_height' # Get height from camera to table/surface
         init_p, D, K, self.P, w, h = self.parse_calib_yaml(self.config.realsense.calibration_file)
-
-        self.target_fps = 4
-        self.min_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
-        self.last_run_time = time.time()
-        self.max_allowed_delay_in_seconds = 0.4 # If cur_t - img_t is larger than this, ignore the detections.
 
         self.tf_broadcaster = tf.TransformBroadcaster()
 
@@ -57,6 +60,7 @@ class RealsensePipeline:
         self.depth_img = None
         self.camera_info = None
         self.img_id = 0
+        self.last_stale_id = 0 # Keep track of the ID for last stale img so we dont print several errors for same img
         
         # scale depth from mm to meters
         self.depth_rescaling_factor = 1/1000
@@ -64,8 +68,6 @@ class RealsensePipeline:
         # aruco data
         self.aruco_pose = None
         self.aruco_point = None
-        
-        self.t_now = None
         
         # processed image data
         self.processed_img_id = -1  # don't keep processing the same image
@@ -76,10 +78,6 @@ class RealsensePipeline:
         self.gaps = None
         self.markers = None
         self.poses = None
-        
-        self.frame_id = "realsense_link"
-
-        self.t_camera_service_called = -1 # time camera_service was last called
 
         print("creating camera subscribers...")
         self.create_camera_subscribers()
@@ -136,7 +134,6 @@ class RealsensePipeline:
         
         self.camera_info = camera_info
         self.img_id += 1
-        # print("realsense: received realsense image! id:", self.img_id)
 
     def aruco_callback(self, aruco_pose_ros, aruco_point_ros):
         self.aruco_pose = aruco_pose_ros.pose
@@ -189,13 +186,12 @@ class RealsensePipeline:
     def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask):
 
         cur_t = rospy.Time.now()
-        delay = (self.camera_acquisition_stamp.nsecs - cur_t.nsecs)*0.000000001 # Ah yes, the secs. I do the secs all the time.
+        delay = self.camera_acquisition_stamp.to_sec() - cur_t.to_sec()
 
         #rospy.loginfo("RS Delay: {}".format(delay))
         if np.abs(delay) > self.max_allowed_delay_in_seconds:
             rospy.loginfo("RS ignoring img, delay: {}".format(round(delay,2)))
             return 0
-
 
         # all messages are published with the same timestamp
         timestamp = cur_t
@@ -210,14 +206,44 @@ class RealsensePipeline:
             self.labelled_img_pub.publish(img_msg)
         
         self.detections_pub.publish(ros_detections)
+
         for marker in markers.markers:
             marker.header.stamp = timestamp
+            marker.header.frame_id = self.config.realsense.parent_frame
+            marker.ns = self.config.realsense.topic
+            marker.lifetime = rospy.Duration(1)
+            # Hack to change coordinates. Z should point away from the camera
+            x = marker.pose.position.x
+            y = marker.pose.position.y
+            z = marker.pose.position.z
+
+            marker.pose.position.x = -y
+            marker.pose.position.y = -z
+            marker.pose.position.z = x
+            # Modifying the quaternion
+            x = marker.pose.orientation.x
+            y = marker.pose.orientation.y
+            z = marker.pose.orientation.z
+            w = marker.pose.orientation.w
+            
+            q_diff = tf.transformations.quaternion_from_euler(1.5708, 0 ,0)
+            q_old = [x,y,z,w]
+            q_new = tf.transformations.quaternion_multiply(q_diff, q_old)
+            # Rotate quaternion by 90 degs
+            
+            marker.pose.orientation.w = q_new[0]
+            marker.pose.orientation.x = q_new[1]
+            marker.pose.orientation.y = q_new[2]
+            marker.pose.orientation.z = q_new[3]
+
+
         self.markers_pub.publish(markers)
         poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
-
-        self.publish_transforms(detections, timestamp)
-        
+        try:
+            self.publish_transforms(detections, timestamp)
+        except AttributeError as e:
+            rospy.loginfo("Attribute error in pipeline_realsense: {}".format(e))
         if cluster_img is not None:
             cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
             cluster_img_msg.header.stamp = timestamp
@@ -250,6 +276,9 @@ class RealsensePipeline:
             translation = copy.deepcopy(detection.tf.translation)
             translation.x = X; translation.y = Y; translation.z = Z
             rotation = obb_px_to_quat(detection.obb_px)
+            #rotation = detection.tf.rotation
+            #rotation = [rotation.x, rotation.y, rotation.z, rotation.w]
+
             #print(str(Label(detection.label).name))
             #print(str(detection.id))
             #print(self.config.realsense.parent_frame)
@@ -326,55 +355,74 @@ class RealsensePipeline:
             return None, None, None, None, None
 
     def run(self):
-        t = time.time()
-        if self.pipeline_enabled and ((t - self.last_run_time) > self.min_dt) :
+        if not self.pipeline_enabled:
+            #print("[green]realsense: aborted bc pipeline disabled[/green]")
+            return 0
+        
+        if self.colour_img is None:
+            #print("realsense: Waiting to receive image.")
+            return 0
+        
+        # check we haven't processed this frame already
+        if self.processed_img_id >= self.img_id:
+            return 0
+        
+        # pipeline is enabled and we have an image
+        t = rospy.get_rostime().to_sec()
+ 
+        # Check if the image is stale
+        cam_img_delay = t - self.camera_acquisition_stamp.to_sec()
+        if (cam_img_delay > self.max_allowed_delay_in_seconds):
+            # So we dont print several times for the same image
+            if self.img_id != self.last_stale_id:
+                print("Basler STALE img ID %d, not processing. Delay: %.2f"% (self.img_id, cam_img_delay))
+                self.last_stale_id = self.img_id
+            return 0
 
-            if self.colour_img is not None and self.processed_img_id < self.img_id:
-                self.last_run_time = t # reset timer
-                
-                self.check_rosparam_server() # Periodically check rosparam server for whether we wish to publish labeled, depth and cluster imgs
-                processing_img_id = self.img_id
-                processing_depth_img = np.copy(self.depth_img)
-                processing_colour_img = np.copy(self.colour_img)
-                print("\n[green]realsense: running pipeline on img: "+ str(processing_img_id) +"...[/green]")
-                
-                t_prev = self.t_now
-                self.t_now = t
-                fps = None
-                if t_prev is not None and self.t_now - t_prev > 0:
-                    fps = "fps_total: " + str(round(1 / (self.t_now - t_prev), 1)) + ", "
+        # Check that more than minimal time has elapsed since last running the pipeline
+        dt = np.abs(t - self.last_run_time)
+        if (dt < self.min_run_pipeline_dt):
+            #print("Basler not running due to minimal dt")
+            return 0
 
-                labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask \
-                    = self.process_img(fps=fps)
-                
-                # recheck if pipeline is enabled
-                if self.pipeline_enabled:
-                    self.publish(labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask)
-                    
-                    self.processed_img_id = processing_img_id
-                    self.processed_depth_img = processing_depth_img
-                    self.processed_colour_img = processing_colour_img
-                    self.labelled_img = labelled_img
-                    self.detections = detections
-                    self.markers = markers
-                    self.poses = poses
-                    self.gaps = gaps
-                    
-                    if self.img_id == sys.maxsize:
-                        self.img_id = 0
-                        self.processed_img_id = -1
+        t_prev = self.last_run_time
+        self.last_run_time = t
+        
+        # All the checks passes, run the pipeline
+        self.check_rosparam_server() # Periodically check rosparam server for whether we wish to publish labeled, depth and cluster imgs
+        processing_img_id = self.img_id
+        processing_depth_img = np.copy(self.depth_img)
+        processing_colour_img = np.copy(self.colour_img)
+        print("\n[green]realsense: running pipeline on img: "+ str(processing_img_id) +"...[/green]")
+        
+        fps = None
+        if t_prev is not None and self.last_run_time - t_prev > 0:
+            fps = "fps_total: " + str(round(1 / (self.last_run_time - t_prev), 1)) + ", "
 
-                    print("[green]realsense: published img: "+ str(processing_img_id) +", num. dets: " + str(len(detections)) + "[/green]")
-                else:
-                    print("[green]realsense: aborted publishing on img: " + str(processing_img_id) + " bc pipeline disabled[/green]")
+        labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask \
+            = self.process_img(fps=fps)
+        
+        # recheck if pipeline is enabled
+        if self.pipeline_enabled:
+            self.publish(labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask)
+            
+            self.processed_img_id = processing_img_id
+            self.processed_depth_img = processing_depth_img
+            self.processed_colour_img = processing_colour_img
+            self.labelled_img = labelled_img
+            self.detections = detections
+            self.markers = markers
+            self.poses = poses
+            self.gaps = gaps
+            
+            if self.img_id == sys.maxsize:
+                self.img_id = 0
+                self.processed_img_id = -1
+
+            print("[green]realsense: published img: "+ str(processing_img_id) +", num. dets: " + str(len(detections)) + "[/green]")
+        else:
+            print("[green]realsense: aborted publishing on img: " + str(processing_img_id) + " bc pipeline disabled[/green]")
                 
-            # else:
-                # print("realsense: Waiting to receive image.", self.processed_img_id, self.img_id)
-                # time.sleep(1) # debug
-                #! shouldn't need to do this but the realsense camera sometimes stops working
-                # if self.pipeline_enabled:
-                    # print("resending rosservice call /realsense/enable True")
-                    # self.enable_camera(True) # ! JSI, BUT THIS REALLY BREAKS THINGS FOR ME
 
 
     def process_img(self, fps=None):

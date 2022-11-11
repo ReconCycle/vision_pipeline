@@ -52,8 +52,9 @@ def get_corner_bolts(pts):
 
 
 class WorkSurfaceDetection:
-    def __init__(self, img, debug=False):
+    def __init__(self, img, border_width=30, debug=False):
         
+        self.border_width = border_width
         self.debug = debug
         
         self.img_width = None
@@ -61,6 +62,7 @@ class WorkSurfaceDetection:
         self.coord_transform = None
         self.coord_transform_inv = None
         self.circles = None
+        self.circles_ignoring = None
         self.points_px_dict = None
         self.points_m_dict = None
         
@@ -75,7 +77,7 @@ class WorkSurfaceDetection:
             
         if img is not None:
             self.run_detection(img)
-        else: 
+        else:
             print("No image found!")
 
 
@@ -111,7 +113,7 @@ class WorkSurfaceDetection:
             'bolt2': [0.6 - 0.035, 0.035],          # bottom-right
             'bolt3': [0.035, 0.035],                # bottom-left
             
-            # calibration mounts are 0.03m in from the edge      
+            # calibration mounts are 0.03m in from the edge
             'calibrationmount0': [0.3, 0.6 - 0.03], # top-center
             'calibrationmount1': [0.6 - 0.03, 0.3], # right-center
             'calibrationmount2': [0.3, 0.03],       # bottom-center
@@ -150,20 +152,22 @@ class WorkSurfaceDetection:
             
             # remove circles that are on the edge of the image, these can lead to incorrect results
             # in the case that worksurfaces are next to each other
+            circles_ignoring = []
             circles_inner_region = []
-            border_width = 30
             for (x, y, r) in circles:
-                if x < border_width \
-                    or x > self.img_width - border_width \
-                    or y < border_width \
-                    or y > self.img_height - border_width:
+                if x < self.border_width \
+                    or x > self.img_width - self.border_width \
+                    or y < self.border_width \
+                    or y > self.img_height - self.border_width:
                     
                     # circle is close to edge of image, so ignore
-                    pass
+                    # for visualisation only
+                    circles_ignoring.append([x, y, r])
                 else:
                     circles_inner_region.append([x, y, r])
             
             circles = np.array(circles_inner_region)
+            circles_ignoring = np.array(circles_ignoring)
 
             # find the corner bolts
             bolts = get_corner_bolts(circles)
@@ -194,7 +198,8 @@ class WorkSurfaceDetection:
             #     print("bolts", bolts)
             #     print("midpoints", midpoints)
                 
-        self.circles = circles
+            self.circles = circles
+            self.circles_ignoring = circles_ignoring
             
     def improve_corner_estimate_using_corner_detection(self, img):
         
@@ -282,7 +287,7 @@ class WorkSurfaceDetection:
                     
                     cv2.imshow(key, scale_img(img_masked))
 
-    def compute_affine_transform(self): 
+    def compute_affine_transform(self):
 
         # create arrays for affine transform
         points_px_arr = []
@@ -336,18 +341,28 @@ class WorkSurfaceDetection:
                     or corner_in_meters[1] > self.img_height or corner_in_meters[1] < 0:
                     print("[red]Corner estimate is out of bounds! " + str(corner_in_meters[0]) + ", " + str(corner_in_meters[1]) + "[/red]")
         
-        if self.debug:     
+        if self.debug:
             print("self.points_px_dict", self.points_px_dict)
         
     def draw_corners_and_circles(self, img):
         # draw stuff on image
-        if self.circles is not None and self.debug:
+        if self.circles is not None:
             # draw all detections in green
             for (x, y, r) in self.circles:
                 # Draw the circle in the output image
-                cv2.circle(img, (int(x), int(y)), int(r), (0,255,0), 3)
+                cv2.circle(img, (int(x), int(y)), int(r), (255,0,0), 3)
                 # Draw a cross in the output image
-                cv2.drawMarker(img, (int(x), int(y)), color=[0,255,0],
+                cv2.drawMarker(img, (int(x), int(y)), color=[255,0,0],
+                    markerType=cv2.MARKER_CROSS,
+                    markerSize=20,
+                    thickness=2,
+                    line_type=8)
+                
+            for (x, y, r) in self.circles_ignoring:
+                # Draw the circle in the output image
+                cv2.circle(img, (int(x), int(y)), int(r), (0,0,255), 3)
+                # Draw a cross in the output image
+                cv2.drawMarker(img, (int(x), int(y)), color=[0,0,255],
                     markerType=cv2.MARKER_CROSS,
                     markerSize=20,
                     thickness=2,
@@ -362,18 +377,19 @@ class WorkSurfaceDetection:
                         x, y = self.points_px_dict[key]
                         r = None
                     if r is not None:
-                        cv2.circle(img, (int(x), int(y)), int(r), (0,0,255), 3)
+                        cv2.circle(img, (int(x), int(y)), int(r), (0,255,0), 3)
                     # Draw a cross in the output image
-                    cv2.drawMarker(img, (int(x), int(y)), color=[0,0,255],
+                    cv2.drawMarker(img, (int(x), int(y)), color=[0,255,0],
                         markerType=cv2.MARKER_CROSS,
                         markerSize=20,
                         thickness=2,
                         line_type=8)
                     
-                    cv2.putText(img, key, (int(x)-100, int(y)), self.font_face, self.font_scale, [0,0,255], self.font_thickness, cv2.LINE_AA)
+                    cv2.putText(img, key, (int(x)-100, int(y)), self.font_face, self.font_scale, [0,255,0], self.font_thickness, cv2.LINE_AA)
 
             # cv2.imshow("0", scale_img(blur))
             # cv2.imwrite('./example_work_sufrace_detection_opencv.jpg', img)
+        if self.debug:
             cv2.imshow("1", scale_img(img))
             cv2.waitKey(0)
 
@@ -392,7 +408,7 @@ class WorkSurfaceDetection:
             # todo: add depth option
             return self.coord_transform(np.array([coords]))[0]
         else:
-            # assume array of coordinate pairs. 
+            # assume array of coordinate pairs.
             # Each row contains a coordinate (x, y) pair
             # todo: add depth option
             return self.coord_transform(coords)
@@ -407,7 +423,7 @@ class WorkSurfaceDetection:
             # single coordinate pair.
             return self.coord_transform_inv(np.array([coords]))[0]
         else:
-            # assume array of coordinate pairs. 
+            # assume array of coordinate pairs.
             # Each row contains a coordinate (x, y) pair
             return self.coord_transform_inv(coords)
         

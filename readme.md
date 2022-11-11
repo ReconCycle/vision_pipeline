@@ -10,7 +10,7 @@ Project to track heat cost allocators and the individual parts of the heat cost 
 1. `git clone git@github.com:ReconCycle/vision-pipeline.git`
 2. `git submodule update --init --recursive`
 3. Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision-pipeline/data_limited` folder.
-4. `cp config.example.yaml config.yaml` 
+4. `cp config.example.yaml config.yaml`
 
 Additionally:
 
@@ -24,28 +24,20 @@ Look at the documentation in [ros-basler](https://github.com/ReconCycle/ros-basl
 
 ## Usage
 
+Set the parameters you want in `config.yaml`.
+
 Run example:
 ```
-python ros_pipeline.py --continuous=basler,realsense
-```
-The basler and realsense cameras will now publish continuously.
-
-All the possible arguments are:
-```
-  --continuous [CONTINUOUS]
-                        Which camera(s) to run continuously: basler/realsense
-  --node_name [NODE_NAME]
-                        The name of the node
-  --basler_image [BASLER_IMAGE]
-                        /basler/<image topic>
-  --wait_for_services [WAIT_FOR_SERVICES]
-                        wait for camera services
-  --rate [RATE]         hz rate to determine sleeping
+python ros_pipeline.py
 ```
 
-Without the continuous flag, we can enable/disable the cameras by calling the ros service:
+To enable the pipeline for realsense or basler use:
 ```
 rosservice call /vision/realsense/enable True
+```
+or
+```
+rosservice call /vision/basler/enable True
 ```
 
 **Publishes**:
@@ -87,6 +79,11 @@ To get a Realsense detection, run:
 rosservice call /vision/vision_get_detection 1 True
 ```
 where True provides the gaps as well.
+
+** Camera Services:**
+
+- `rosservice call /basler/set_sleeping` True/False
+- `rosservice call /realsense/enable` True/False
 
 
 # Dataset Creation and Training
@@ -175,7 +172,7 @@ For training on less data, reduce the save_interval. On few real images use `--s
 
 6. After training on synthetic data, train using the synthetic weights, but on real data.
 
-Make sure that the class labels of the real data match those of the synthetic data. Use Cocoviewer to get the order of the class labels for the real data. 
+Make sure that the class labels of the real data match those of the synthetic data. Use Cocoviewer to get the order of the class labels for the real data.
 Example:
 ```
 NDDS_COCO_CLASSES = ('background', 'back', 'battery', 'front', 'internals', 'pcb', 'side2', 'side1')
@@ -184,7 +181,7 @@ NDDS_COCO_CLASSES = ('background', 'back', 'battery', 'front', 'internals', 'pcb
 NDDS_COCO_LABEL_MAP = {1:  1,  2:  2,  3:  3,  4:  4,  5:  5,  6:  6,  7:  7,  8:  8,}
 
 # From looking at COCOViewer, we get the following order of the real class labels (with the corresponding label IDs on the next line):
-# REAL_CLASSES = ('background', 'front', 'back', 'side1', 'side2', 'battery', 'pcb', 'internals') 
+# REAL_CLASSES = ('background', 'front', 'back', 'side1', 'side2', 'battery', 'pcb', 'internals')
 #                0             1        2       3        4        5          6      7
 # Actually what we want is for the class labels to be in the same order as in NDDS_COCO_CLASSES. To do this we create the REAL_LABEL_MAP as follows:
 REAL_LABEL_MAP = {0: 1, 1: 4, 2: 2, 3: 8, 4: 7, 5: 3, 6: 6, 7: 5}
