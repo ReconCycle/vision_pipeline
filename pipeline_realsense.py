@@ -250,11 +250,11 @@ class RealsensePipeline:
             if self.publish_cluster_img:
                 self.clustered_img_pub.publish(cluster_img_msg)
         if device_mask is not None:
-            device_mask_msg = self.br.cv2_to_imgmsg(device_mask, encoding="bgr8")
+            device_mask_msg = self.br.cv2_to_imgmsg(device_mask, encoding="8UC1")
             device_mask_msg.header.stamp = timestamp
             self.mask_img_pub.publish(device_mask_msg)
         if depth_scaled is not None:
-            depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled, encoding="bgr8")
+            depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled)
             depth_scaled_msg.header.stamp = timestamp
             if self.publish_depth_img:
                 self.depth_img_pub.publish(depth_scaled_msg)
