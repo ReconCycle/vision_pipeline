@@ -23,7 +23,7 @@ from context_action_framework.msg import CutBlock, LeverBlock, MoveBlock, PushBl
     CutDetails, LeverDetails, MoveDetails, PushDetails, TurnOverDetails, ViceDetails, VisionDetails
 
 
-class ROSTest():
+class ROSGetServiceTest():
     def __init__(self) -> None:
 
         print("starting ROS Test for Vision Pipeline")
@@ -63,4 +63,4 @@ class ROSTest():
         #     self.rate.sleep()
 
 if __name__ == '__main__':
-    ros_test = ROSTest()
+    ros_test = ROSGetServiceTest()
