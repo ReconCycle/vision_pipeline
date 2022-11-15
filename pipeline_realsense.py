@@ -199,7 +199,7 @@ class RealsensePipeline:
         header.stamp = timestamp
         ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
         
-        img_msg = self.br.cv2_to_imgmsg(img)
+        img_msg = self.br.cv2_to_imgmsg(img, encoding="bgr8")
         img_msg.header.stamp = timestamp
         if self.publish_labeled_img:
             print("publishing img_msg")
@@ -245,16 +245,16 @@ class RealsensePipeline:
         except AttributeError as e:
             rospy.loginfo("Attribute error in pipeline_realsense: {}".format(e))
         if cluster_img is not None:
-            cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
+            cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img, encoding="bgr8")
             cluster_img_msg.header.stamp = timestamp
             if self.publish_cluster_img:
                 self.clustered_img_pub.publish(cluster_img_msg)
         if device_mask is not None:
-            device_mask_msg = self.br.cv2_to_imgmsg(device_mask)
+            device_mask_msg = self.br.cv2_to_imgmsg(device_mask, encoding="bgr8")
             device_mask_msg.header.stamp = timestamp
             self.mask_img_pub.publish(device_mask_msg)
         if depth_scaled is not None:
-            depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled)
+            depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled, encoding="bgr8")
             depth_scaled_msg.header.stamp = timestamp
             if self.publish_depth_img:
                 self.depth_img_pub.publish(depth_scaled_msg)
