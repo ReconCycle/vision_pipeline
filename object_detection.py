@@ -183,7 +183,7 @@ class ObjectDetection:
         # todo: track groups
         
         # object re-id
-        self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=False)
+        self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
         
         # drawing stuff
         for detection in detections:
