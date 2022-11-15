@@ -139,7 +139,7 @@ class BaslerPipeline:
         header.stamp = timestamp
         ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
         
-        img_msg = self.br.cv2_to_imgmsg(img)
+        img_msg = self.br.cv2_to_imgmsg(img, encoding="bgr8")
         img_msg.header.stamp = timestamp
         if self.publish_labeled_img:
             self.labelled_img_pub.publish(img_msg)
