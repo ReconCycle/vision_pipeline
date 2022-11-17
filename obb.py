@@ -15,15 +15,16 @@ import time
 import tf
 
 def obb_px_to_quat(px):
-    p1 = px[0]
-    p2 = px[1]
-    p3 = px[2]
-    p4 = px[3]
-
-    #p1 = np.array([px[0],px[1]])
-    #p2 = np.array([px[2],px[3]])
-    #p3 = np.array([px[4],px[5]])
-    #p4 = np.array([px[6],px[7]])
+    if len(px) == 4:
+        p1 = px[0]
+        p2 = px[1]
+        p3 = px[2]
+        p4 = px[3]
+    else:
+        p1 = np.array([px[0],px[1]])
+        p2 = np.array([px[2],px[3]])
+        p3 = np.array([px[4],px[5]])
+        p4 = np.array([px[6],px[7]])
     
     d_edge_1 = np.linalg.norm(p2 - p1)
     

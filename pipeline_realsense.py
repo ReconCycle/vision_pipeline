@@ -14,18 +14,20 @@ from helpers import path, rotate_img
 from gap_detection.gap_detector_clustering import GapDetectorClustering
 from object_detection import ObjectDetection
 
-from geometry_msgs.msg import PoseStamped, PointStamped, PoseArray
+from geometry_msgs.msg import PoseStamped, PointStamped, PoseArray, Transform
+from visualization_msgs.msg import Marker, MarkerArray
 from sensor_msgs.msg import Image, CameraInfo
 from std_srvs.srv import SetBool
 from cv_bridge import CvBridge
 from std_msgs.msg import String
 from camera_control_msgs.srv import SetSleeping
 import message_filters
-from visualization_msgs.msg import MarkerArray
 
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.msg import Gaps as ROSGaps
 from context_action_framework.types import detections_to_ros, gaps_to_ros, Label
+
+from yolact_pkg.data.config import COLORS # For drawing the markers
 
 from obb import obb_px_to_quat
 
@@ -43,7 +45,7 @@ class RealsensePipeline:
         self.realsense_topic = path(self.config.node_name, self.config.realsense.topic) # /vision/realsense
         
         self.tf_name_suffix = 'realsense' # We will make the detections' TF be called for example 'battery_0_realsense'
-        self.frame_id = "realsense_link"
+        self.frame_id = self.config.realsense.parent_frame
 
         self.camera_height = self.config.realsense.camera_height
         self.camera_height_rosparamname = '/vision/realsense_height' # Get height from camera to table/surface
@@ -51,8 +53,8 @@ class RealsensePipeline:
 
         self.tf_broadcaster = tf.TransformBroadcaster()
 
-        # don't automatically start
-        self.pipeline_enabled = False
+        # don't automatically start, sometimes.
+        self.pipeline_enabled = True
 
         # latest realsense data
         self.camera_acquisition_stamp = None
@@ -87,7 +89,6 @@ class RealsensePipeline:
         self.create_service_client()
         print("creating realsense pipeline...")
         self.init_realsense_pipeline(yolact, dataset)
-
         print("waiting for pipeline to be enabled...")
         
         # Checking the rosparam server for whether to publish labeled imgs etc.
@@ -109,6 +110,8 @@ class RealsensePipeline:
             rospy.set_param(self.publish_labeled_rosparamname, self.publish_labeled_img)
             rospy.set_param(self.publish_depth_rosparamname, self.publish_depth_img)
             rospy.set_param(self.publish_cluster_rosparamname, self.publish_cluster_img)
+            
+        self.dummy_transform = Transform() # Make an object so we dont make it every time
 
     def check_rosparam_server(self):
         """ Check the rosparam server for whether we want to publish labeled imgs, IF enough time has elapsed between now and last check. """
@@ -123,7 +126,7 @@ class RealsensePipeline:
     def init_realsense_pipeline(self, yolact, dataset):
         self.object_detection = ObjectDetection(yolact, dataset, self.frame_id)
         self.gap_detector = GapDetectorClustering()
-    
+
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):
         self.camera_acquisition_stamp = img_msg.header.stamp
         colour_img = CvBridge().imgmsg_to_cv2(img_msg)
@@ -183,30 +186,106 @@ class RealsensePipeline:
         self.depth_img_pub = rospy.Publisher(path(self.realsense_topic, "depth"), Image, queue_size=1)
         self.lever_pose_pub = rospy.Publisher(path(self.realsense_topic, "lever"), PoseStamped, queue_size=1)
 
-    def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask):
+    def modify_detections(self, detections):
+        """ Set detection translation based on known height of realsense"""
+        new_detections = copy.deepcopy(detections)
+        #rospy.loginfo("{}".format(new_detections[0]))
+        for i in range(0,len(detections)):
+            detection = detections[i]
+            X,Y,Z = self.uv_to_XY(u = detection.center_px[0], v = detection.center_px[1], Z = None, get_z_from_rosparam = True)
+            rotation_numpy = obb_px_to_quat(detection.obb_px)
+            rotation = rotation_numpy.tolist()
+            
+            new_detections[i].tf = copy.deepcopy(self.dummy_transform)
+            new_detections[i].tf.translation.x = X
+            new_detections[i].tf.translation.y = Y
+            new_detections[i].tf.translation.z = Z
+            
+            new_detections[i].tf.rotation.x = rotation[0]
+            new_detections[i].tf.rotation.y = rotation[1]
+            new_detections[i].tf.rotation.z = rotation[2]
+            new_detections[i].tf.rotation.w = rotation[3]
+            
+            X1, Y1, n = self.uv_to_XY(u = detection.obb_px[0][0], v = detection.obb_px[0][1], Z = None, get_z_from_rosparam = True)
+            X2, Y2, n = self.uv_to_XY(u = detection.obb_px[1][0], v = detection.obb_px[1][1], Z = None, get_z_from_rosparam = True)
+            X3, Y3, n = self.uv_to_XY(u = detection.obb_px[2][0], v = detection.obb_px[2][1], Z = None, get_z_from_rosparam = True)
+            new_detections[i].obb = np.array([X1,Y1, X2, Y2, X3, Y3])
+            
 
-        cur_t = rospy.Time.now()
-        delay = self.camera_acquisition_stamp.to_sec() - cur_t.to_sec()
 
-        #rospy.loginfo("RS Delay: {}".format(delay))
-        if np.abs(delay) > self.max_allowed_delay_in_seconds:
-            rospy.loginfo("RS ignoring img, delay: {}".format(round(delay,2)))
-            return 0
-
-        # all messages are published with the same timestamp
-        timestamp = cur_t
-        header = rospy.Header()
-        header.stamp = timestamp
-        ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
+        #translation = c opy.deepcopy(detection.tf.translation)
+        ##translation.x = X; translation.y = Y; translation.z = Z
+        #tr = (translation.x, translation.y, translation.z)
+        #
+        #X,Y,Z = self.uv_to_XY(u = detection.center_px[0], v = detection.center_px[1], Z = None, get_z_from_rosparam = True)
+        #tr = (X,Y,Z)
         
-        img_msg = self.br.cv2_to_imgmsg(img, encoding="bgr8")
-        img_msg.header.stamp = timestamp
-        if self.publish_labeled_img:
-            print("publishing img_msg")
-            self.labelled_img_pub.publish(img_msg)
-        
-        self.detections_pub.publish(ros_detections)
 
+        #rotation = [rotation.x, rotation.y, rotation.z, rotation.w]
+
+        #print(str(Label(detection.label).name))
+        #print(str(detection.id))
+        #print(self.config.realsense.parent_frame)
+
+        return new_detections
+            
+
+    def detections_to_markers(self, detections, timestamp):
+        
+        markers = MarkerArray()
+        markers.markers = []
+        
+        object_depth = 0.025
+        
+        for detection in detections:
+            #rospy.loginfo("Detection: {}".format(detection))
+            marker = Marker()
+            marker.action = Marker.ADD
+            marker.header.frame_id = self.config.realsense.parent_frame
+            marker.header.stamp = timestamp
+            #marker.ns = 'detection_%d' % Marker.CUBE
+            marker.ns = self.config.realsense.topic
+            marker.id = detection.id
+            marker.type = Marker.CUBE
+            
+            marker.lifetime = rospy.Duration(1)
+            
+            marker.pose.position = detection.tf.translation
+            
+            marker.pose.orientation = detection.tf.rotation
+            
+            #marker.pose.position.x = detection.tf.translation.x
+            #marker.pose.position.y = detection.tf.translation.y
+            #marker.pose.position.z = detection.tf.translation.z
+            
+            #P1 = [detection.obb[0], detection.obb[1]]
+            #P2 = [detection.obb[3], detection.obb[4]]
+            #P3 = [detection.obb[6], detection.obb[7]]
+            o = detection.obb
+            #P1 = [detection.obb[0], detection.obb[1]]
+            #P2 = [detection.obb[2], detection.obb[3]]
+            #P3 = [detection.obb[4], detection.obb[5]]
+            
+            changing_height = np.linalg.norm((o[0]-o[2], o[1] - o[3]))
+            changing_width = np.linalg.norm((o[2] - o[4], o[3] - o[5]))
+                      
+            #height = changing_height
+            #width = changing_width
+            height = np.min((changing_height, changing_width))
+            width = np.max((changing_height, changing_width))    
+            marker.scale.x = width
+            marker.scale.y = height
+            marker.scale.z = object_depth
+            
+            color = COLORS[(detection.label.value * 5) % len(COLORS)]
+            
+            marker.color.r = color[0] / 255
+            marker.color.g = color[1] / 255
+            marker.color.b = color[2] / 255
+            marker.color.a = 0.75
+
+            markers.markers.append(marker)
+        """
         for marker in markers.markers:
             marker.header.stamp = timestamp
             marker.header.frame_id = self.config.realsense.parent_frame
@@ -235,9 +314,46 @@ class RealsensePipeline:
             marker.pose.orientation.x = q_new[1]
             marker.pose.orientation.y = q_new[2]
             marker.pose.orientation.z = q_new[3]
+        """
+        
+        
+        return markers
 
 
-        self.markers_pub.publish(markers)
+
+    def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask):
+
+        cur_t = rospy.Time.now()
+        delay = self.camera_acquisition_stamp.to_sec() - cur_t.to_sec()
+
+        #rospy.loginfo("RS Delay: {}".format(delay))
+        if np.abs(delay) > self.max_allowed_delay_in_seconds:
+            rospy.loginfo("RS ignoring img, delay: {}".format(round(delay,2)))
+            return 0
+
+        # all messages are published with the same timestamp
+        timestamp = cur_t
+        header = rospy.Header()
+        header.stamp = timestamp
+
+        detections = self.modify_detections(detections)
+
+        ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
+        
+        img_msg = self.br.cv2_to_imgmsg(img)
+        img_msg.header.stamp = timestamp
+        if self.publish_labeled_img:
+            print("publishing img_msg")
+            self.labelled_img_pub.publish(img_msg)
+        
+        self.detections_pub.publish(ros_detections)
+        
+        try:
+            markers = self.detections_to_markers(detections = detections, timestamp = timestamp)
+            self.markers_pub.publish(markers)
+        except Exception as e:
+            rospy.loginfo("{}".format(e)) 
+        
         poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
         try:
@@ -245,12 +361,12 @@ class RealsensePipeline:
         except AttributeError as e:
             rospy.loginfo("Attribute error in pipeline_realsense: {}".format(e))
         if cluster_img is not None:
-            cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img, encoding="bgr8")
+            cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
             cluster_img_msg.header.stamp = timestamp
             if self.publish_cluster_img:
                 self.clustered_img_pub.publish(cluster_img_msg)
         if device_mask is not None:
-            device_mask_msg = self.br.cv2_to_imgmsg(device_mask, encoding="8UC1")
+            device_mask_msg = self.br.cv2_to_imgmsg(device_mask)
             device_mask_msg.header.stamp = timestamp
             self.mask_img_pub.publish(device_mask_msg)
         if depth_scaled is not None:
@@ -270,19 +386,12 @@ class RealsensePipeline:
             self.gaps_pub.publish(gaps_msg)
 
     def publish_transforms(self, detections, timestamp):
+
         for detection in detections:
-            X,Y,Z = self.uv_to_XY(u = detection.center_px[0], v = detection.center_px[1], Z = None, get_z_from_rosparam = True)
-
-            translation = copy.deepcopy(detection.tf.translation)
-            translation.x = X; translation.y = Y; translation.z = Z
-            rotation = obb_px_to_quat(detection.obb_px)
-            #rotation = detection.tf.rotation
-            #rotation = [rotation.x, rotation.y, rotation.z, rotation.w]
-
-            #print(str(Label(detection.label).name))
-            #print(str(detection.id))
-            #print(self.config.realsense.parent_frame)
+            translation = detection.tf.translation
             tr = (translation.x, translation.y, translation.z)
+
+            rotation = (detection.tf.rotation.x, detection.tf.rotation.y, detection.tf.rotation.z, detection.tf.rotation.w)
 
             child_frame = '%s_%s_%s'%(Label(detection.label).name, detection.id, self.tf_name_suffix)
             #rospy.loginfo("Child frame: {}".format(child_frame))
