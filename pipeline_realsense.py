@@ -337,7 +337,7 @@ class RealsensePipeline:
 
         ros_detections = ROSDetections(header, self.camera_acquisition_stamp, detections_to_ros(detections))
         
-        img_msg = self.br.cv2_to_imgmsg(img)
+        img_msg = self.br.cv2_to_imgmsg(img, encoding="bgr8")
         img_msg.header.stamp = timestamp
         if self.publish_labeled_img:
             #print("publishing img_msg")
@@ -358,7 +358,7 @@ class RealsensePipeline:
         except AttributeError as e:
             rospy.loginfo("Attribute error in pipeline_realsense: {}".format(e))
         if cluster_img is not None:
-            cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img)
+            cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img, encoding="bgr8")
             cluster_img_msg.header.stamp = timestamp
             if self.publish_cluster_img:
                 self.clustered_img_pub.publish(cluster_img_msg)
@@ -422,7 +422,8 @@ class RealsensePipeline:
         # only allow enabling/disabling camera every 2 seconds. To avoid camera breaking.
         rate_limit = 2
         t_now = time.time()
-        if t_now - self.t_camera_service_called > rate_limit:
+        if 1:
+        #if t_now - self.t_camera_service_called > rate_limit: # very bad, not good at all.
             self.t_camera_service_called = t_now
             try:
                 res = self.camera_service(state)
