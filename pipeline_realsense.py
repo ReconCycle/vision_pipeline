@@ -59,6 +59,7 @@ class RealsensePipeline:
         # latest realsense data
         self.camera_acquisition_stamp = None
         self.colour_img = None
+        self.img_msg = None
         self.depth_img = None
         self.camera_info = None
         self.img_id = 0
@@ -128,14 +129,10 @@ class RealsensePipeline:
         self.gap_detector = GapDetectorClustering()
 
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):
-        self.camera_acquisition_stamp = img_msg.header.stamp
-        colour_img = CvBridge().imgmsg_to_cv2(img_msg)
-        colour_img = np.array(cv2.cvtColor(colour_img, cv2.COLOR_BGR2RGB))
-        self.colour_img = rotate_img(colour_img, self.config.realsense.rotate_img)
-        depth_img = CvBridge().imgmsg_to_cv2(depth_msg) * self.depth_rescaling_factor
-        self.depth_img = rotate_img(depth_img, self.config.realsense.rotate_img)
-        
+        self.img_msg = img_msg
+        self.depth_msg = depth_msg
         self.camera_info = camera_info
+        self.camera_acquisition_stamp = self.img_msg.header.stamp
         self.img_id += 1
 
     def aruco_callback(self, aruco_pose_ros, aruco_point_ros):
@@ -343,7 +340,7 @@ class RealsensePipeline:
         img_msg = self.br.cv2_to_imgmsg(img)
         img_msg.header.stamp = timestamp
         if self.publish_labeled_img:
-            print("publishing img_msg")
+            #print("publishing img_msg")
             self.labelled_img_pub.publish(img_msg)
         
         self.detections_pub.publish(ros_detections)
@@ -468,12 +465,13 @@ class RealsensePipeline:
             #print("[green]realsense: aborted bc pipeline disabled[/green]")
             return 0
         
-        if self.colour_img is None:
+        if self.img_msg is None:
             #print("realsense: Waiting to receive image.")
             return 0
         
         # check we haven't processed this frame already
         if self.processed_img_id >= self.img_id:
+            #print("Realsense already got this image")
             return 0
         
         # pipeline is enabled and we have an image
@@ -483,26 +481,35 @@ class RealsensePipeline:
         cam_img_delay = t - self.camera_acquisition_stamp.to_sec()
         if (cam_img_delay > self.max_allowed_delay_in_seconds):
             # So we dont print several times for the same image
+            #print("RS stale img, %d"%self.img_id)
             if self.img_id != self.last_stale_id:
-                print("Basler STALE img ID %d, not processing. Delay: %.2f"% (self.img_id, cam_img_delay))
+                print("Realsense STALE img ID %d, not processing. Delay: %.2f"% (self.img_id, cam_img_delay))
                 self.last_stale_id = self.img_id
             return 0
 
         # Check that more than minimal time has elapsed since last running the pipeline
         dt = np.abs(t - self.last_run_time)
         if (dt < self.min_run_pipeline_dt):
-            #print("Basler not running due to minimal dt")
+            print("Realsense not running due to minimal dt")
             return 0
 
         t_prev = self.last_run_time
         self.last_run_time = t
         
         # All the checks passes, run the pipeline
+
+        # Process the image
+        colour_img = CvBridge().imgmsg_to_cv2(self.img_msg)
+        colour_img = np.array(cv2.cvtColor(colour_img, cv2.COLOR_BGR2RGB))
+        self.colour_img = rotate_img(colour_img, self.config.realsense.rotate_img)
+        depth_img = CvBridge().imgmsg_to_cv2(self.depth_msg) * self.depth_rescaling_factor
+        self.depth_img = rotate_img(depth_img, self.config.realsense.rotate_img)
+
         self.check_rosparam_server() # Periodically check rosparam server for whether we wish to publish labeled, depth and cluster imgs
         processing_img_id = self.img_id
         processing_depth_img = np.copy(self.depth_img)
         processing_colour_img = np.copy(self.colour_img)
-        print("\n[green]realsense: running pipeline on img: "+ str(processing_img_id) +"...[/green]")
+        #print("\n[green]realsense: running pipeline on img: "+ str(processing_img_id) +"...[/green]")
         
         fps = None
         if t_prev is not None and self.last_run_time - t_prev > 0:
