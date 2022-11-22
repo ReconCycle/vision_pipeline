@@ -205,6 +205,9 @@ class BaslerPipeline:
     async def get_stable_detection(self):
         # todo: logic to get stable detection
         
+        #! We should avoid getting a very old detection. It should not be STALE!
+        print("[red]basler: BUG!! We should avoid getting a very old detection. It should not be STALE![/red]")
+        
         # wait until we get at least one detection
         while self.detections is None:
             await asyncio.sleep(0.01)
@@ -238,7 +241,7 @@ class BaslerPipeline:
         if (cam_img_delay > self.max_allowed_delay_in_seconds):
             # So we dont print several times for the same image
             if self.img_id != self.last_stale_id:
-                print("Basler STALE img ID %d, not processing. Delay: %.2f"% (self.img_id, cam_img_delay))
+                print("[red]basler: STALE img ID %d, not processing. Delay: %.2f [/red]"% (self.img_id, cam_img_delay))
                 self.last_stale_id = self.img_id
             return 0
 

@@ -204,6 +204,8 @@ class ROSPipeline():
             
             print("realsense: disabling...")
             self.pipeline_realsense.enable(False)
+            
+            print("realsense: returning detection")
 
             if detections is not None:
                 header = rospy.Header()

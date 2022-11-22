@@ -193,7 +193,7 @@ class RealsensePipeline:
 
         #rospy.loginfo("RS Delay: {}".format(delay))
         if np.abs(delay) > self.max_allowed_delay_in_seconds:
-            rospy.loginfo("RS ignoring img, delay: {}".format(round(delay,2)))
+            rospy.loginfo("realsense: ignoring img, delay: {}".format(round(delay,2)))
             return 0
 
         # all messages are published with the same timestamp
@@ -205,7 +205,7 @@ class RealsensePipeline:
         img_msg = self.br.cv2_to_imgmsg(img, encoding="bgr8")
         img_msg.header.stamp = timestamp
         if self.publish_labeled_img:
-            print("publishing img_msg")
+            print("realsense: publishing img_msg")
             self.labelled_img_pub.publish(img_msg)
         
         self.detections_pub.publish(ros_detections)
@@ -246,7 +246,7 @@ class RealsensePipeline:
         try:
             self.publish_transforms(detections, timestamp)
         except AttributeError as e:
-            rospy.loginfo("Attribute error in pipeline_realsense: {}".format(e))
+            rospy.loginfo("realsense: ttribute error: {}".format(e))
         if cluster_img is not None:
             cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img, encoding="bgr8")
             cluster_img_msg.header.stamp = timestamp
@@ -344,6 +344,9 @@ class RealsensePipeline:
     async def get_stable_detection(self, gap_detection: bool=True):
         # todo: logic to get stable detection
         
+        #! We should avoid getting a very old detection. It should not be STALE!
+        print("[red]realsense: BUG!! We should avoid getting a very old detection. It should not be STALE![/red]")
+        
         #  wait until we get at least one detection
         if gap_detection:
             while self.gaps is None or self.detections is None:
@@ -383,7 +386,7 @@ class RealsensePipeline:
         if (cam_img_delay > self.max_allowed_delay_in_seconds):
             # So we dont print several times for the same image
             if self.img_id != self.last_stale_id:
-                print("Basler STALE img ID %d, not processing. Delay: %.2f"% (self.img_id, cam_img_delay))
+                print("[red]realsense: STALE img ID %d, not processing. Delay: %.2f[/red]"% (self.img_id, cam_img_delay))
                 self.last_stale_id = self.img_id
             return 0
 
