@@ -26,7 +26,7 @@ from geometry_msgs.msg import PoseArray, TransformStamped
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.types import detections_to_ros
-from context_action_framework.types import Label
+from context_action_framework.types import Label, Camera
 
 from obb import obb_px_to_quat
 
@@ -64,6 +64,7 @@ class BaslerPipeline:
         self.detections = None
         self.markers = None
         self.poses = None
+        self.graph_img = None
         
         self.create_static_tf(self.frame_id)
 
@@ -91,7 +92,7 @@ class BaslerPipeline:
         #rospy.loginfo("Pipeline_basler: x = 0.6 -x, hack for table rotation. FIX")
     
     def init_basler_pipeline(self, yolact, dataset, object_reid):
-        self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, self.frame_id)
+        self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, Camera.basler, self.frame_id)
         
         self.worksurface_detection = None
 
@@ -129,8 +130,9 @@ class BaslerPipeline:
         self.detections_pub = rospy.Publisher(path(self.basler_topic, "detections"), ROSDetections, queue_size=1)
         self.markers_pub = rospy.Publisher(path(self.basler_topic, "markers"), MarkerArray, queue_size=1)
         self.poses_pub = rospy.Publisher(path(self.basler_topic, "poses"), PoseArray, queue_size=1)
+        self.graph_img_pub = rospy.Publisher(path(self.basler_topic, "graph"), Image, queue_size=1)
         
-    def publish(self, img, detections, markers, poses):
+    def publish(self, img, detections, markers, poses, graph_img):
         
         cur_t = rospy.Time.now()
         
@@ -157,6 +159,11 @@ class BaslerPipeline:
         
         poses.header.stamp = timestamp
         self.poses_pub.publish(poses)
+        
+        if graph_img is not None and self.config.basler.publish_graph_img:
+            graph_img_msg = self.br.cv2_to_imgmsg(graph_img, encoding="8UC4")
+            graph_img_msg.header.stamp = timestamp
+            self.graph_img_pub.publish(graph_img_msg)
 
         # Publish the TFs
         self.publish_transforms(detections, timestamp)
@@ -259,9 +266,9 @@ class BaslerPipeline:
         if t_prev is not None and self.last_run_time - t_prev > 0:
             fps = "fps_total: " + str(round(1 / (self.last_run_time - t_prev), 1)) + ", "
 
-        labelled_img, detections, markers, poses = self.process_img(self.colour_img, fps)
+        labelled_img, detections, markers, poses, graph_img = self.process_img(self.colour_img, fps)
 
-        self.publish(labelled_img, detections, markers, poses)
+        self.publish(labelled_img, detections, markers, poses, graph_img)
         
         self.processed_img_id = processing_img_id
         self.processed_colour_img = processing_colour_img
@@ -269,6 +276,7 @@ class BaslerPipeline:
         self.detections = detections
         self.markers = markers
         self.poses = poses
+        self.graph_img = graph_img
 
         if self.img_id == sys.maxsize:
             self.img_id = 0
@@ -281,7 +289,7 @@ class BaslerPipeline:
             print("basler: detecting work surface...")
             self.worksurface_detection = WorkSurfaceDetection(img, self.config.basler.work_surface_ignore_border_width)
         
-        labelled_img, detections, markers, poses = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
+        labelled_img, detections, markers, poses, graph_img = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
 
         # debug
         if self.config.basler.show_work_surface_detection:
@@ -291,7 +299,7 @@ class BaslerPipeline:
             self.aruco_detection = ArucoDetection()
             labelled_img = self.aruco_detection.run(labelled_img, worksurface_detection=self.worksurface_detection)
         
-        return labelled_img, detections, markers, poses
+        return labelled_img, detections, markers, poses, graph_img
 
     def create_static_tf(self, frame_id):
         pass

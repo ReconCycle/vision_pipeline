@@ -18,7 +18,7 @@ from graph_relations import GraphRelations, exists_detection, compute_iou
 import obb
 import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords
-from context_action_framework.types import Detection, Label
+from context_action_framework.types import Detection, Label, Camera
 
 from geometry_msgs.msg import Transform, Vector3, Quaternion, Pose, PoseArray, TransformStamped
 from visualization_msgs.msg import Marker, MarkerArray
@@ -28,11 +28,12 @@ import tf2_ros
 
 
 class ObjectDetection:
-    def __init__(self, config, yolact, dataset, object_reid, frame_id=""):
+    def __init__(self, config, yolact, dataset, object_reid, camera, frame_id=""):
         
         self.config = config
         self.yolact = yolact
         self.dataset = dataset
+        self.camera = camera
         self.frame_id = frame_id
         self.object_depth = 0.025 # in meters, the depth of the objects
         
@@ -187,6 +188,11 @@ class ObjectDetection:
             # object re-id
             self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
         
+        graph_img = None
+        if (self.camera == Camera.basler and self.config.basler.publish_graph_img) \
+            or (self.camera == Camera.realsense and self.config.realsense.publish_graph_img):
+            graph_img = graph_relations.draw_network_x()
+        
         # drawing stuff
         for detection in detections:
             # draw the cuboids
@@ -251,7 +257,7 @@ class ObjectDetection:
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
         self.fps_objdet = 1.0 / (time.time() - t_start)
         
-        return labelled_img, detections, markers, poses
+        return labelled_img, detections, markers, poses, graph_img
 
     def make_marker(self, tf, x, y, z, id, label):
         # make a visualization marker array for the occupancy grid

@@ -145,6 +145,10 @@ class GraphRelations:
     
     def draw_network_x(self):
         
+        plt.rcParams["figure.autolayout"] = True
+        fig = plt.figure(1, figsize=(12, 9)) # , tight_layout={"pad": 20 }
+        fig.clear(True)
+        
         node_colors = []
         for detection in self.detections:
             if detection.label == Label.battery:
@@ -152,19 +156,21 @@ class GraphRelations:
             else:
                 node_colors.append("pink")
         
-        pos = nx.spring_layout(self.G, k=2)
+        # pos = nx.spring_layout(self.G, k=2) # nice, but is different for every frame
+        # pos = nx.spectral_layout(self.G) # all nodes on top of each other for each connected component
+        pos = nx.planar_layout(self.G) # nice and stays mostly the same per frame
         
         # print("edge_labels_dict", edge_labels_dict)
         # print("node labels", {id: self.detections[id].label.name for id in G.nodes()})
         
         # add a margin
         ax1 = plt.subplot(111)
-        ax1.margins(0.12)
+        ax1.margins(0.05)
         
         nx.draw(
             self.G, pos, ax=ax1, edge_color='black', width=1, linewidths=1,
             node_size=500, node_color=node_colors,
-            labels={id: self.detections[id].label.name for id in G.nodes()},
+            labels={id: self.detections[id].label.name for id in self.G.nodes()},
             font_size=32
         )
 
@@ -172,10 +178,6 @@ class GraphRelations:
                                     label_pos=0.5,
                                     font_size=32
                                     )
-        
-        plt.rcParams["figure.autolayout"] = True
-        fig = plt.figure(1, figsize=(12, 9)) # , tight_layout={"pad": 20 }
-        fig.clear(True)
         
         io_buf = io.BytesIO()
         fig.savefig(io_buf, format='raw')

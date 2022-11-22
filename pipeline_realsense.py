@@ -25,7 +25,7 @@ from visualization_msgs.msg import MarkerArray
 
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.msg import Gaps as ROSGaps
-from context_action_framework.types import detections_to_ros, gaps_to_ros, Label
+from context_action_framework.types import detections_to_ros, gaps_to_ros, Label, Camera
 
 from obb import obb_px_to_quat
 
@@ -78,6 +78,7 @@ class RealsensePipeline:
         self.gaps = None
         self.markers = None
         self.poses = None
+        self.graph_img = None
 
         print("creating camera subscribers...")
         self.create_camera_subscribers()
@@ -121,7 +122,7 @@ class RealsensePipeline:
             self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
 
     def init_realsense_pipeline(self, yolact, dataset, object_reid):
-        self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, self.frame_id)
+        self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, Camera.realsense, self.frame_id)
         self.gap_detector = GapDetectorClustering()
     
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):
@@ -182,8 +183,10 @@ class RealsensePipeline:
         self.mask_img_pub = rospy.Publisher(path(self.realsense_topic, "mask"), Image, queue_size=1)
         self.depth_img_pub = rospy.Publisher(path(self.realsense_topic, "depth"), Image, queue_size=1)
         self.lever_pose_pub = rospy.Publisher(path(self.realsense_topic, "lever"), PoseStamped, queue_size=1)
+        
+        self.graph_img_pub = rospy.Publisher(path(self.realsense_topic, "graph"), Image, queue_size=1)
 
-    def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask):
+    def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask, graph_img):
 
         cur_t = rospy.Time.now()
         delay = self.camera_acquisition_stamp.to_sec() - cur_t.to_sec()
@@ -268,6 +271,11 @@ class RealsensePipeline:
             
             self.lever_pose_pub.publish(lever_pose_msg)
             self.gaps_pub.publish(gaps_msg)
+            
+        if graph_img is not None and self.config.realsense.publish_graph_img:
+            graph_img_msg = self.br.cv2_to_imgmsg(graph_img, encoding="bgr8")
+            graph_img_msg.header.stamp = timestamp
+            self.graph_img_pub.publish(graph_img_msg)
 
     def publish_transforms(self, detections, timestamp):
         for detection in detections:
@@ -399,12 +407,12 @@ class RealsensePipeline:
         if t_prev is not None and self.last_run_time - t_prev > 0:
             fps = "fps_total: " + str(round(1 / (self.last_run_time - t_prev), 1)) + ", "
 
-        labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask \
+        labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask, graph_img \
             = self.process_img(fps=fps)
         
         # recheck if pipeline is enabled
         if self.pipeline_enabled:
-            self.publish(labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask)
+            self.publish(labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask, graph_img)
             
             self.processed_img_id = processing_img_id
             self.processed_depth_img = processing_depth_img
@@ -414,6 +422,7 @@ class RealsensePipeline:
             self.markers = markers
             self.poses = poses
             self.gaps = gaps
+            self.graph_img = graph_img
             
             if self.img_id == sys.maxsize:
                 self.img_id = 0
@@ -427,7 +436,7 @@ class RealsensePipeline:
 
     def process_img(self, fps=None):
         # 2. apply yolact to image and get hca_back
-        labelled_img, detections, markers, poses = self.object_detection.get_prediction(self.colour_img, depth_img=self.depth_img, extra_text=fps, camera_info=self.camera_info)
+        labelled_img, detections, markers, poses, graph_img = self.object_detection.get_prediction(self.colour_img, depth_img=self.depth_img, extra_text=fps, camera_info=self.camera_info)
 
         # 3. apply mask to depth image and convert to pointcloud
         gaps, cluster_img, depth_scaled, device_mask \
@@ -439,7 +448,7 @@ class RealsensePipeline:
                 aruco_point=self.aruco_point
             )
 
-        return labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask
+        return labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask, graph_img
 
     def parse_calib_yaml(self, fn):
         """Parse camera calibration file (which is hand-made using ros camera_calibration) """
