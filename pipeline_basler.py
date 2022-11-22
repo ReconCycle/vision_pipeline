@@ -91,7 +91,7 @@ class BaslerPipeline:
         #rospy.loginfo("Pipeline_basler: x = 0.6 -x, hack for table rotation. FIX")
     
     def init_basler_pipeline(self, yolact, dataset, object_reid):
-        self.object_detection = ObjectDetection(yolact, dataset, object_reid, self.frame_id)
+        self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, self.frame_id)
         
         self.worksurface_detection = None
 

@@ -121,7 +121,7 @@ class RealsensePipeline:
             self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
 
     def init_realsense_pipeline(self, yolact, dataset, object_reid):
-        self.object_detection = ObjectDetection(yolact, dataset, object_reid, self.frame_id)
+        self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, self.frame_id)
         self.gap_detector = GapDetectorClustering()
     
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):

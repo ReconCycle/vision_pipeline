@@ -28,8 +28,9 @@ import tf2_ros
 
 
 class ObjectDetection:
-    def __init__(self, yolact, dataset, object_reid, frame_id=""):
-
+    def __init__(self, config, yolact, dataset, object_reid, frame_id=""):
+        
+        self.config = config
         self.yolact = yolact
         self.dataset = dataset
         self.frame_id = frame_id
@@ -182,8 +183,9 @@ class ObjectDetection:
         
         # todo: track groups
         
-        # object re-id
-        self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
+        if self.config.reid:
+            # object re-id
+            self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
         
         # drawing stuff
         for detection in detections:
