@@ -37,7 +37,7 @@ class BaslerPipeline:
         
         # time stuff
         self.target_fps = self.config.basler.target_fps
-        self.max_allowed_delay_in_seconds = self.config.basler.max_allowed_delay_in_seconds
+        self.max_allowed_acquisition_delay = self.config.basler.max_allowed_acquisition_delay
         self.min_run_pipeline_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
         self.last_run_time = rospy.get_rostime().to_sec()
 
@@ -58,6 +58,8 @@ class BaslerPipeline:
         self.last_stale_id = 0 # Keep track of the ID for last stale img so we dont print several errors for same img
         
         # processed image data
+        self.processed_delay = None
+        self.processed_acquisition_stamp = None
         self.processed_img_id = -1  # don't keep processing the same image
         self.processed_colour_img = None
         self.labelled_img = None
@@ -203,14 +205,17 @@ class BaslerPipeline:
             self.detections = None
 
     async def get_stable_detection(self):
-        # todo: logic to get stable detection
-        
-        #! We should avoid getting a very old detection. It should not be STALE!
-        print("[red]basler: BUG!! We should avoid getting a very old detection. It should not be STALE![/red]")
-        
-        # wait until we get at least one detection
-        while self.detections is None:
-            await asyncio.sleep(0.01)
+        # wait until we get one new (non stale) detection
+        is_newly_processed = False
+        while not is_newly_processed:
+            if self.detections is not None:
+                t = rospy.get_rostime().to_sec()
+                process_delay = t - (self.processed_acquisition_stamp.to_sec() + self.processed_delay)
+                is_newly_processed = process_delay <= self.max_allowed_acquisition_delay
+            if not is_newly_processed:
+                await asyncio.sleep(0.01)
+
+        # todo: set timeout so we don't get stuck in the while loop
         
         if self.detections is not None:
             return self.camera_acquisition_stamp, self.colour_img, self.detections, self.processed_img_id
@@ -238,7 +243,7 @@ class BaslerPipeline:
  
         # Check if the image is stale
         cam_img_delay = t - self.camera_acquisition_stamp.to_sec()
-        if (cam_img_delay > self.max_allowed_delay_in_seconds):
+        if (cam_img_delay > self.max_allowed_acquisition_delay):
             # So we dont print several times for the same image
             if self.img_id != self.last_stale_id:
                 print("[red]basler: STALE img ID %d, not processing. Delay: %.2f [/red]"% (self.img_id, cam_img_delay))
@@ -273,6 +278,8 @@ class BaslerPipeline:
 
         self.publish(labelled_img, detections, markers, poses, graph_img)
         
+        self.processed_delay = rospy.get_rostime().to_sec() - t
+        self.processed_acquisition_stamp = self.camera_acquisition_stamp
         self.processed_img_id = processing_img_id
         self.processed_colour_img = processing_colour_img
         self.labelled_img = labelled_img

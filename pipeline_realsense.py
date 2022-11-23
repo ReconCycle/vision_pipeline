@@ -35,7 +35,7 @@ class RealsensePipeline:
         
         # time stuff
         self.target_fps = self.config.realsense.target_fps
-        self.max_allowed_delay_in_seconds = self.config.realsense.max_allowed_delay_in_seconds
+        self.max_allowed_acquisition_delay = self.config.realsense.max_allowed_acquisition_delay
         self.min_run_pipeline_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
         self.last_run_time = rospy.get_rostime().to_sec()
         self.t_camera_service_called = -1 # time camera_service was last called
@@ -70,6 +70,8 @@ class RealsensePipeline:
         self.aruco_point = None
         
         # processed image data
+        self.processed_delay = None
+        self.processed_acquisition_stamp = None
         self.processed_img_id = -1  # don't keep processing the same image
         self.processed_colour_img = None
         self.processed_depth_img = None
@@ -192,7 +194,7 @@ class RealsensePipeline:
         delay = self.camera_acquisition_stamp.to_sec() - cur_t.to_sec()
 
         #rospy.loginfo("RS Delay: {}".format(delay))
-        if np.abs(delay) > self.max_allowed_delay_in_seconds:
+        if np.abs(delay) > self.max_allowed_acquisition_delay:
             rospy.loginfo("realsense: ignoring img, delay: {}".format(round(delay,2)))
             return 0
 
@@ -342,17 +344,15 @@ class RealsensePipeline:
         self.pipeline_enabled = state
 
     async def get_stable_detection(self, gap_detection: bool=True):
-        # todo: logic to get stable detection
         
-        #! We should avoid getting a very old detection. It should not be STALE!
-        print("[red]realsense: BUG!! We should avoid getting a very old detection. It should not be STALE![/red]")
-        
-        #  wait until we get at least one detection
-        if gap_detection:
-            while self.gaps is None or self.detections is None:
-                await asyncio.sleep(0.01)
-        else:
-            while self.detections is None:
+        # wait until we get one new (non stale) detection
+        is_newly_processed = False
+        while not is_newly_processed:
+            if (self.detections is not None and not gap_detection) or (self.gaps is not None and self.detections is not None):
+                t = rospy.get_rostime().to_sec()
+                process_delay = t - (self.processed_acquisition_stamp.to_sec() + self.processed_delay)
+                is_newly_processed = process_delay <= self.max_allowed_acquisition_delay
+            if not is_newly_processed:
                 await asyncio.sleep(0.01)
             
         if self.detections is not None:
@@ -383,7 +383,7 @@ class RealsensePipeline:
  
         # Check if the image is stale
         cam_img_delay = t - self.camera_acquisition_stamp.to_sec()
-        if (cam_img_delay > self.max_allowed_delay_in_seconds):
+        if (cam_img_delay > self.max_allowed_acquisition_delay):
             # So we dont print several times for the same image
             if self.img_id != self.last_stale_id:
                 print("[red]realsense: STALE img ID %d, not processing. Delay: %.2f[/red]"% (self.img_id, cam_img_delay))
@@ -417,6 +417,8 @@ class RealsensePipeline:
         if self.pipeline_enabled:
             self.publish(labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask, graph_img)
             
+            self.processed_delay = rospy.get_rostime().to_sec() - t
+            self.processed_acquisition_stamp = self.camera_acquisition_stamp
             self.processed_img_id = processing_img_id
             self.processed_depth_img = processing_depth_img
             self.processed_colour_img = processing_colour_img

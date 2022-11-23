@@ -3,7 +3,7 @@ reid: False
 
 basler:
   target_fps: 2
-  max_allowed_delay_in_seconds: 1.0
+  max_allowed_acquisition_delay: 1.0 # in seconds
   rotate_img: 180 # specify in degrees
   topic: "basler" # topic that we publish to: /node_name/topic
   camera_node: "/basler" # camera topic
@@ -12,7 +12,7 @@ basler:
   publish_graph_img: False
   has_depth: False
   run_continuous: False
-  wait_for_services: True
+  wait_for_services: True # only disable for rosbag
   detect_arucos: False
   parent_frame: "vision_table_zero" # When publishing transforms, this is the base/parent frame from which they are published.
   work_surface_ignore_border_width: 100
@@ -20,7 +20,7 @@ basler:
 
 realsense:
   target_fps: 2
-  max_allowed_delay_in_seconds: 1.0
+  max_allowed_acquisition_delay: 1.0 # in seconds
   rotate_img: 0 # specify in degrees
   topic: "realsense" # topic that we publish to: /node_name/topic
   camera_node: "/realsense" # camera node
@@ -33,7 +33,7 @@ realsense:
   publish_graph_img: False
   has_depth: True
   run_continuous: False
-  wait_for_services: True
+  wait_for_services: True # only disable for rosbag
   detect_arucos: False
   camera_height: 0.20 # height in meters
   parent_frame: 'panda_2/realsense' # When publishing TFs, this will be the parent frame.
