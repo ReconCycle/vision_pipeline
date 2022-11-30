@@ -38,7 +38,7 @@ class RealsensePipeline:
         # time stuff
         self.target_fps = self.config.realsense.target_fps
         self.max_allowed_delay_in_seconds = self.config.realsense.max_allowed_delay_in_seconds
-        self.min_run_pipeline_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
+        self.min_run_pipeline_dt = 1. / (self.target_fps+1) # Minimal time between subsequent pipeline runs
         self.last_run_time = rospy.get_rostime().to_sec()
         self.t_camera_service_called = -1 # time camera_service was last called
 
@@ -472,7 +472,7 @@ class RealsensePipeline:
         
         # check we haven't processed this frame already
         if self.processed_img_id >= self.img_id:
-            #print("Realsense already got this image")
+            print("Realsense already got this image")
             return 0
         
         # pipeline is enabled and we have an image
@@ -491,7 +491,7 @@ class RealsensePipeline:
         # Check that more than minimal time has elapsed since last running the pipeline
         dt = np.abs(t - self.last_run_time)
         if (dt < self.min_run_pipeline_dt):
-            print("Realsense not running due to minimal dt")
+            #print("Realsense not running due to minimal dt")
             return 0
 
         t_prev = self.last_run_time
