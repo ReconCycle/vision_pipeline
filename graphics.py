@@ -129,14 +129,16 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
 
     # draw work surface corners
     if worksurface_detection is not None:
-        for label, coords_in_pixels in worksurface_detection.points_px_dict.items():
+        for label, coords_in_pixels in worksurface_detection.corners_px_dict.items():
             if coords_in_pixels is not None:
                 xc, yc = np.around(coords_in_pixels[:2]).astype(int)
-                xc_m, yc_m, *_= worksurface_detection.points_m_dict[label]
+                xc_m, yc_m, *_= worksurface_detection.corners_m_dict[label]
 
                 cv2.circle(img_numpy, (xc, yc), 5, (0, 255, 0), -1)
-                cv2.putText(img_numpy, label + ", (" + str(xc_m) + ", " + str(yc_m) + ")",
-                            (xc, yc), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
+                cv2.putText(img_numpy, label,
+                            (xc - 70, yc-10), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
+                cv2.putText(img_numpy, "(" + str(xc_m) + ", " + str(yc_m) + ")",
+                            (xc - 50, yc+30), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
 
     for detection in detections:
         if detection.center_px is not None:
@@ -184,12 +186,12 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
                 cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
 
             if args.display_text:
-                if detection.center_px is not None:
-                    x1_m, y1_m = detection.center_px
+                if detection.center is not None:
+                    x1_m, y1_m = detection.center
                 else:
                     x1_m, y1_m = (-1, -1)
 
-                tracking_id = "t_id " + str(detection.tracking_id) + ", " if detection.tracking_id is not None else ""
+                tracking_id = "t_id " + str(detection.tracking_id) + "," if detection.tracking_id is not None else ""
                 # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) + ", " if detection.tracking_score is not None else ""
                 text_str = '%s: %s %.2f, (%.2f, %.2f)' % (detection.label.name, tracking_id, detection.score, x1_m, y1_m) if args.display_scores else detection.label.name
 

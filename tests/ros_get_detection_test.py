@@ -48,6 +48,7 @@ class ROSGetServiceTest():
         if not rospy.is_shutdown():
             # get detection
             det_response = self.detection_service(Camera.realsense, True)
+            # det_response = self.detection_service(Camera.basler, False)
             
             # provide the details for next request
             success = det_response.success

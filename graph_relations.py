@@ -155,10 +155,14 @@ class GraphRelations:
                 node_colors.append("blue")
             else:
                 node_colors.append("pink")
+        # try:
+        is_planar, P = nx.check_planarity(self.G)
         
-        # pos = nx.spring_layout(self.G, k=2) # nice, but is different for every frame
-        # pos = nx.spectral_layout(self.G) # all nodes on top of each other for each connected component
-        pos = nx.planar_layout(self.G) # nice and stays mostly the same per frame
+        if is_planar:
+            pos = nx.planar_layout(self.G) # nice and stays mostly the same per frame
+        else:
+            pos = nx.spring_layout(self.G, k=2) # nice, but is different for every frame
+            # pos = nx.spectral_layout(self.G) # all nodes on top of each other for each connected component
         
         # print("edge_labels_dict", edge_labels_dict)
         # print("node labels", {id: self.detections[id].label.name for id in G.nodes()})
@@ -183,11 +187,15 @@ class GraphRelations:
         fig.savefig(io_buf, format='raw')
         io_buf.seek(0)
         img_arr = np.reshape(np.frombuffer(io_buf.getvalue(), dtype=np.uint8),
-                             newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
+                            newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
         io_buf.flush()
         io_buf.close()
         
         return img_arr
+        # except AttributeError as e:
+        #     print("error with drawing graph!")
+            
+        # return None
     
     
     def make_groups(self):

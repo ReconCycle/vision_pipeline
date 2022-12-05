@@ -95,7 +95,9 @@ class ObjectDetection:
         tracker_start = time.time()
         # apply tracker
         # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
-        online_targets = self.tracker.update(boxes, scores) #? does the tracker not benefit from the predicted classes?
+        
+        # todo: add classes to tracker
+        online_targets = self.tracker.update(boxes, scores)
 
         for t in online_targets:
             detections[t.input_id].tracking_id = int(t.track_id)
@@ -176,7 +178,14 @@ class ObjectDetection:
                 detection.obb = None
                 detection.tf = None
         
+        
         # todo: remove objects that don't fit certain constraints, eg. too small, too thin, too big
+        # todo: we could show these in a different colour for debugging
+        # todo: we should work in meters when filtering based on size!
+        for detection in detections:
+            if detection.polygon.area < 0.1:
+                pass
+
         graph_relations = GraphRelations(detections)
         
         # form groups, adds group_id property to detections

@@ -191,9 +191,9 @@ class BaslerPipeline:
         try:
             res = self.camera_service(state)
             if state:
-                print("basler: enabled camera:", res.success)
-            else:
                 print("basler: disabled camera:", res.success)
+            else:
+                print("basler: enabled camera:", res.success)
         except rospy.ServiceException as e:
             print("[red]basler: Service call failed (state " + str(state) + "):[/red]", e)
 
@@ -297,7 +297,7 @@ class BaslerPipeline:
     def process_img(self, img, fps=None):
         if self.worksurface_detection is None:
             print("basler: detecting work surface...")
-            self.worksurface_detection = WorkSurfaceDetection(img, self.config.basler.work_surface_ignore_border_width)
+            self.worksurface_detection = WorkSurfaceDetection(img, self.config.basler.work_surface_ignore_border_width, debug=self.config.basler.debug_work_surface_detection)
         
         labelled_img, detections, markers, poses, graph_img = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
 

@@ -49,7 +49,9 @@ class ROSPipeline():
         yolact, dataset = self.load_yolact(self.config.obj_detection)
         
         # load object reid
-        object_reid = ObjectReId()
+        object_reid = None
+        if self.config.reid:
+            object_reid = ObjectReId()
 
         self.pipeline_basler = BaslerPipeline(yolact, dataset, object_reid, self.config)
         self.pipeline_realsense = RealsensePipeline(yolact, dataset, object_reid, self.config)

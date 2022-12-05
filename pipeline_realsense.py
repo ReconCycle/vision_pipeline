@@ -275,7 +275,7 @@ class RealsensePipeline:
             self.gaps_pub.publish(gaps_msg)
             
         if graph_img is not None and self.config.realsense.publish_graph_img:
-            graph_img_msg = self.br.cv2_to_imgmsg(graph_img, encoding="bgr8")
+            graph_img_msg = self.br.cv2_to_imgmsg(graph_img, encoding="8UC4")
             graph_img_msg.header.stamp = timestamp
             self.graph_img_pub.publish(graph_img_msg)
 
