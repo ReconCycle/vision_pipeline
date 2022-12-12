@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import spatial
 import cv2
+import math
 from rich import print
 from probreg import cpd
 from probreg import callbacks
@@ -11,6 +12,126 @@ from helpers import scale_img
 from shapely.geometry import Polygon
 import matplotlib.pyplot as plt
 
+
+# https://stackoverflow.com/questions/45531074/how-to-merge-lines-after-houghlinesp
+class HoughBundler:     
+    def __init__(self,min_distance=5,min_angle=2):
+        self.min_distance = min_distance
+        self.min_angle = min_angle
+    
+    def get_orientation(self, line):
+        orientation = math.atan2(abs((line[3] - line[1])), abs((line[2] - line[0])))
+        return math.degrees(orientation)
+
+    def check_is_line_different(self, line_1, groups, min_distance_to_merge, min_angle_to_merge):
+        for group in groups:
+            for line_2 in group:
+                if self.get_distance(line_2, line_1) < min_distance_to_merge:
+                    orientation_1 = self.get_orientation(line_1)
+                    orientation_2 = self.get_orientation(line_2)
+                    if abs(orientation_1 - orientation_2) < min_angle_to_merge:
+                        group.append(line_1)
+                        return False
+        return True
+
+    def distance_point_to_line(self, point, line):
+        px, py = point
+        x1, y1, x2, y2 = line
+
+        def line_magnitude(x1, y1, x2, y2):
+            line_magnitude = math.sqrt(math.pow((x2 - x1), 2) + math.pow((y2 - y1), 2))
+            return line_magnitude
+
+        lmag = line_magnitude(x1, y1, x2, y2)
+        if lmag < 0.00000001:
+            distance_point_to_line = 9999
+            return distance_point_to_line
+
+        u1 = (((px - x1) * (x2 - x1)) + ((py - y1) * (y2 - y1)))
+        u = u1 / (lmag * lmag)
+
+        if (u < 0.00001) or (u > 1):
+            #// closest point does not fall within the line segment, take the shorter distance
+            #// to an endpoint
+            ix = line_magnitude(px, py, x1, y1)
+            iy = line_magnitude(px, py, x2, y2)
+            if ix > iy:
+                distance_point_to_line = iy
+            else:
+                distance_point_to_line = ix
+        else:
+            # Intersecting point is on the line, use the formula
+            ix = x1 + u * (x2 - x1)
+            iy = y1 + u * (y2 - y1)
+            distance_point_to_line = line_magnitude(px, py, ix, iy)
+
+        return distance_point_to_line
+
+    def get_distance(self, a_line, b_line):
+        dist1 = self.distance_point_to_line(a_line[:2], b_line)
+        dist2 = self.distance_point_to_line(a_line[2:], b_line)
+        dist3 = self.distance_point_to_line(b_line[:2], a_line)
+        dist4 = self.distance_point_to_line(b_line[2:], a_line)
+
+        return min(dist1, dist2, dist3, dist4)
+
+    def merge_lines_into_groups(self, lines):
+        groups = []  # all lines groups are here
+        # first line will create new group every time
+        groups.append([lines[0]])
+        # if line is different from existing gropus, create a new group
+        for line_new in lines[1:]:
+            if self.check_is_line_different(line_new, groups, self.min_distance, self.min_angle):
+                groups.append([line_new])
+
+        return groups
+
+    def merge_line_segments(self, lines):
+        orientation = self.get_orientation(lines[0])
+      
+        if(len(lines) == 1):
+            return np.block([[lines[0][:2], lines[0][2:]]])
+
+        points = []
+        for line in lines:
+            points.append(line[:2])
+            points.append(line[2:])
+        if 45 < orientation <= 90:
+            #sort by y
+            points = sorted(points, key=lambda point: point[1])
+        else:
+            #sort by x
+            points = sorted(points, key=lambda point: point[0])
+
+        return np.block([[points[0],points[-1]]])
+
+    def process_lines(self, lines):
+        lines_horizontal  = []
+        lines_vertical  = []
+  
+        for line_i in [l[0] for l in lines]:
+            orientation = self.get_orientation(line_i)
+            # if vertical
+            if 45 < orientation <= 90:
+                lines_vertical.append(line_i)
+            else:
+                lines_horizontal.append(line_i)
+
+        lines_vertical  = sorted(lines_vertical , key=lambda line: line[1])
+        lines_horizontal  = sorted(lines_horizontal , key=lambda line: line[0])
+        merged_lines_all = []
+
+        # for each cluster in vertical and horizantal lines leave only one line
+        for i in [lines_horizontal, lines_vertical]:
+            if len(i) > 0:
+                groups = self.merge_lines_into_groups(i)
+                merged_lines = []
+                for group in groups:
+                    merged_lines.append(self.merge_line_segments(group))
+                merged_lines_all.extend(merged_lines)
+                    
+        return np.asarray(merged_lines_all)
+    
 
 class WorkSurfaceDetection:
     def __init__(self, img, border_width=0, debug=False):
@@ -105,7 +226,10 @@ class WorkSurfaceDetection:
         self.generate_all_sides(self.corner_m_bottom_dict, self.corners_m_dict)
         
         print("corners_m_dict", self.corners_m_dict)
-        
+
+        # 1. mask everything but the work surface
+        img = self.mask_worksurface(img)
+
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         self.blur = cv2.GaussianBlur(gray, (5, 5), 0)
         
@@ -124,6 +248,148 @@ class WorkSurfaceDetection:
         # for debugging, draw everything
         # if self.debug:
         #     self.draw_corners_and_circles(img, show=True)
+        
+    def mask_worksurface(self, img):
+        
+        img = img.copy()
+        img_height, img_width = img.shape[:2]
+        
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # high_thresh, thresh_im = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # low_thresh = 0.5*high_thresh
+        # print("low_thresh", low_thresh)
+        # print("high_thresh", high_thresh)
+        
+        edges = cv2.Canny(gray, threshold1=50, threshold2=100, apertureSize=3)
+        edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+        
+        edges_rgb1 = cv2.cvtColor(edges.copy(), cv2.COLOR_GRAY2BGR)
+        edges_rgb2 = cv2.cvtColor(edges.copy(), cv2.COLOR_GRAY2BGR)
+        edges_rgb3 = cv2.cvtColor(edges.copy(), cv2.COLOR_GRAY2BGR)
+        
+        lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=100, minLineLength=50, maxLineGap=50)
+        
+        for line_unsqueezed in lines:
+            line = line_unsqueezed[0]
+            cv2.line(edges_rgb1, (line[0], line[1]), (line[2],line[3]), (0,0,255), 6)
+        
+        bundler = HoughBundler(min_distance=10,min_angle=5)
+        lines_processed = bundler.process_lines(lines)
+        lines_processed = lines_processed.reshape(-1, 2, 2)
+        
+        for line in lines_processed:
+            cv2.line(edges_rgb2, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,0,255), 6)
+        
+        norm = np.linalg.norm(lines_processed[:, 0] - lines_processed[:, 1], axis=1)
+        
+        long_lines = []
+        for i, line in enumerate(lines_processed):
+            if norm[i] > img.shape[0] *0.8: # should be at least 80% of the image long
+                long_lines.append(lines_processed[i])
+        long_lines = np.array(long_lines)
+        
+        # for line in long_lines:
+            # cv2.line(edges_rgb3, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,0,255), 6)
+            
+        # sort into vertical and horizontal lines
+        vertical_lines = []
+        horizontal_lines = []
+        for line in long_lines:
+            dx = np.abs(line[0][0] - line[1][0])
+            dy = np.abs(line[0][1] - line[1][1])
+            if dy != 0 and abs(dx/dy) < np.tan(np.radians(30)):
+                # vertical
+                vertical_lines.append(line)
+            elif dx != 0 and abs(dy/dx) < np.tan(np.radians(30)):
+                horizontal_lines.append(line)
+        
+        def center_point(line):
+            return int((line[0][0] + line[1][0])/2), int((line[0][1] + line[1][1])/2)
+        
+        def sorting_vertical(line):
+            # sort by center x coordinate
+            return (line[0][0] + line[1][0])/2
+
+        def sorting_horizontal(line):
+            # sort by center y coordinate
+            return (line[0][1] + line[1][1])/2
+        
+        # order the vertical_lines and vertical lines
+        vertical_lines.sort(key=sorting_vertical)
+        horizontal_lines.sort(key=sorting_horizontal, reverse=True) # reverse because of world coords/opencv coords
+        
+        left_line, right_line, bottom_line, top_line = None, None, None, None
+
+        # determine leftmost/rightmost, ... lines
+        max_dist_from_edge = 300
+        if len(vertical_lines) > 0:
+            if sorting_vertical(vertical_lines[0]) < max_dist_from_edge:
+                left_line = vertical_lines[0]
+            if sorting_vertical(vertical_lines[-1]) > img_width - max_dist_from_edge:
+                right_line = vertical_lines[-1]
+        if len(horizontal_lines) > 0:
+            # inequalities are opposite to the ones for vertical because of the opencv coordinates
+            if sorting_horizontal(horizontal_lines[0]) > img_height - max_dist_from_edge:
+                bottom_line = horizontal_lines[0]
+            if sorting_horizontal(horizontal_lines[-1]) < max_dist_from_edge:
+                top_line = horizontal_lines[-1]
+        
+        # mask image based on lines
+        for line in [left_line, right_line, bottom_line, top_line]:
+            if line is not None:
+                theta = np.arctan2(line[0][1]-line[1][1], line[0][0]-line[1][0])
+                # extend line
+                line[0][0] = int(line[0][0] + 1000*np.cos(theta))
+                line[0][1] = int(line[0][1] + 1000*np.sin(theta))
+                
+                line[1][0] = int(line[1][0] - 1000*np.cos(theta))
+                line[1][1] = int(line[1][1] - 1000*np.sin(theta))
+        
+
+        if top_line is not None:
+            top_mask = np.vstack((top_line, np.array([[img_width, 0], [0, 0]])))
+            cv2.drawContours(img, [top_mask], -1, (0, 0, 0), -1)
+            
+        if bottom_line is not None:
+            bottom_mask = np.vstack((bottom_line, np.array([[img_width, img_width], [0, img_width]])))
+            cv2.drawContours(img, [bottom_mask], -1, (0, 0, 0), -1)
+            
+        if left_line is not None:
+            left_mask = np.vstack((left_line, np.array([[0, img_width], [0, 0]])))
+            cv2.drawContours(img, [left_mask], -1, (0, 0, 0), -1)
+
+        if right_line is not None:
+            right_mask = np.vstack((right_line, np.array([[img_width, img_width], [img_width, 0]])))
+            cv2.drawContours(img, [right_mask], -1, (0, 0, 0), -1)
+        
+        
+        # put labels on image
+        if self.debug:
+            for text, line in [("left_line", left_line), ("right_line", right_line), ("bottom_line", bottom_line), ("top_line", top_line)]:
+                if line is not None:
+                    center = center_point(line)
+                    print(text, center)
+                    cv2.putText(edges_rgb3, text, center, self.font_face, self.font_scale, (0,0,255), self.font_thickness, cv2.LINE_AA)
+        
+            for line in [left_line, right_line]:
+                if line is not None:
+                    cv2.line(edges_rgb3, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,0,255), 6)
+
+            for line in [bottom_line, top_line]:
+                if line is not None:
+                    cv2.line(edges_rgb3, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,255,0), 6)
+        
+            cv2.imshow("canny", scale_img(edges))
+            cv2.imshow("houghlines", scale_img(edges_rgb1))
+            cv2.imshow("bundled lines", scale_img(edges_rgb2))
+            cv2.imshow("long lines only", scale_img(edges_rgb3))
+            cv2.imshow("img", scale_img(img))
+            cv2.waitKey()
+            cv2.destroyAllWindows()
+        
+        return img
+        
         
     def bolt_point_matching(self):
         source = self.circles[:, :2].astype(np.float32) # x, y pairs
@@ -178,50 +444,57 @@ class WorkSurfaceDetection:
         # the same as:
         # result = np.dot(result, res.transformation.b.T) + res.transformation.t
         
-        # print("result", result.shape)
-        # print("target", target.shape)
+        # match the result points with the closest point from the target_flipped
+        def closest_node_index(node, nodes):
+            index = cdist([node], nodes).argmin()
+            return index
 
-        #! I think I should use nearest neighbour instead!
-        #! linear_sum_assignment optimises also for completely wrong pairs, instead of ignoring them
-
-        C = cdist(target_flipped, result)
-
-        _, matching_idxs = linear_sum_assignment(C)
+        target_flipped_copy = target_flipped.copy()
+        matching_idxs = []
+        for point in result:
+            i = closest_node_index(point, target_flipped_copy)
+            matching_dist = np.linalg.norm(target_flipped_copy[i] - point)
+            # ignore matchings with too large distances
+            if matching_dist < 0.05:
+            
+                matching_idxs.append(i)
+                target_flipped_copy[i] = [2000, 2000] # very large point, so it never gets matched
+            else:
+                matching_idxs.append(None)
         
-        result_matching = result[matching_idxs]
-        matching_dists = np.linalg.norm(target_flipped - result_matching, axis=1)
+        print("result", result)
         
-        print("matching_idxs", matching_idxs, matching_idxs.shape)
+        dist = []
+        for i in range(len(result)):
+            if matching_idxs[i] is not None:
+                dist.append(np.linalg.norm(target_flipped[matching_idxs[i]] - result[i]))
+        dist = np.array(dist)
         
-        # todo: remove matchings with too large distances
-        for i in np.arange(len(matching_idxs)):
-            if matching_dists[i] > 0.05: # value in meters
-                matching_idxs[i] = -1
-                
-                
-        max_error = np.linalg.norm(target_flipped - result_matching, axis=1).max()
-        mean_error = np.linalg.norm(target_flipped - result_matching, axis=1).mean()
+        max_error = dist.max()
+        mean_error = dist.mean()
+        
+        print("max_error", max_error)
+        print("mean_error", mean_error)
         
         if self.debug:
             plt.plot(target_flipped[:,0], target_flipped[:,1],'bo', markersize = 10)
             plt.plot(result[:,0], result[:,1],'rs',  markersize = 7)
-            for p in range(target_flipped.shape[0]):
-                if matching_idxs[p] > -1:
-                    plt.plot([target_flipped[p,0], result[matching_idxs[p],0]], [target_flipped[p,1], result[matching_idxs[p],1]], 'k')
+            for p in range(len(result)):
+                if matching_idxs[p] is not None:
+                    plt.plot([target_flipped[matching_idxs[p], 0], result[p,0]], [target_flipped[matching_idxs[p], 1], result[p,1]], 'k')
             plt.show()
 
-        print("max_error", max_error)
-        print("mean_error", mean_error)
+
         
         #! Check that the matching didn't rotate all the points around! 
         #! Is the top left point in the top-left quadrant of the image?
         
-        # add bolts in pixels to dict
-        for i, matching_idx in enumerate(matching_idxs):
-            if matching_idx > -1:
-                key = target_keys[i]
-                self.bolts_px_dict[key] = source[matching_idx]
-
+        # add bolts in pixels to dict        
+        for i in np.arange(len(result)):
+            if matching_idxs[i] is not None:
+                # target_matching[i] corresponds to result[i] 
+                key = target_keys[matching_idxs[i]]
+                self.bolts_px_dict[key] = source[i]
     
     def find_bolts(self):
 
@@ -495,6 +768,7 @@ class WorkSurfaceDetection:
             return self.coord_transform_inv(coords)
         
 if __name__ == '__main__':
-    img = cv2.imread("data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021/img000.png")
+    img = cv2.imread("data_full/2022-12-05_work_surface/frame0000.jpg")
+    # img = cv2.imread("data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021/img000.png")
     work_surface_det2 = WorkSurfaceDetection(img, debug=True)
     
