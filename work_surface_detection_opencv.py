@@ -420,7 +420,9 @@ class WorkSurfaceDetection:
             print("source_scaled", source_scaled.shape)
             print("target", target_flipped.shape)
 
-        cbs = [callbacks.Plot2DCallback(source_scaled, target_flipped)]
+        cbs = []
+        if self.debug:
+            cbs = [callbacks.Plot2DCallback(source_scaled, target_flipped)]   
         
         # a larger w will cause the point cloud model to approach a uniform 
         res = cpd.registration_cpd(source_scaled, target_flipped, 'affine', w=0.5, maxiter=200, tol=0.00015, callbacks=cbs) # affine vs nonrigid
@@ -462,8 +464,6 @@ class WorkSurfaceDetection:
             else:
                 matching_idxs.append(None)
         
-        print("result", result)
-        
         dist = []
         for i in range(len(result)):
             if matching_idxs[i] is not None:
@@ -473,10 +473,10 @@ class WorkSurfaceDetection:
         max_error = dist.max()
         mean_error = dist.mean()
         
-        print("max_error", max_error)
-        print("mean_error", mean_error)
-        
         if self.debug:
+            print("max_error", max_error)
+            print("mean_error", mean_error)
+            
             plt.plot(target_flipped[:,0], target_flipped[:,1],'bo', markersize = 10)
             plt.plot(result[:,0], result[:,1],'rs',  markersize = 7)
             for p in range(len(result)):
@@ -670,8 +670,8 @@ class WorkSurfaceDetection:
             print("max_error", max_error)
             print("mean_error", mean_error)
 
-        print("self.meters_to_pixels", self.meters_to_pixels(np.array([0.0, 0.0])))
-        print("and back...", self.pixels_to_meters(self.meters_to_pixels(np.array([0.0, 0.0]))))
+            print("self.meters_to_pixels", self.meters_to_pixels(np.array([0.0, 0.0])))
+            print("and back...", self.pixels_to_meters(self.meters_to_pixels(np.array([0.0, 0.0]))))
         
         
     def estimate_corners_using_transform(self):
