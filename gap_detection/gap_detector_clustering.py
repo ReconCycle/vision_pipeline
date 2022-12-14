@@ -14,6 +14,8 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
 
+import open3d
+
 import sklearn.cluster as cluster
 import hdbscan
 import time
@@ -131,8 +133,8 @@ class GapDetectorClustering:
 
 
     @staticmethod
-    def mask_from_contour(contour):
-        mask = np.zeros((480, 640, 3), np.uint8)
+    def mask_from_contour(contour, img_shape):
+        mask = np.zeros((img_shape[0], img_shape[1], 3), np.uint8)
         mask = cv2.drawContours(mask, [contour], -1, (255,255,255), -1)
         return cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
 
@@ -164,7 +166,10 @@ class GapDetectorClustering:
             contour = detection_hca_back.mask_contour
             hull = cv2.convexHull(contour, False)
             # get mask of segmentation from contour so that we get only the largest component
-            device_mask = self.mask_from_contour(hull).astype(np.uint8)
+            device_mask = self.mask_from_contour(hull, depth_img.shape).astype(np.uint8)
+            
+            print("device_mask.shape", device_mask.shape)
+            print("depth_img.shape", depth_img.shape)
             
             # mask depth image
             depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=device_mask)

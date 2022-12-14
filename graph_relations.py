@@ -201,7 +201,7 @@ class GraphRelations:
     def make_groups(self):
         # all connected components in graph
         self.list_wc_components = sorted(nx.weakly_connected_components(self.G), key=len, reverse=True)
-        print("list_wc_components", self.list_wc_components)
+        # print("list_wc_components", self.list_wc_components)
         
         # set the group id on each detection
         for group_id, wc_components in enumerate(self.list_wc_components):

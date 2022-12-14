@@ -186,14 +186,18 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
                 cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
 
             if args.display_text:
+                z1_m = 0
                 if detection.center is not None:
-                    x1_m, y1_m = detection.center
+                    if len(detection.center) == 2:
+                        x1_m, y1_m = detection.center
+                    else:
+                        x1_m, y1_m, z1_m = detection.center
                 else:
                     x1_m, y1_m = (-1, -1)
 
                 tracking_id = "t_id " + str(detection.tracking_id) + "," if detection.tracking_id is not None else ""
                 # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) + ", " if detection.tracking_score is not None else ""
-                text_str = '%s: %s %.2f, (%.2f, %.2f)' % (detection.label.name, tracking_id, detection.score, x1_m, y1_m) if args.display_scores else detection.label.name
+                text_str = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (detection.label.name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else detection.label.name
 
                 text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
                 text_w = int(text_w)

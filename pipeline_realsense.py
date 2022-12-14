@@ -135,6 +135,9 @@ class RealsensePipeline:
         depth_img = CvBridge().imgmsg_to_cv2(depth_msg) * self.depth_rescaling_factor
         self.depth_img = rotate_img(depth_img, self.config.realsense.rotate_img)
         
+        if colour_img.shape[0] != depth_img.shape[0] or colour_img.shape[1] != depth_img.shape[1]:
+            raise ValueError("colour and depth images not same shape", colour_img.shape, depth_img.shape) 
+        
         self.camera_info = camera_info
         self.img_id += 1
 
