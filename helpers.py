@@ -11,6 +11,7 @@ from json import JSONEncoder
 from torch import Tensor
 import pyrealsense2
 import re
+import open3d as o3d
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -66,7 +67,7 @@ def get_images_realsense(input_dir):
             yield [colour_img, depth_img, depth_colormap, colour_img_p]
 
 
-def img_to_camera_coords(x_y, depth, camera_info):
+def camera_info_to_realsense_intrinsics(camera_info):
     _intrinsics = pyrealsense2.intrinsics()
     _intrinsics.width = camera_info.width
     _intrinsics.height = camera_info.height
@@ -77,6 +78,19 @@ def img_to_camera_coords(x_y, depth, camera_info):
     #_intrinsics.model = camera_info.distortion_model
     _intrinsics.model  = pyrealsense2.distortion.none
     _intrinsics.coeffs = [i for i in camera_info.D]
+    
+    return _intrinsics
+
+def camera_info_to_o3d_intrinsics(camera_info):
+    w, h = camera_info.width, camera_info.height
+    fx, fy = camera_info.K[0], camera_info.K[4]
+    ppx, ppy = camera_info.K[2], camera_info.K[5]
+
+    intrinsics = o3d.camera.PinholeCameraIntrinsic(w, h, fx, fy, ppx, ppy)
+    return intrinsics
+
+def img_to_camera_coords(x_y, depth, camera_info):
+    _intrinsics = camera_info_to_realsense_intrinsics(camera_info)
     
     def pixels_to_meters(x_y):
         if isinstance(depth, np.ndarray):

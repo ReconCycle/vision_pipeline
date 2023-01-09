@@ -183,7 +183,7 @@ class ObjectDetection:
         # todo: we could show these in a different colour for debugging
         # todo: we should work in meters when filtering based on size!
         for detection in detections:
-            if detection.polygon.area < 0.1:
+            if detection.polygon is not None and detection.polygon.area < 0.1:
                 pass
 
         graph_relations = GraphRelations(detections)
@@ -266,7 +266,7 @@ class ObjectDetection:
         self.fps_graphics = 1.0 / (time.time() - graphics_start)
         self.fps_objdet = 1.0 / (time.time() - t_start)
         
-        return labelled_img, detections, markers, poses, graph_img
+        return labelled_img, detections, markers, poses, graph_img, graph_relations
 
     def make_marker(self, tf, x, y, z, id, label):
         # make a visualization marker array for the occupancy grid

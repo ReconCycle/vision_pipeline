@@ -14,7 +14,7 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
 
-import open3d
+import open3d as o3d
 
 import sklearn.cluster as cluster
 import hdbscan
@@ -25,7 +25,7 @@ import math
 import random
 # Own Modules
 from obb import get_obb_from_contour
-from helpers import get_colour, get_colour_blue, make_valid_poly, img_to_camera_coords
+from helpers import get_colour, get_colour_blue, make_valid_poly, img_to_camera_coords, camera_info_to_o3d_intrinsics
 from context_action_framework.types import Gap, Label, Detection
 
 
@@ -139,7 +139,7 @@ class GapDetectorClustering:
         return cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
 
 
-    def lever_detector(self, depth_img, detections, camera_info, aruco_pose=None, aruco_point=None):
+    def lever_detector(self, colour_img, depth_img, detections, graph_relations, camera_info, aruco_pose=None, aruco_point=None):
 
         # print("aruco_pose", aruco_pose)
         # print("aruco_point", aruco_point)
@@ -153,13 +153,42 @@ class GapDetectorClustering:
         img = None
         depth_scaled = None
         device_mask = None
+        
+        # https://github.com/Vuuuuk/Intel-Realsense-L515-3D-Scanner/blob/master/L515_3D_Scanner.py
+        
+        
+        # merge colour_img and depth_img
+        print("colour_img.shape", colour_img.shape)
+        print("depth_img.shape", depth_img.shape)
+        colour2 = o3d.geometry.Image(cv2.cvtColor(colour_img, cv2.COLOR_RGB2BGR))
+        depth2 = o3d.geometry.Image((depth_img*1000).astype(np.uint8)) #! we undo a preprocessing step by *1000, m -> mm to correspond with camera_info?
+        
+        
+        rgbd_img = o3d.geometry.RGBDImage.create_from_color_and_depth(colour2, depth2, convert_rgb_to_intensity=False)
+        # rgbd_img = np.dstack((colour_img, depth_img))
+        # print("rgbd_img.shape", rgbd_img.shape)
+        
+        # get intrinsics
+        intrinsics = camera_info_to_o3d_intrinsics(camera_info)
+        
+        pointcloud = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_img, intrinsics)
 
-        # get the first detection that is hca_back
-        detection_hca_back = None
-        for detection in detections:
-            if detection.label == Label.hca_back:
-                detection_hca_back = detection
-                break
+        print(pointcloud)
+        print(np.asarray(pointcloud.points))
+
+        o3d.visualization.draw_geometries([pointcloud])
+
+        # get the first detection that is hca_back        
+        detections_hca_back = graph_relations.exists(Label.hca_back)
+        
+        if len(detections_hca_back) > 0:
+            detection_hca_back = detections_hca_back[0]
+        
+        # todo: find PCB/PCB covered/internals
+        # todo: get the one that is largest
+        # todo: get left/right/top/bottom areas between PCB and hca_back
+        # todo: find which area contains the biggest gap 
+        # todo: lever that one
         
         if detection_hca_back is not None:
 

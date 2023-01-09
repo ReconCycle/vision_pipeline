@@ -299,7 +299,7 @@ class BaslerPipeline:
             print("basler: detecting work surface...")
             self.worksurface_detection = WorkSurfaceDetection(img, self.config.basler.work_surface_ignore_border_width, debug=self.config.basler.debug_work_surface_detection)
         
-        labelled_img, detections, markers, poses, graph_img = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
+        labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
 
         # debug
         if self.config.basler.show_work_surface_detection:

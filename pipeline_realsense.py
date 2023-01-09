@@ -444,13 +444,15 @@ class RealsensePipeline:
 
     def process_img(self, fps=None):
         # 2. apply yolact to image and get hca_back
-        labelled_img, detections, markers, poses, graph_img = self.object_detection.get_prediction(self.colour_img, depth_img=self.depth_img, extra_text=fps, camera_info=self.camera_info)
+        labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(self.colour_img, depth_img=self.depth_img, extra_text=fps, camera_info=self.camera_info)
 
         # 3. apply mask to depth image and convert to pointcloud
         gaps, cluster_img, depth_scaled, device_mask \
             = self.gap_detector.lever_detector(
+                self.colour_img,
                 self.depth_img,
                 detections,
+                graph_relations,
                 self.camera_info,
                 aruco_pose=self.aruco_pose,
                 aruco_point=self.aruco_point
