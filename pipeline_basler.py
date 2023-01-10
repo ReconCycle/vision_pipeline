@@ -22,7 +22,6 @@ from camera_control_msgs.srv import SetSleeping
 from visualization_msgs.msg import MarkerArray
 from geometry_msgs.msg import PoseArray, TransformStamped
 
-
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.types import detections_to_ros
@@ -36,9 +35,8 @@ class BaslerPipeline:
         self.config = config
         
         # time stuff
-        self.target_fps = self.config.basler.target_fps
+        self.rate_limit = rospy.Rate(self.config.basler.target_fps)
         self.max_allowed_acquisition_delay = self.config.basler.max_allowed_acquisition_delay
-        self.min_run_pipeline_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
         self.last_run_time = rospy.get_rostime().to_sec()
 
         self.tf_broadcaster = tf.TransformBroadcaster()
@@ -70,7 +68,9 @@ class BaslerPipeline:
         
         self.create_static_tf(self.frame_id)
 
-        print("creating camera subscribers...")
+        print("creating realsense services...")
+        self.create_services()
+        print("creating subscribers...")
         self.create_camera_subscribers()
         print("creating publishers...")
         self.create_publishers()
@@ -81,29 +81,12 @@ class BaslerPipeline:
 
         print("waiting for pipeline to be enabled...")
 
-        # Checking the rosparam server for whether to publish labeled imgs etc.
-        self.publish_labeled_img = self.config.basler.publish_labelled_img
-        self.publish_labeled_rosparamname = path(self.basler_topic, "publish_labeled_img")
-        self.last_rosparam_check_time = time.time() # Keeping track of when we last polled the rosparam server
-        self.rosparam_check_dt_seconds = 1 # Check rosparam server every 1 second for changes.
-        try:
-            self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
-        except:
-            rospy.set_param(self.publish_labeled_rosparamname, self.publish_labeled_img)
-
-        #rospy.loginfo("Pipeline_basler: x = 0.6 -x, hack for table rotation. FIX")
     
     def init_basler_pipeline(self, yolact, dataset, object_reid):
         self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, Camera.basler, self.frame_id)
         
         self.worksurface_detection = None
 
-    def check_rosparam_server(self):
-        """ Check the rosparam server for whether we want to publish labeled imgs, IF enough time has elapsed between now and last check. """
-        cur_t = time.time()
-        if cur_t - self.last_rosparam_check_time > self.rosparam_check_dt_seconds:
-            self.last_rosparam_check_time = cur_t
-            self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
     
     def img_from_camera_callback(self, img_msg):
         self.camera_acquisition_stamp = img_msg.header.stamp
@@ -134,6 +117,56 @@ class BaslerPipeline:
         self.poses_pub = rospy.Publisher(path(self.basler_topic, "poses"), PoseArray, queue_size=1)
         self.graph_img_pub = rospy.Publisher(path(self.basler_topic, "graph"), Image, queue_size=1)
         
+        
+    def create_services(self):
+        basler_enable = path(self.config.node_name, self.config.basler.topic, "enable")
+        
+        labelled_img_enable = path(self.config.node_name, self.config.basler.topic, "labelled_img", "enable")
+        graph_img_enable = path(self.config.node_name, self.config.basler.topic, "graph_img", "enable")
+        debug_enable = path(self.config.node_name, self.config.basler.topic, "debug", "enable")
+        
+        rospy.Service(basler_enable, SetBool, self.enable_basler_cb)
+        
+        rospy.Service(labelled_img_enable, SetBool, self.labelled_img_enable_cb)
+        rospy.Service(graph_img_enable, SetBool, self.graph_img_enable_cb)
+        rospy.Service(debug_enable, SetBool, self.debug_enable_cb)
+      
+      
+    def enable_basler_cb(self, req):
+        state = req.data
+        
+        if state:
+            print("basler: starting pipeline...")
+            self.enable(True)
+            msg = self.config.node_name + " started."
+        else:
+            print("basler: stopping pipeline...")
+            self.enable(False)
+            msg = self.config.node_name + " stopped."
+        
+        return True, msg
+    
+    
+    def labelled_img_enable_cb(self, req):
+        state = req.data
+        self.config.basler.publish_labelled_img = state
+        msg = "publish labelled_img: " + ("enabled" if state else "disabled")
+        return True, msg
+    
+    
+    def graph_img_enable_cb(self, req):
+        state = req.data
+        self.config.basler.publish_graph_img = state
+        msg = "publish graph_img: " + ("enabled" if state else "disabled")
+        return True, msg
+
+    def debug_enable_cb(self, req):
+        state = req.data
+        self.config.basler.debug_work_surface_detection = state
+        msg = "debug: " + ("enabled" if state else "disabled")
+        return True, msg
+
+        
     def publish(self, img, detections, markers, poses, graph_img):
         
         cur_t = rospy.Time.now()
@@ -145,7 +178,7 @@ class BaslerPipeline:
         
         img_msg = self.br.cv2_to_imgmsg(img, encoding="bgr8")
         img_msg.header.stamp = timestamp
-        if self.publish_labeled_img:
+        if self.config.basler.publish_labelled_img:
             self.labelled_img_pub.publish(img_msg)
             # self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
         
@@ -228,14 +261,17 @@ class BaslerPipeline:
 
         if not self.pipeline_enabled:
             #print("[green]basler: aborted bc pipeline disabled[/green]")
+            self.rate_limit.sleep()
             return 0
 
         if self.img_msg is None:
             #print("basler: Waiting to receive image.")
+            self.rate_limit.sleep()
             return 0
         
         # check we haven't processed this frame already
         if self.processed_img_id >= self.img_id:
+            self.rate_limit.sleep()
             return 0
 
         # Pipeline is enabled and we have an image
@@ -248,12 +284,8 @@ class BaslerPipeline:
             if self.img_id != self.last_stale_id:
                 print("[red]basler: STALE img ID %d, not processing. Delay: %.2f [/red]"% (self.img_id, cam_img_delay))
                 self.last_stale_id = self.img_id
-            return 0
-
-        # Check that more than minimal time has elapsed since last running the pipeline
-        dt = np.abs(t - self.last_run_time)
-        if (dt < self.min_run_pipeline_dt):
-            #print("Basler not running due to minimal dt")
+            
+            self.rate_limit.sleep()
             return 0
         
         t_prev = self.last_run_time
@@ -263,7 +295,7 @@ class BaslerPipeline:
         colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg))
         self.colour_img = rotate_img(colour_img, self.config.basler.rotate_img)
                             
-        self.check_rosparam_server() # Check rosparam server for whether to publish labeled imgs
+        # self.check_rosparam_server() # Check rosparam server for whether to publish labeled imgs
         
         processing_img_id = self.img_id
         processing_colour_img = np.copy(self.colour_img)
@@ -293,6 +325,8 @@ class BaslerPipeline:
             self.processed_img_id = -1
         
         print("[green]basler: published img: "+ str(processing_img_id) +", num. dets: " + str(len(detections)) + "[/green]")
+        
+        self.rate_limit.sleep() # we should always call this, even when returning 0
             
     def process_img(self, img, fps=None):
         if self.worksurface_detection is None:

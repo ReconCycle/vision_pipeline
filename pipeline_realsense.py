@@ -34,9 +34,8 @@ class RealsensePipeline:
         self.config = config
         
         # time stuff
-        self.target_fps = self.config.realsense.target_fps
+        self.rate_limit = rospy.Rate(self.config.realsense.target_fps)
         self.max_allowed_acquisition_delay = self.config.realsense.max_allowed_acquisition_delay
-        self.min_run_pipeline_dt = 1 / self.target_fps # Minimal time between subsequent pipeline runs
         self.last_run_time = rospy.get_rostime().to_sec()
         self.t_camera_service_called = -1 # time camera_service was last called
 
@@ -81,8 +80,10 @@ class RealsensePipeline:
         self.markers = None
         self.poses = None
         self.graph_img = None
-
-        print("creating camera subscribers...")
+        
+        print("creating realsense services...")
+        self.create_services()
+        print("creating subscribers...")
         self.create_camera_subscribers()
         print("creating publishers...")
         self.create_publishers()
@@ -98,34 +99,10 @@ class RealsensePipeline:
         self.publish_depth_img = self.config.realsense.publish_depth_img
         self.publish_cluster_img = self.config.realsense.publish_cluster_img
  
-        self.publish_labeled_rosparamname = path(self.realsense_topic, "publish_labeled_img")
-        self.publish_depth_rosparamname = path(self.realsense_topic, "publish_depth_img")
-        self.publish_cluster_rosparamname = path(self.realsense_topic, "publish_cluster_img")
-
-        self.last_rosparam_check_time = time.time() # Keeping track of when we last polled the rosparam server
-        self.rosparam_check_dt_seconds = 1 # Check rosparam server every 1 second for changes.
-        try:
-            self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
-            self.publish_depth_img = rospy.get_param(self.publish_depth_rosparamname)
-            self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
-        except:
-            rospy.set_param(self.publish_labeled_rosparamname, self.publish_labeled_img)
-            rospy.set_param(self.publish_depth_rosparamname, self.publish_depth_img)
-            rospy.set_param(self.publish_cluster_rosparamname, self.publish_cluster_img)
-
-    def check_rosparam_server(self):
-        """ Check the rosparam server for whether we want to publish labeled imgs, IF enough time has elapsed between now and last check. """
-        cur_t = time.time()
-        if cur_t - self.last_rosparam_check_time > self.rosparam_check_dt_seconds:
-            self.last_rosparam_check_time = cur_t
-  
-            self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
-            self.publish_depth_img = rospy.get_param(self.publish_depth_rosparamname)
-            self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
 
     def init_realsense_pipeline(self, yolact, dataset, object_reid):
         self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, Camera.realsense, self.frame_id)
-        self.gap_detector = GapDetectorClustering()
+        self.gap_detector = GapDetectorClustering(self.config)
     
     def img_from_camera_callback(self, camera_info, img_msg, depth_msg):
         self.camera_acquisition_stamp = img_msg.header.stamp
@@ -190,6 +167,67 @@ class RealsensePipeline:
         self.lever_pose_pub = rospy.Publisher(path(self.realsense_topic, "lever"), PoseStamped, queue_size=1)
         
         self.graph_img_pub = rospy.Publisher(path(self.realsense_topic, "graph"), Image, queue_size=1)
+
+    def create_services(self):
+        realsense_enable = path(self.config.node_name, self.config.realsense.topic, "enable")
+        
+        labelled_img_enable = path(self.config.node_name, self.config.realsense.topic, "labelled_img", "enable")
+        depth_img_enable = path(self.config.node_name, self.config.realsense.topic, "depth_img", "enable")
+        cluster_img_enable = path(self.config.node_name, self.config.realsense.topic, "cluster_img", "enable")
+        graph_img_enable = path(self.config.node_name, self.config.realsense.topic, "graph_img", "enable")
+        debug_enable = path(self.config.node_name, self.config.realsense.topic, "debug", "enable")
+        
+        rospy.Service(realsense_enable, SetBool, self.enable_realsense_cb)
+        
+        rospy.Service(labelled_img_enable, SetBool, self.labelled_img_enable_cb)
+        rospy.Service(depth_img_enable, SetBool, self.depth_img_enable_cb)
+        rospy.Service(cluster_img_enable, SetBool, self.cluster_img_enable_cb)
+        rospy.Service(graph_img_enable, SetBool, self.graph_img_enable_cb)
+        rospy.Service(debug_enable, SetBool, self.debug_enable_cb)
+
+    def enable_realsense_cb(self, req):
+        state = req.data
+        
+        if state:
+            print("realsense: starting pipeline...")
+            self.enable(True)
+            msg = self.config.node_name + " started."
+        else:
+            print("realsense: stopping pipeline...")
+            self.enable(False)
+            msg = self.config.node_name + " stopped."
+        
+        return True, msg
+
+    def labelled_img_enable_cb(self, req):
+        state = req.data
+        self.config.realsense.publish_labelled_img = state
+        msg = "publish labelled_img: " + ("enabled" if state else "disabled")
+        return True, msg
+    
+    def depth_img_enable_cb(self, req):
+        state = req.data
+        self.config.realsense.publish_depth_img = state
+        msg = "publish depth_img: " + ("enabled" if state else "disabled")
+        return True, msg
+    
+    def cluster_img_enable_cb(self, req):
+        state = req.data
+        self.config.realsense.publish_cluster_img = state
+        msg = "publish cluster_img: " + ("enabled" if state else "disabled")
+        return True, msg
+    
+    def graph_img_enable_cb(self, req):
+        state = req.data
+        self.config.realsense.publish_graph_img = state
+        msg = "publish graph_img: " + ("enabled" if state else "disabled")
+        return True, msg
+
+    def debug_enable_cb(self, req):
+        state = req.data
+        self.config.realsense.debug_clustering = state
+        msg = "debug: " + ("enabled" if state else "disabled")
+        return True, msg
 
     def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask, graph_img):
 
@@ -369,16 +407,20 @@ class RealsensePipeline:
             return None, None, None, None, None
 
     def run(self):
+        
         if not self.pipeline_enabled:
             #print("[green]realsense: aborted bc pipeline disabled[/green]")
+            self.rate_limit.sleep()
             return 0
         
         if self.colour_img is None:
             #print("realsense: Waiting to receive image.")
+            self.rate_limit.sleep()
             return 0
         
         # check we haven't processed this frame already
         if self.processed_img_id >= self.img_id:
+            self.rate_limit.sleep()
             return 0
         
         # pipeline is enabled and we have an image
@@ -391,19 +433,15 @@ class RealsensePipeline:
             if self.img_id != self.last_stale_id:
                 print("[red]realsense: STALE img ID %d, not processing. Delay: %.2f[/red]"% (self.img_id, cam_img_delay))
                 self.last_stale_id = self.img_id
-            return 0
-
-        # Check that more than minimal time has elapsed since last running the pipeline
-        dt = np.abs(t - self.last_run_time)
-        if (dt < self.min_run_pipeline_dt):
-            #print("Basler not running due to minimal dt")
+                
+            self.rate_limit.sleep()
             return 0
 
         t_prev = self.last_run_time
         self.last_run_time = t
         
         # All the checks passes, run the pipeline
-        self.check_rosparam_server() # Periodically check rosparam server for whether we wish to publish labeled, depth and cluster imgs
+        # self.check_rosparam_server() # Periodically check rosparam server for whether we wish to publish labeled, depth and cluster imgs
         processing_img_id = self.img_id
         processing_depth_img = np.copy(self.depth_img)
         processing_colour_img = np.copy(self.colour_img)
@@ -439,8 +477,8 @@ class RealsensePipeline:
             print("[green]realsense: published img: "+ str(processing_img_id) +", num. dets: " + str(len(detections)) + "[/green]")
         else:
             print("[green]realsense: aborted publishing on img: " + str(processing_img_id) + " bc pipeline disabled[/green]")
-                
-
+            
+        self.rate_limit.sleep()
 
     def process_img(self, fps=None):
         # 2. apply yolact to image and get hca_back

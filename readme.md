@@ -63,9 +63,28 @@ Realsense:
 
 **Services**:
 
+To enable/disable the continuous mode:
+
 - `/vision/basler/enable` True/False
 - `/vision/realsense/enable` True/False
+
+To get a single detection:
+
 - `/vision/vision_get_detection` VisionDetection.srv (from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
+
+To enable/disable certain topics from being published:
+
+- `/vision/basler/labelled_img/enable` True/False
+- `/vision/basler/graph_img/enable` True/False
+- `/vision/basler/debug/enable` True/False
+
+- `/vision/realsense/labelled_img/enable` True/False
+- `/vision/realsense/graph_img/enable` True/False
+- `/vision/realsense/depth_img/enable` True/False
+- `/vision/realsense/cluster_img/enable` True/False
+- `/vision/realsense/debug/enable` True/False
+
+**Example:**
 
 The `/vision/vision_get_detection` service provides a single stable detection result from the requested camera.
 
@@ -80,11 +99,12 @@ rosservice call /vision/vision_get_detection 1 True
 ```
 where True provides the gaps as well.
 
-** Camera Services:**
+**Camera Services:**
 
-- `rosservice call /basler/set_sleeping` True/False
-- `rosservice call /realsense/enable` True/False
+- `/basler/set_sleeping` True/False
+- `/realsense/enable` True/False
 
+These are called internally and shouldn't be used manually.
 
 # Dataset Creation and Training
 

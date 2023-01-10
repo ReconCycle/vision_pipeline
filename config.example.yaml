@@ -38,6 +38,7 @@ realsense:
   camera_height: 0.20 # height in meters
   parent_frame: 'panda_2/realsense' # When publishing TFs, this will be the parent frame.
   calibration_file: '/root/vision-pipeline/realsense_calib/realsense_calib.yaml'
+  debug_clustering: False
 
 # yolact config
 obj_detection:

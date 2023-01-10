@@ -30,7 +30,8 @@ from context_action_framework.types import Gap, Label, Detection
 
 
 class GapDetectorClustering:
-    def __init__(self):
+    def __init__(self, config):
+        self.config = config
 
         # threshold max depth distance from camera, in mm
         self.MAX_DEPTH_THRESHOLD = 240 # mm 
@@ -156,13 +157,11 @@ class GapDetectorClustering:
         
         # https://github.com/Vuuuuk/Intel-Realsense-L515-3D-Scanner/blob/master/L515_3D_Scanner.py
         
-        
         # merge colour_img and depth_img
         print("colour_img.shape", colour_img.shape)
         print("depth_img.shape", depth_img.shape)
         colour2 = o3d.geometry.Image(cv2.cvtColor(colour_img, cv2.COLOR_RGB2BGR))
         depth2 = o3d.geometry.Image((depth_img*1000).astype(np.uint8)) #! we undo a preprocessing step by *1000, m -> mm to correspond with camera_info?
-        
         
         rgbd_img = o3d.geometry.RGBDImage.create_from_color_and_depth(colour2, depth2, convert_rgb_to_intensity=False)
         # rgbd_img = np.dstack((colour_img, depth_img))
@@ -171,16 +170,19 @@ class GapDetectorClustering:
         # get intrinsics
         intrinsics = camera_info_to_o3d_intrinsics(camera_info)
         
-        pointcloud = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_img, intrinsics)
+        if self.config.realsense.debug_clustering:
+        
+            pointcloud = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_img, intrinsics)
 
-        print(pointcloud)
-        print(np.asarray(pointcloud.points))
+            print(pointcloud)
+            print(np.asarray(pointcloud.points))
 
-        o3d.visualization.draw_geometries([pointcloud])
+            o3d.visualization.draw_geometries([pointcloud])
 
         # get the first detection that is hca_back        
         detections_hca_back = graph_relations.exists(Label.hca_back)
         
+        detection_hca_back = None
         if len(detections_hca_back) > 0:
             detection_hca_back = detections_hca_back[0]
         

@@ -36,7 +36,6 @@ from context_action_framework.msg import VisionDetails
 from context_action_framework.types import detections_to_ros, gaps_to_ros
 
 
-
 class ROSPipeline():
     def __init__(self) -> None:
         # load config
@@ -55,12 +54,7 @@ class ROSPipeline():
 
         self.pipeline_basler = BaslerPipeline(yolact, dataset, object_reid, self.config)
         self.pipeline_realsense = RealsensePipeline(yolact, dataset, object_reid, self.config)
-        
-        basler_topic_enable = path(self.config.node_name, self.config.basler.topic, "enable")
-        realsense_topic_enable = path(self.config.node_name, self.config.realsense.topic, "enable")
-        
-        rospy.Service(basler_topic_enable, SetBool, self.enable_basler_callback)
-        rospy.Service(realsense_topic_enable, SetBool, self.enable_realsense_callback)
+
         
         if self.config.realsense.run_continuous:
             self.pipeline_realsense.enable(True)
@@ -82,6 +76,7 @@ class ROSPipeline():
         print("running loop...")
         self.run_loop()
         
+    
     def load_yolact(self, yolact_config):
         yolact_dataset = None
         
@@ -136,34 +131,6 @@ class ROSPipeline():
             self.pipeline_realsense.run()
             
             # Now the sleeping is done within these two separate pipelines. We might want, for example, a higher FPS from realsense.
-
-    def enable_basler_callback(self, req):
-        state = req.data
-        
-        if state:
-            print("basler: starting pipeline...")
-            self.pipeline_basler.enable(True)
-            msg = self.config.node_name + " started."
-        else:
-            print("basler: stopping pipeline...")
-            self.pipeline_basler.enable(False)
-            msg = self.config.node_name + " stopped."
-        
-        return True, msg
-    
-    def enable_realsense_callback(self, req):
-        state = req.data
-        
-        if state:
-            print("realsense: starting pipeline...")
-            self.pipeline_realsense.enable(True)
-            msg = self.config.node_name + " started."
-        else:
-            print("realsense: stopping pipeline...")
-            self.pipeline_realsense.enable(False)
-            msg = self.config.node_name + " stopped."
-        
-        return True, msg
     
 
     def vision_det_callback(self, req):
