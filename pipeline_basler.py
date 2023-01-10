@@ -22,6 +22,8 @@ from camera_control_msgs.srv import SetSleeping
 from visualization_msgs.msg import MarkerArray
 from geometry_msgs.msg import PoseArray, TransformStamped
 
+from context_action_framework.srv import VisionDetection, VisionDetectionResponse, VisionDetectionRequest
+from context_action_framework.msg import VisionDetails
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.types import detections_to_ros
@@ -120,16 +122,16 @@ class BaslerPipeline:
         
     def create_services(self):
         basler_enable = path(self.config.node_name, self.config.basler.topic, "enable")
-        
         labelled_img_enable = path(self.config.node_name, self.config.basler.topic, "labelled_img", "enable")
         graph_img_enable = path(self.config.node_name, self.config.basler.topic, "graph_img", "enable")
         debug_enable = path(self.config.node_name, self.config.basler.topic, "debug", "enable")
+        vision_get_detection = path(self.config.node_name, self.config.basler.topic, "get_detection")
         
         rospy.Service(basler_enable, SetBool, self.enable_basler_cb)
-        
         rospy.Service(labelled_img_enable, SetBool, self.labelled_img_enable_cb)
         rospy.Service(graph_img_enable, SetBool, self.graph_img_enable_cb)
         rospy.Service(debug_enable, SetBool, self.debug_enable_cb)
+        rospy.Service(vision_get_detection, VisionDetection, self.vision_single_det_cb)
       
       
     def enable_basler_cb(self, req):
@@ -165,6 +167,27 @@ class BaslerPipeline:
         self.config.basler.debug_work_surface_detection = state
         msg = "debug: " + ("enabled" if state else "disabled")
         return True, msg
+    
+    def vision_single_det_cb(self, req):            
+        print("basler: enabling...")
+        self.enable(True)
+        
+        print("basler: getting detection")
+        #! JSI: replace this with with syncronous method
+        camera_acq_stamp, img_age, img, detections, img_id = asyncio.run(self.get_stable_detection())
+        print("[blue]basler: returning single detection, img_id:" + str(img_id) + ", age: "+ str(img_age) +"[/blue]")
+        
+        print("basler: disabling...")
+        self.enable(False)
+        
+        if detections is not None:
+            header = rospy.Header()
+            header.stamp = rospy.Time.now()
+            vision_details = VisionDetails(header, camera_acq_stamp, Camera.basler, False, detections_to_ros(detections), [])
+            return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(img))
+        else:
+            print("basler: returning empty response!")
+            return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(img))
 
         
     def publish(self, img, detections, markers, poses, graph_img):
@@ -231,6 +254,7 @@ class BaslerPipeline:
             print("[red]basler: Service call failed (state " + str(state) + "):[/red]", e)
 
     def enable(self, state):
+        #! we shouldn't disable the camera often. Only disable when explicitely called via a service.
         self.enable_camera(state)
         self.pipeline_enabled = state
         if state == False:
@@ -243,15 +267,16 @@ class BaslerPipeline:
         while not is_newly_processed:
             if self.detections is not None:
                 t = rospy.get_rostime().to_sec()
-                process_delay = t - (self.processed_acquisition_stamp.to_sec() + self.processed_delay)
-                is_newly_processed = process_delay <= self.max_allowed_acquisition_delay
+                # img_age = t - (self.processed_acquisition_stamp.to_sec() + self.processed_delay)
+                img_age = t - self.processed_acquisition_stamp.to_sec()
+                is_newly_processed = img_age <= self.max_allowed_acquisition_delay
             if not is_newly_processed:
                 await asyncio.sleep(0.01)
 
         # todo: set timeout so we don't get stuck in the while loop
         
         if self.detections is not None:
-            return self.camera_acquisition_stamp, self.colour_img, self.detections, self.processed_img_id
+            return self.processed_acquisition_stamp, img_age, self.processed_colour_img, self.detections, self.processed_img_id
 
         else:
             print("basler: stable detection failed!")
@@ -345,8 +370,8 @@ class BaslerPipeline:
         
         return labelled_img, detections, markers, poses, graph_img
 
+    #! do we still need this?
     def create_static_tf(self, frame_id):
-        pass
         broadcaster = tf2_ros.StaticTransformBroadcaster()
         static_transformStamped = TransformStamped()
 

@@ -70,7 +70,8 @@ To enable/disable the continuous mode:
 
 To get a single detection:
 
-- `/vision/vision_get_detection` VisionDetection.srv (from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
+- `/vision/basler/get_detection` VisionDetection.srv (from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
+- `/vision/realsense/get_detection` VisionDetection.srv (from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
 
 To enable/disable certain topics from being published:
 
@@ -86,16 +87,16 @@ To enable/disable certain topics from being published:
 
 **Example:**
 
-The `/vision/vision_get_detection` service provides a single stable detection result from the requested camera.
+The `/vision/*/get_detection` service provides a single stable detection result from the requested camera.
 
 For example, to get one Basler detection, run:
 
 ```
-rosservice call /vision/vision_get_detection 0 False
+rosservice call /vision/basler/get_detection False
 ```
 To get a Realsense detection, run:
 ```
-rosservice call /vision/vision_get_detection 1 True
+rosservice call /vision/realsense/get_detection True
 ```
 where True provides the gaps as well.
 

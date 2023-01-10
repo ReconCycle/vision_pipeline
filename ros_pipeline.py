@@ -68,11 +68,6 @@ class ROSPipeline():
         
         atexit.register(exit_handler)
         
-        # register vision server
-        print("creating vision service server...")
-        self.vision_service_server()
-        
-        # running the pipeline is blocking
         print("running loop...")
         self.run_loop()
         
@@ -130,64 +125,7 @@ class ROSPipeline():
             self.pipeline_basler.run()
             self.pipeline_realsense.run()
             
-            # Now the sleeping is done within these two separate pipelines. We might want, for example, a higher FPS from realsense.
-    
-
-    def vision_det_callback(self, req):
-        print("vision_gap_det_callback", Camera(req.camera))
-        if req.camera == Camera.basler:
-            
-            print("basler: enabling...")
-            self.pipeline_basler.enable(True)
-            
-            print("basler: getting detection")
-            camera_acq_stamp, img, detections, img_id = asyncio.run(self.pipeline_basler.get_stable_detection())
-            print("[blue]basler: received stable detection, img_id:" + str(img_id) + "[/blue]")
-            
-            # todo: wait until movement/results are stable
-            
-            print("basler: disabling...")
-            self.pipeline_basler.enable(False)
-            
-            print("basler: returning detection")
-            
-            if detections is not None:
-                header = rospy.Header()
-                header.stamp = rospy.Time.now()
-                vision_details = VisionDetails(header, camera_acq_stamp, False, detections_to_ros(detections), [])
-                return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(img))
-            else:
-                print("basler: returning empty response!")
-                return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(img))
-            
-            
-        elif req.camera == Camera.realsense:
-            
-            print("realsense: enabling...")
-            self.pipeline_realsense.enable(True)
-            
-            # todo: wait until movement/results are stable
-            print("realsense: getting detection")
-            camera_acq_stamp, img, detections, gaps, img_id = asyncio.run(self.pipeline_realsense.get_stable_detection(gap_detection=req.gap_detection))
-            print("[blue]realsense: received stable detection, img_id:" + str(img_id) + "[/blue]")
-            
-            print("realsense: disabling...")
-            self.pipeline_realsense.enable(False)
-            
-            print("realsense: returning detection")
-
-            if detections is not None:
-                header = rospy.Header()
-                header.stamp = rospy.Time.now()
-                vision_details = VisionDetails(header, camera_acq_stamp, req.gap_detection, detections_to_ros(detections), gaps_to_ros(gaps))
-                return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(img))
-            else:
-                print("realsense: returning empty response!")
-                return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(img))
-
-    def vision_service_server(self):
-        rospy.Service(path(self.config.node_name, "vision_get_detection"), VisionDetection, self.vision_det_callback)
-
+            # Now the sleeping is done within these two separate pipelines.
 
 if __name__ == '__main__':
     ros_pipeline =  ROSPipeline()

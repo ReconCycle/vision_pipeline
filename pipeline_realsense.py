@@ -23,6 +23,8 @@ from camera_control_msgs.srv import SetSleeping
 import message_filters
 from visualization_msgs.msg import MarkerArray
 
+from context_action_framework.srv import VisionDetection, VisionDetectionResponse, VisionDetectionRequest
+from context_action_framework.msg import VisionDetails
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.msg import Gaps as ROSGaps
 from context_action_framework.types import detections_to_ros, gaps_to_ros, Label, Camera
@@ -170,20 +172,20 @@ class RealsensePipeline:
 
     def create_services(self):
         realsense_enable = path(self.config.node_name, self.config.realsense.topic, "enable")
-        
         labelled_img_enable = path(self.config.node_name, self.config.realsense.topic, "labelled_img", "enable")
         depth_img_enable = path(self.config.node_name, self.config.realsense.topic, "depth_img", "enable")
         cluster_img_enable = path(self.config.node_name, self.config.realsense.topic, "cluster_img", "enable")
         graph_img_enable = path(self.config.node_name, self.config.realsense.topic, "graph_img", "enable")
         debug_enable = path(self.config.node_name, self.config.realsense.topic, "debug", "enable")
+        vision_get_detection = path(self.config.node_name, self.config.realsense.topic, "get_detection")
         
         rospy.Service(realsense_enable, SetBool, self.enable_realsense_cb)
-        
         rospy.Service(labelled_img_enable, SetBool, self.labelled_img_enable_cb)
         rospy.Service(depth_img_enable, SetBool, self.depth_img_enable_cb)
         rospy.Service(cluster_img_enable, SetBool, self.cluster_img_enable_cb)
         rospy.Service(graph_img_enable, SetBool, self.graph_img_enable_cb)
         rospy.Service(debug_enable, SetBool, self.debug_enable_cb)
+        rospy.Service(vision_get_detection, VisionDetection, self.vision_single_det_cb)
 
     def enable_realsense_cb(self, req):
         state = req.data
@@ -228,6 +230,27 @@ class RealsensePipeline:
         self.config.realsense.debug_clustering = state
         msg = "debug: " + ("enabled" if state else "disabled")
         return True, msg
+    
+    def vision_single_det_cb(self, req):
+        print("realsense: enabling...")
+        self.enable(True)
+        
+        print("realsense: getting detection")
+        #! JSI: replace this with with syncronous method
+        camera_acq_stamp, img_age, img, detections, gaps, img_id = asyncio.run(self.get_stable_detection(gap_detection=req.gap_detection))
+        print("[blue]basler: returning single detection, img_id:" + str(img_id) + ", age: "+ str(img_age) +"[/blue]")
+        
+        print("realsense: disabling...")
+        self.enable(False)
+
+        if detections is not None:
+            header = rospy.Header()
+            header.stamp = rospy.Time.now()
+            vision_details = VisionDetails(header, camera_acq_stamp, Camera.realsense, req.gap_detection, detections_to_ros(detections), gaps_to_ros(gaps))
+            return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(img))
+        else:
+            print("realsense: returning empty response!")
+            return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(img))
 
     def publish(self, img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask, graph_img):
 
@@ -391,20 +414,21 @@ class RealsensePipeline:
         while not is_newly_processed:
             if (self.detections is not None and not gap_detection) or (self.gaps is not None and self.detections is not None):
                 t = rospy.get_rostime().to_sec()
-                process_delay = t - (self.processed_acquisition_stamp.to_sec() + self.processed_delay)
-                is_newly_processed = process_delay <= self.max_allowed_acquisition_delay
+                # process_delay = t - (self.processed_acquisition_stamp.to_sec() + self.processed_delay)
+                img_age = t - self.processed_acquisition_stamp.to_sec()
+                is_newly_processed = img_age <= self.max_allowed_acquisition_delay
             if not is_newly_processed:
                 await asyncio.sleep(0.01)
             
         if self.detections is not None:
             if gap_detection:
-                return self.camera_acquisition_stamp, self.processed_colour_img, self.detections, self.gaps, self.processed_img_id
+                return self.processed_acquisition_stamp, img_age, self.processed_colour_img, self.detections, self.gaps, self.processed_img_id
             else:
-                return self.camera_acquisition_stamp, self.processed_colour_img, self.detections, None, self.processed_img_id
+                return self.processed_acquisition_stamp, img_age, self.processed_colour_img, self.detections, None, self.processed_img_id
 
         else:
             print("realsense: stable detection failed!")
-            return None, None, None, None, None
+            return None, None, None, None, None, None
 
     def run(self):
         
