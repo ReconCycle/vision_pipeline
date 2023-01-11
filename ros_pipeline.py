@@ -57,13 +57,13 @@ class ROSPipeline():
 
         
         if self.config.realsense.run_continuous:
-            self.pipeline_realsense.enable(True)
+            self.pipeline_realsense.enable(True) # TODO
         if self.config.basler.run_continuous:
-            self.pipeline_basler.enable(True)
+            self.pipeline_basler.enable_continuous(True)
 
         def exit_handler():
-            self.pipeline_realsense.enable(False)
-            self.pipeline_basler.enable(False)
+            self.pipeline_realsense.enable(False) # TODO
+            self.pipeline_basler.enable_continuous(False)
             print("stopping pipeline and exiting...")
         
         atexit.register(exit_handler)
@@ -123,7 +123,7 @@ class ROSPipeline():
         while not rospy.is_shutdown():
             
             self.pipeline_basler.run()
-            self.pipeline_realsense.run()
+            # self.pipeline_realsense.run() #! disabled while testing
             
             # Now the sleeping is done within these two separate pipelines.
 
