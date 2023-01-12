@@ -8,6 +8,7 @@ import tf2_ros
 import tf
 import copy
 import asyncio
+from threading import Event
 
 from helpers import path, rotate_img
 from object_detection import ObjectDetection
@@ -38,7 +39,7 @@ class BaslerPipeline:
         
         # time stuff
         self.rate_limit_continuous = rospy.Rate(self.config.basler.target_fps)
-        self.rate_limit_single = rospy.Rate(100)
+        self.rate_limit_single = rospy.Rate(1000)
         self.max_allowed_acquisition_delay = self.config.basler.max_allowed_acquisition_delay
         self.last_run_time = rospy.get_rostime().to_sec()
 
@@ -52,6 +53,8 @@ class BaslerPipeline:
         # time of single_mode call
         self.single_mode_time = None
         
+        self.processed_single_event = Event()
+        
         self.basler_topic = path(self.config.node_name, self.config.basler.topic) # /vision/basler
         self.img_sub = None
 
@@ -61,6 +64,11 @@ class BaslerPipeline:
         self.img_msg = None
         self.img_id = 0
         self.last_stale_id = 0 # Keep track of the ID for last stale img so we dont print several errors for same img
+        
+        # data staged for proessing
+        self.processing_img_id = None
+        self.processing_colour_img = None
+        self.processing_acquisition_stamp = None
         
         # processed image data
         self.processed_delay = None
@@ -102,10 +110,10 @@ class BaslerPipeline:
         
         if self.single_mode:
             t = rospy.get_rostime().to_sec()
- 
             # time since single mode called
             img_age = t - self.acquisition_stamp.to_sec()
-            print("[blue]basler (single_mode): received img from camera, img_id:" + str(self.img_id) + ", age: "+ str(img_age) +"[/blue]")
+            if self.processing_acquisition_stamp is None or self.processing_acquisition_stamp.to_sec() < self.single_mode_time:
+                print("[blue]basler (single_mode): received img from camera, img_id:" + str(self.img_id) + ", age: "+ str(img_age) +"[/blue]")
 
     def create_camera_subscribers(self):
         img_topic = path(self.config.basler.camera_node, self.config.basler.image_topic)
@@ -187,14 +195,9 @@ class BaslerPipeline:
         print("basler: getting detection")
         self.single_mode = True
         self.single_mode_time = rospy.get_rostime().to_sec()
-        #! JSI: replace this with with syncronous method
-        
-        async def wait_for_single_img_processing(self):
-            while self.single_mode:
-                await asyncio.sleep(0.001)
-            return
 
-        asyncio.run(wait_for_single_img_processing(self))
+        self.processed_single_event.wait()
+        self.processed_single_event.clear() # immediately reset again for next time
         
         t = rospy.get_rostime().to_sec()
  
@@ -285,15 +288,20 @@ class BaslerPipeline:
             self.labelled_img = None
             self.detections = None
 
+    # TODO: make it be possible to run single mode alongside continuous mode
+    # TODO: make it work for both basler and realsense cameras
+    # TODO: make a generic camera class so we don't duplicate so much code
+    # TODO: run camera frame once on start to warm up.
+    # TODO: make sure CPU idles under 30%
     def run(self):
         if self.continuous_mode:
 
             self.run_frame()
             self.rate_limit_continuous.sleep()
         
-        elif self.single_mode:
+        else:
             # wait for next image and process immediately
-            if self.single_mode_time is not None and self.acquisition_stamp.to_sec() > self.single_mode_time:
+            if self.single_mode and self.acquisition_stamp.to_sec() > self.single_mode_time:
                 
                 t = rospy.get_rostime().to_sec()
     
@@ -306,8 +314,11 @@ class BaslerPipeline:
                 
                 if success:
                     # disable single_mode
+                    
                     self.single_mode = False
                     self.single_mode_time = None
+                    
+                    self.processed_single_event.set() # ? trying out event set
 
             # runs much faster, but only processes one frame
             self.rate_limit_single.sleep()
@@ -346,9 +357,9 @@ class BaslerPipeline:
                             
         # self.check_rosparam_server() # Check rosparam server for whether to publish labeled imgs
         
-        processing_img_id = self.img_id
-        processing_colour_img = np.copy(self.colour_img)
-        processing_acquisition_stamp = self.acquisition_stamp
+        self.processing_img_id = self.img_id
+        self.processing_colour_img = np.copy(self.colour_img)
+        self.processing_acquisition_stamp = self.acquisition_stamp
         
         #print("\n[green]basler: running pipeline on img: "+ str(processing_img_id) +"...[/green]")
         #print("\n[green]basler: delay is %.2f[/green]"%cam_img_delay)
@@ -361,9 +372,9 @@ class BaslerPipeline:
         self.publish(labelled_img, detections, markers, poses, graph_img)
         
         self.processed_delay = rospy.get_rostime().to_sec() - t
-        self.processed_acquisition_stamp = processing_acquisition_stamp
-        self.processed_img_id = processing_img_id
-        self.processed_colour_img = processing_colour_img
+        self.processed_acquisition_stamp = self.processing_acquisition_stamp
+        self.processed_img_id = self.processing_img_id
+        self.processed_colour_img = self.processing_colour_img
         self.labelled_img = labelled_img
         self.detections = detections
         self.markers = markers
@@ -374,7 +385,7 @@ class BaslerPipeline:
             self.img_id = 0
             self.processed_img_id = -1
         
-        print("[green]basler: published img: "+ str(processing_img_id) +", num. dets: " + str(len(detections)) + "[/green]")
+        print("[green]basler: published img: "+ str(self.processing_img_id) +", num. dets: " + str(len(detections)) + "[/green]")
         
         return True
             
