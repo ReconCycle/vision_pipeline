@@ -23,8 +23,8 @@ from yolact_pkg.yolact import Yolact
 
 from object_reid import ObjectReId
 from config import load_config
-from pipeline_basler import BaslerPipeline
-from pipeline_realsense import RealsensePipeline
+from pipeline_basler import PipelineBasler
+from pipeline_realsense import PipelineRealsense
 # from gap_detection.nn_gap_detector import NNGapDetector
 from helpers import str2bool, path
 
@@ -52,18 +52,16 @@ class ROSPipeline():
         if self.config.reid:
             object_reid = ObjectReId()
 
-        self.pipeline_basler = BaslerPipeline(yolact, dataset, object_reid, self.config)
-        self.pipeline_realsense = RealsensePipeline(yolact, dataset, object_reid, self.config)
+        self.pipeline_basler = PipelineBasler(yolact, dataset, object_reid, self.config)
+        self.pipeline_realsense = PipelineRealsense(yolact, dataset, object_reid, self.config)
 
+        # ! FIX THIS AGAIN
+        # if self.config.realsense.run_continuous:
+        #     self.pipeline_realsense.enable(True) # TODO
+        # if self.config.basler.run_continuous:
+        #     self.pipeline_basler.enable_continuous(True)
         
-        if self.config.realsense.run_continuous:
-            self.pipeline_realsense.enable(True) # TODO
-        if self.config.basler.run_continuous:
-            self.pipeline_basler.enable_continuous(True)
-
         def exit_handler():
-            self.pipeline_realsense.enable(False) # TODO
-            self.pipeline_basler.enable_continuous(False)
             print("stopping pipeline and exiting...")
         
         atexit.register(exit_handler)
@@ -74,7 +72,6 @@ class ROSPipeline():
     
     def load_yolact(self, yolact_config):
         yolact_dataset = None
-        
         
         if os.path.isfile(yolact_config.yolact_dataset_file):
             print("loading", yolact_config.yolact_dataset_file)
