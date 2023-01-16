@@ -28,8 +28,7 @@ from context_action_framework.srv import VisionDetection, VisionDetectionRespons
 from context_action_framework.msg import VisionDetails
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
-from context_action_framework.types import detections_to_ros
-from context_action_framework.types import Label, Camera
+from context_action_framework.types import detections_to_ros, gaps_to_ros, Label, Camera
 
 from obb import obb_px_to_quat
 
@@ -82,19 +81,20 @@ class PipelineCamera:
         self.processed_delay = None
         self.processed_acquisition_stamp = None
         self.processed_img_id = -1  # don't keep processing the same image
-        self.processed_colour_img = None
+        # self.processed_colour_img = None # ? unused
         self.labelled_img = None
         self.detections = None
         self.markers = None
-        self.poses = None
+        # self.poses = None # ? unused
         self.graph_img = None
+        self.gaps = None # ? unused
         
         self.create_static_tf(self.frame_id)
 
         print(self.camera_name +": creating services...")
         self.create_services()
         print(self.camera_name +": creating subscribers...")
-        self.create_camera_subscribers()
+        self.create_subscribers()
         print(self.camera_name +": creating publishers...")
         self.create_publishers()
         print(self.camera_name +": creating service client...")
@@ -112,9 +112,9 @@ class PipelineCamera:
         self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, self.camera_type, self.frame_id)
         self.worksurface_detection = None
 
-    def create_camera_subscribers(self):
+    def create_subscribers(self):
         img_topic = path(self.camera_config.camera_node, self.camera_config.image_topic)
-        self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_callback)
+        self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_cb)
 
     def create_service_client(self):
         timeout = 2 # 2 second timeout
@@ -142,14 +142,17 @@ class PipelineCamera:
         graph_img_enable = path(self.config.node_name, self.camera_config.topic, "graph_img", "enable")
         debug_enable = path(self.config.node_name, self.camera_config.topic, "debug", "enable")
         vision_get_detection = path(self.config.node_name, self.camera_config.topic, "get_detection")
+        continuous_enable = path(self.config.node_name, self.camera_config.topic, "continuous")
         
         rospy.Service(camera_enable, SetBool, self.enable_camera_cb)
         rospy.Service(labelled_img_enable, SetBool, self.labelled_img_enable_cb)
         rospy.Service(graph_img_enable, SetBool, self.graph_img_enable_cb)
         rospy.Service(debug_enable, SetBool, self.debug_enable_cb)
         rospy.Service(vision_get_detection, VisionDetection, self.vision_single_det_cb)
+        rospy.Service(continuous_enable, VisionDetection, self.enable_continuous_cb)
+        
       
-    def img_from_camera_callback(self, img_msg):
+    def img_from_camera_cb(self, img_msg):
         self.acquisition_stamp = img_msg.header.stamp
         self.img_msg = img_msg
         self.img_id += 1
@@ -186,7 +189,10 @@ class PipelineCamera:
         msg = "debug: " + ("enabled" if state else "disabled")
         return True, msg
     
-    def vision_single_det_cb(self, req):            
+    def vision_single_det_cb(self, req):      
+        
+        #! req should be used!!!!
+              
         print(self.camera_name +": getting detection")
         self.single_mode = True
         self.single_mode_time = rospy.get_rostime().to_sec()
@@ -201,16 +207,29 @@ class PipelineCamera:
         single_mode_age = str(np.round(t - single_mode_time, 2))
         print("[blue]"+self.camera_name +" (single_mode): returning single detection, img_id:" + str(self.processed_img_id) + ", img_age: "+ str(img_age) +", single_mode_age: "+ single_mode_age+"[/blue]")
         
+        ros_gaps = []
+        if self.gaps is not None:
+            ros_gaps = gaps_to_ros(self.gaps)
+        
         if self.detections is not None:
             header = rospy.Header()
             header.stamp = rospy.Time.now()
-            vision_details = VisionDetails(header, self.processed_acquisition_stamp, self.camera_type, False, detections_to_ros(self.detections), [])
+            vision_details = VisionDetails(header, self.processed_acquisition_stamp, self.camera_type, False, detections_to_ros(self.detections), ros_gaps)
             return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(self.labelled_img))
         else:
             print(self.camera_name +": returning empty response!")
             return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(self.labelled_img))
     
+    def enable_continuous_cb(self, req):
+        state = req.data
+        self.enable_continuous(state)
         
+    def enable_continuous(self, state):
+        self.continuous_mode = state
+        if state == False:
+            self.labelled_img = None
+            self.detections = None
+    
     def publish(self, img, detections, markers, poses, graph_img):
         
         cur_t = rospy.Time.now()
@@ -224,7 +243,6 @@ class PipelineCamera:
         img_msg.header.stamp = timestamp
         if self.camera_config.publish_labelled_img:
             self.labelled_img_pub.publish(img_msg)
-            # self.labelled_img_pub.publish(self.br.cv2_to_imgmsg(img))
         
         #rospy.loginfo("DET: {}".format(ros_detections))
         self.detections_pub.publish(ros_detections)
@@ -246,20 +264,24 @@ class PipelineCamera:
 
         # Publish the TFs
         self.publish_transforms(detections, timestamp)
+        
+        return header, timestamp
 
+    # ! what does this do?
     def publish_transforms(self, detections, timestamp):
         for detection in detections:
-            translation = copy.deepcopy(detection.tf.translation)   # Table should be rotated in config but that is a lot more work
-            translation.z = 0
-            rotation = detection.tf.rotation
-            rotation = [rotation.x, rotation.y, rotation.z, rotation.w]
-            #rotation = obb_px_to_quat(detection.obb_px)
-            
-            tr = (translation.x, translation.y, translation.z)
+            if detection.tf is not None:
+                translation = copy.deepcopy(detection.tf.translation)   # Table should be rotated in config but that is a lot more work
+                translation.z = 0
+                rotation = detection.tf.rotation
+                rotation = [rotation.x, rotation.y, rotation.z, rotation.w]
+                #rotation = obb_px_to_quat(detection.obb_px)
+                
+                tr = (translation.x, translation.y, translation.z)
 
-            child_frame = '%s_%s_%s'%(Label(detection.label).name, detection.id,   self.camera_config.parent_frame)
+                child_frame = '%s_%s_%s'%(Label(detection.label).name, detection.id,   self.camera_config.parent_frame)
 
-            self.tf_broadcaster.sendTransform(tr, rotation, rospy.Time.now(), child_frame, self.camera_config.parent_frame)
+                self.tf_broadcaster.sendTransform(tr, rotation, rospy.Time.now(), child_frame, self.camera_config.parent_frame)
             
     def enable_camera(self, state):
         success = False
@@ -303,12 +325,7 @@ class PipelineCamera:
             print("[red]" + msg)
         
         return success, msg
-
-    def enable_continuous(self, state):
-        self.continuous_mode = state
-        if state == False:
-            self.labelled_img = None
-            self.detections = None
+    
             
     def exit(self):
         # disable the camera
@@ -382,30 +399,30 @@ class PipelineCamera:
 
         # All the checks passes, run the pipeline
         #! we should now lock these variables from the callback
-        colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg))
-        self.colour_img = rotate_img(colour_img, self.camera_config.rotate_img)
+
         
         processing_img_id = self.img_id
-        processing_colour_img = np.copy(self.colour_img)
+        # processing_colour_img = np.copy(self.colour_img) #? unused
         self.processing_acquisition_stamp = self.acquisition_stamp
         
         fps = None
         if t_prev is not None and self.last_run_time - t_prev > 0:
             fps = "fps_total: " + str(round(1 / (self.last_run_time - t_prev), 1)) + ", "
 
-        labelled_img, detections, markers, poses, graph_img = self.process_img(self.colour_img, fps)
+        # TODO: don't know if remaining_args works
+        labelled_img, detections, markers, poses, graph_img, *remaining_args = self.process_img(fps)
 
-        self.publish(labelled_img, detections, markers, poses, graph_img)
+        self.publish(labelled_img, detections, markers, poses, graph_img, *remaining_args)
         
         self.processed_delay = rospy.get_rostime().to_sec() - t
         self.processed_acquisition_stamp = self.processing_acquisition_stamp
         self.processed_img_id = processing_img_id
-        self.processed_colour_img = processing_colour_img
+        # self.processed_colour_img = processing_colour_img # ? unused
         self.labelled_img = labelled_img
         self.detections = detections
-        self.markers = markers
-        self.poses = poses
-        self.graph_img = graph_img
+        self.markers = markers 
+        # self.poses = poses # ? unused
+        # self.graph_img = graph_img # ? unused
         
         # set processing timestamp to None again
         self.processing_acquisition_stamp = None
@@ -419,23 +436,27 @@ class PipelineCamera:
         return True
     
     #! this function is different for each camera
-    def process_img(self, img, fps=None):
-        # TODO: do this immediately, and not on first frame request
-        if self.worksurface_detection is None:
-            print(self.camera_name +": detecting work surface...")
-            self.worksurface_detection = WorkSurfaceDetection(img, self.camera_config.work_surface_ignore_border_width, debug=self.camera_config.debug_work_surface_detection)
+    def process_img(self, fps=None):
+        colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg))
+        self.colour_img = rotate_img(colour_img, self.camera_config.rotate_img)
         
-        labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(img, worksurface_detection=self.worksurface_detection, extra_text=fps)
+        if hasattr(self.camera_config, "use_worksurface_detection") and self.camera_config.use_worksurface_detection:
+            if self.worksurface_detection is None:
+                print(self.camera_name +": detecting work surface...")
+                self.worksurface_detection = WorkSurfaceDetection(self.colour_img, self.camera_config.work_surface_ignore_border_width, debug=self.camera_config.debug_work_surface_detection)
+        
+        labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(self.colour_img, worksurface_detection=self.worksurface_detection, extra_text=fps)
 
         # debug
-        if self.camera_config.show_work_surface_detection:
-            self.worksurface_detection.draw_corners_and_circles(labelled_img)
+        if hasattr(self.camera_config, "use_worksurface_detection") and self.camera_config.use_worksurface_detection:
+            if self.camera_config.show_work_surface_detection:
+                self.worksurface_detection.draw_corners_and_circles(labelled_img)
 
         if self.camera_config.detect_arucos:
             self.aruco_detection = ArucoDetection()
             labelled_img = self.aruco_detection.run(labelled_img, worksurface_detection=self.worksurface_detection)
         
-        return labelled_img, detections, markers, poses, graph_img
+        return labelled_img, detections, markers, poses, graph_img, graph_relations
 
     #! do we still need this?
     def create_static_tf(self, frame_id):

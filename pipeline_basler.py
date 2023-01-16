@@ -36,16 +36,11 @@ from obb import obb_px_to_quat
 
 class PipelineBasler(PipelineCamera):
     def __init__(self, yolact, dataset, object_reid, config):
-        config.basler.enable_topic = "set_sleeping"
+        config.basler.enable_topic = "set_sleeping" # basler camera specific
         config.basler.enable_camera_invert = True # enable = True, but the topic is called set_sleeping, so the inverse
+        config.use_worksurface_detection = True
         
         super().__init__(yolact, dataset, object_reid, config, config.basler, Camera.basler)
-    
-    # def create_publishers(self):
-    #     super().create_publishers()
-        
-    # def create_services(self):
-    #     super().create_services()
         
     def create_service_client(self):
         super().create_service_client()

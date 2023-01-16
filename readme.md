@@ -63,15 +63,22 @@ Realsense:
 
 **Services**:
 
-To enable/disable the continuous mode:
+To enable or disable the cameras:
 
 - `/vision/basler/enable` True/False
 - `/vision/realsense/enable` True/False
 
+To enable/disable continuous mode:
+
+- `/vision/basler/continuous` True/False
+- `/vision/realsense/continuous` True/False
+
 To get a single detection:
 
-- `/vision/basler/get_detection` VisionDetection.srv (from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
-- `/vision/realsense/get_detection` VisionDetection.srv (from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
+- `/vision/basler/get_detection` True/False (VisionDetection.srv from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
+- `/vision/realsense/get_detection` True/False (VisionDetection.srv from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
+
+where True/False is whether to provide gap detection
 
 To enable/disable certain topics from being published:
 

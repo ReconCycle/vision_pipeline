@@ -66,7 +66,7 @@ class ROSPipeline():
         
         atexit.register(exit_handler)
         
-        print("running loop...")
+        print("running loop...\n")
         self.run_loop()
         
     
@@ -119,8 +119,8 @@ class ROSPipeline():
     def run_loop(self):
         while not rospy.is_shutdown():
             
-            self.pipeline_basler.run()
-            # self.pipeline_realsense.run() #! disabled while testing
+            # self.pipeline_basler.run()
+            self.pipeline_realsense.run()
             
             # Now the sleeping is done within these two separate pipelines.
 
