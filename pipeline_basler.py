@@ -2,45 +2,23 @@ import sys
 import numpy as np
 import time
 from rich import print
-import json
 import rospy
-import tf2_ros
-import tf
-import copy
-import asyncio
-from threading import Event
 
 from pipeline_camera import PipelineCamera
-from helpers import path, rotate_img
-from object_detection import ObjectDetection
-from work_surface_detection_opencv import WorkSurfaceDetection
-from aruco_detection import ArucoDetection
-
-from sensor_msgs.msg import Image
-from std_srvs.srv import SetBool
-from cv_bridge import CvBridge
-from std_msgs.msg import String
+from helpers import path
 from camera_control_msgs.srv import SetSleeping
-from visualization_msgs.msg import MarkerArray
-from geometry_msgs.msg import PoseArray, TransformStamped
-
-from context_action_framework.srv import VisionDetection, VisionDetectionResponse, VisionDetectionRequest
-from context_action_framework.msg import VisionDetails
-from context_action_framework.msg import Detection as ROSDetection
-from context_action_framework.msg import Detections as ROSDetections
-from context_action_framework.types import detections_to_ros
-from context_action_framework.types import Label, Camera
-
-from obb import obb_px_to_quat
+from context_action_framework.types import Camera
 
 
 class PipelineBasler(PipelineCamera):
-    def __init__(self, yolact, dataset, object_reid, config):
-        config.basler.enable_topic = "set_sleeping" # basler camera specific
-        config.basler.enable_camera_invert = True # enable = True, but the topic is called set_sleeping, so the inverse
-        config.use_worksurface_detection = True
+    def __init__(self, yolact, dataset, object_reid, config, static_broadcaster):
+        self.camera_config = config.basler
         
-        super().__init__(yolact, dataset, object_reid, config, config.basler, Camera.basler)
+        self.camera_config.enable_topic = "set_sleeping" # basler camera specific
+        self.camera_config.enable_camera_invert = True # enable = True, but the topic is called set_sleeping, so the inverse
+        self.camera_config.use_worksurface_detection = True
+        
+        super().__init__(yolact, dataset, object_reid, config, self.camera_config, Camera.basler, static_broadcaster)
         
     def create_service_client(self):
         super().create_service_client()

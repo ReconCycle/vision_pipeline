@@ -40,7 +40,7 @@ from obb import obb_px_to_quat
 
 
 class PipelineRealsense(PipelineCamera):    
-    def __init__(self, yolact, dataset, object_reid, config):
+    def __init__(self, yolact, dataset, object_reid, config, static_broadcaster):
         self.camera_config = config.realsense
         self.camera_config.enable_topic = "enable" # realsense specific
         
@@ -54,7 +54,7 @@ class PipelineRealsense(PipelineCamera):
         # scale depth from mm to meters
         self.depth_rescaling_factor = 1/1000
         
-        super().__init__(yolact, dataset, object_reid, config, self.camera_config, Camera.realsense)
+        super().__init__(yolact, dataset, object_reid, config, self.camera_config, Camera.realsense, static_broadcaster)
     
     def init_pipeline(self, yolact, dataset, object_reid):
         super().init_pipeline(yolact, dataset, object_reid)
@@ -80,7 +80,12 @@ class PipelineRealsense(PipelineCamera):
         ts2 = message_filters.ApproximateTimeSynchronizer([aruco_sub, aruco_pixel_sub], 10, slop=0.05, allow_headerless=False)
         ts2.registerCallback(self.aruco_cb)
     
-    
+
+    def create_service_client(self):
+        super().create_service_client()
+        self.camera_service = rospy.ServiceProxy(path(self.camera_config.camera_node, self.camera_config.enable_topic), SetBool)
+        
+        
     def create_publishers(self):
         super().create_publishers()
 
@@ -124,15 +129,13 @@ class PipelineRealsense(PipelineCamera):
         self.aruco_point = aruco_point_ros
         
         
-    def create_service_client(self):
-        super().create_service_client()
-        self.camera_service = rospy.ServiceProxy(path(self.camera_config.camera_node, self.camera_config.enable_topic), SetBool)
-        
     def process_img(self, fps=None):
         depth_img = CvBridge().imgmsg_to_cv2(self.depth_msg) * self.depth_rescaling_factor
         self.depth_img = rotate_img(depth_img, self.camera_config.rotate_img)
         
-        labelled_img, detections, markers, poses, graph_img, graph_relations = super().process_img(fps)
+        # colour_img = np.array(cv2.cvtColor(colour_img, cv2.COLOR_BGR2RGB))
+        
+        labelled_img, detections, markers, poses, graph_img, graph_relations = super().process_img(fps, depth_img=self.depth_img, camera_info=self.camera_info)
 
         # apply mask to depth image and convert to pointcloud
         gaps, cluster_img, depth_scaled, device_mask \
@@ -152,60 +155,24 @@ class PipelineRealsense(PipelineCamera):
     def publish(self, img, detections, markers, poses, graph_img, gaps, cluster_img, depth_scaled, device_mask):
         header, timestamp = super().publish(img, detections, markers, poses, graph_img)
         
-        #! can we make these markers generic?
-        for marker in markers.markers:
-            marker.header.stamp = timestamp
-            marker.header.frame_id = self.config.realsense.parent_frame
-            marker.ns = self.config.realsense.topic
-            marker.lifetime = rospy.Duration(1)
-            # Hack to change coordinates. Z should point away from the camera
-            x = marker.pose.position.x
-            y = marker.pose.position.y
-            z = marker.pose.position.z
-
-            marker.pose.position.x = -y
-            marker.pose.position.y = -z
-            marker.pose.position.z = x
-            # Modifying the quaternion
-            x = marker.pose.orientation.x
-            y = marker.pose.orientation.y
-            z = marker.pose.orientation.z
-            w = marker.pose.orientation.w
-            
-            q_diff = tf.transformations.quaternion_from_euler(1.5708, 0 ,0)
-            q_old = [x,y,z,w]
-            q_new = tf.transformations.quaternion_multiply(q_diff, q_old)
-            # Rotate quaternion by 90 degs
-            
-            marker.pose.orientation.w = q_new[0]
-            marker.pose.orientation.x = q_new[1]
-            marker.pose.orientation.y = q_new[2]
-            marker.pose.orientation.z = q_new[3]
-
-
-        self.markers_pub.publish(markers)
-        
-        #! can we make these poses generic?
-        poses.header.stamp = timestamp
-        self.poses_pub.publish(poses)
-        
-        try:
-            self.publish_transforms(detections, timestamp)
-        except AttributeError as e:
-            rospy.loginfo("realsense: ttribute error: {}".format(e))
+        # publish cluster_img        
         if cluster_img is not None:
-            cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img, encoding="bgr8")
-            cluster_img_msg.header.stamp = timestamp
             if self.camera_config.publish_cluster_img:
+                cluster_img_msg = self.br.cv2_to_imgmsg(cluster_img, encoding="bgr8")
+                cluster_img_msg.header.stamp = timestamp
                 self.clustered_img_pub.publish(cluster_img_msg)
+        
+        # publish device_mask
         if device_mask is not None:
             device_mask_msg = self.br.cv2_to_imgmsg(device_mask, encoding="8UC1")
             device_mask_msg.header.stamp = timestamp
             self.mask_img_pub.publish(device_mask_msg)
+        
+        # publish depth_img
         if depth_scaled is not None:
-            depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled)
-            depth_scaled_msg.header.stamp = timestamp
             if self.camera_config.publish_depth_img:
+                depth_scaled_msg = self.br.cv2_to_imgmsg(depth_scaled)
+                depth_scaled_msg.header.stamp = timestamp
                 self.depth_img_pub.publish(depth_scaled_msg)
 
         # publish only the most probable lever action, for now
@@ -217,11 +184,6 @@ class PipelineRealsense(PipelineCamera):
             
             self.lever_pose_pub.publish(lever_pose_msg)
             self.gaps_pub.publish(gaps_msg)
-            
-        if graph_img is not None and self.config.realsense.publish_graph_img:
-            graph_img_msg = self.br.cv2_to_imgmsg(graph_img, encoding="8UC4")
-            graph_img_msg.header.stamp = timestamp
-            self.graph_img_pub.publish(graph_img_msg)
     
         # ! gaps, should be in def run_frame
         self.gaps = gaps

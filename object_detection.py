@@ -125,13 +125,11 @@ class ObjectDetection:
             detection.angle_px = angle
             
             if worksurface_detection is not None:
-                # basler, w.r.t. vision_module
-                rotation_axis='z'
-                rot_quat = Rotation.from_euler(rotation_axis, angle, degrees=True).inv().as_quat()
+                # detections from basler, w.r.t. vision module table
+                rot_quat = Rotation.from_euler('xyz', [0, 0, angle], degrees=True).inv().as_quat() # ? why inverse?
             else:
-                # realsense module, w.r.t. realsense_link
-                rotation_axis='x'
-                rot_quat = Rotation.from_euler(rotation_axis, angle, degrees=True).as_quat()
+                # detections from realsense, w.r.t. realsense camera
+                rot_quat = Rotation.from_euler('xyz', [180, 0, angle], degrees=True).as_quat()
             
             # todo: obb_3d
             detection.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*rot_quat))
@@ -162,7 +160,9 @@ class ObjectDetection:
                 depth_mean = depth_masked_np.mean()
                 
                 if isinstance(depth_mean, np.float):
-                
+                    
+                    # tf translation comes from img_to_camera_coords(...)
+                    
                     detection.center = img_to_camera_coords(center_px, depth_mean, camera_info)
                     detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
                     detection.box = img_to_camera_coords(detection.box_px, depth_mean, camera_info)
@@ -203,9 +203,10 @@ class ObjectDetection:
             graph_img = graph_relations.draw_network_x()
         
         # drawing stuff
-        for detection in detections:
-            # draw the cuboids
+        for detection in detections:            
+            # draw the cuboids (makers)
             if detection.tf is not None and detection.obb is not None:
+                
                 # todo: x and y could be the wrong way around! they should be chosen depending on the rot_quat
                 changing_height = np.linalg.norm(detection.obb[0]-detection.obb[1])
                 changing_width = np.linalg.norm(detection.obb[1]-detection.obb[2])
@@ -216,40 +217,15 @@ class ObjectDetection:
                     height = changing_width
                     width = changing_height
                 
-                if worksurface_detection is not None:
-                    # basler, w.r.t. worksurface_module
-                    marker = self.make_marker(detection.tf, height, width, self.object_depth, detection.id, detection.label)
-                else:
-                    # realsense, w.r.t. realsense_link
-                    marker = self.make_marker(detection.tf, self.object_depth, height, width, detection.id, detection.label)
+                marker = self.make_marker(detection.tf, height, width, self.object_depth, detection.id, detection.label)
                 markers.markers.append(marker)
             
-            # draw the poses and tfs
-            if detection.tf is not None:
-                # change the angle of the pose so that it looks good for visualisation
-                if worksurface_detection is not None:
-                    # basler, w.r.t. worksurface_module
-                    rot_multiplier = Rotation.from_euler('xyz', [0, 0, 0], degrees=True).as_quat()
-                else:
-                    # realsense, w.r.t. realsense_link
-                    rot_multiplier = Rotation.from_euler('xyz', [90, 0, 90], degrees=True).as_quat()
-                pretty_rot = obb.quaternion_multiply(rot_multiplier, rot_quat)
-                
+            # draw the poses
+            if detection.tf is not None:                
                 pose = Pose()
                 pose.position = detection.tf.translation
-                pose.orientation = Quaternion(*pretty_rot)
+                pose.orientation = detection.tf.rotation
                 poses.poses.append(pose)
-                
-                #! move this to the pipeline.py files
-                br = tf2_ros.TransformBroadcaster()
-                t = TransformStamped()
-
-                t.header.stamp = rospy.Time.now()
-                t.header.frame_id = self.frame_id
-                t.child_frame_id = "obj_"+ str(detection.id)
-                t.transform = detection.tf
-
-                br.sendTransform(t)
                 
         fps_obb = -1
         if time.time() - obb_start > 0:
@@ -274,7 +250,8 @@ class ObjectDetection:
         marker.action = Marker.ADD
         marker.header.frame_id = self.frame_id
         marker.header.stamp = rospy.Time.now()
-        marker.ns = 'detection_%d' % Marker.CUBE
+        # marker.ns = 'detection_%d' % Marker.CUBE
+        marker.ns = self.frame_id
         marker.id = id
         marker.type = Marker.CUBE
         
@@ -299,7 +276,8 @@ class ObjectDetection:
         marker.action = Marker.DELETEALL
         marker.header.frame_id = self.frame_id
         marker.header.stamp = rospy.Time.now()
-        marker.ns = 'detection_%d' % Marker.CUBE
+        # marker.ns = 'detection_%d' % Marker.CUBE
+        marker.ns = self.frame_id
         marker.type = Marker.CUBE
         
         return marker

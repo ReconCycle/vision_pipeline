@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from enum import IntEnum
 import itertools
-from geometry_msgs.msg import PoseStamped
 
 from shapely.geometry import LineString, Point, Polygon, MultiPolygon, GeometryCollection
 from shapely.validation import make_valid
@@ -102,7 +101,8 @@ def img_to_camera_coords(x_y, depth, camera_info):
         result = np.asarray(result)
 
         #result[0]: right, result[1]: down, result[2]: forward
-        return result[2], -result[0], -result[1]
+        # return result[2], -result[0], -result[1] #! DON"T KNOW?
+        return result[0], result[1], result[2]
     
     def pixels_to_meters_of_arr(x_y):
         results = []
