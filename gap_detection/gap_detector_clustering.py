@@ -158,8 +158,6 @@ class GapDetectorClustering:
         # https://github.com/Vuuuuk/Intel-Realsense-L515-3D-Scanner/blob/master/L515_3D_Scanner.py
         
         # merge colour_img and depth_img
-        print("colour_img.shape", colour_img.shape)
-        print("depth_img.shape", depth_img.shape)
         colour2 = o3d.geometry.Image(cv2.cvtColor(colour_img, cv2.COLOR_RGB2BGR))
         depth2 = o3d.geometry.Image((depth_img*1000).astype(np.uint8)) #! we undo a preprocessing step by *1000, m -> mm to correspond with camera_info?
         
@@ -198,9 +196,6 @@ class GapDetectorClustering:
             hull = cv2.convexHull(contour, False)
             # get mask of segmentation from contour so that we get only the largest component
             device_mask = self.mask_from_contour(hull, depth_img.shape).astype(np.uint8)
-            
-            print("device_mask.shape", device_mask.shape)
-            print("depth_img.shape", depth_img.shape)
             
             # mask depth image
             depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=device_mask)

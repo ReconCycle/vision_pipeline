@@ -25,12 +25,17 @@ from visualization_msgs.msg import Marker, MarkerArray
 import rospy
 import tf
 import tf2_ros
+from tf.transformations import quaternion_from_euler, quaternion_multiply
+
+import ros_numpy
 
 
 class ObjectDetection:
-    def __init__(self, config, yolact, dataset, object_reid, camera, frame_id=""):
+    def __init__(self, config, camera_config, yolact, dataset, object_reid, camera, frame_id=""):
         
         self.config = config
+        self.camera_config = camera_config
+        
         self.yolact = yolact
         self.dataset = dataset
         self.camera = camera
@@ -129,6 +134,7 @@ class ObjectDetection:
                 rot_quat = Rotation.from_euler('xyz', [0, 0, angle], degrees=True).inv().as_quat() # ? why inverse?
             else:
                 # detections from realsense, w.r.t. realsense camera
+                # rotate 180 degrees because camera is pointing down
                 rot_quat = Rotation.from_euler('xyz', [180, 0, angle], degrees=True).as_quat()
             
             # todo: obb_3d
@@ -138,8 +144,8 @@ class ObjectDetection:
                 center = worksurface_detection.pixels_to_meters(center_px)
                 corners = worksurface_detection.pixels_to_meters(corners_px)
                 
-                detection.center = center
-                detection.tf = Transform(Vector3(*center, 0), Quaternion(*rot_quat))
+                detection.center = np.array([*center, 0])
+                detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
                 detection.box = worksurface_detection.pixels_to_meters(detection.box_px)
                 detection.obb = corners
                 detection.polygon = worksurface_detection.pixels_to_meters(detection.polygon_px, depth=self.object_depth)
@@ -179,9 +185,10 @@ class ObjectDetection:
                 detection.tf = None
         
         
-        # todo: remove objects that don't fit certain constraints, eg. too small, too thin, too big
-        # todo: we could show these in a different colour for debugging
-        # todo: we should work in meters when filtering based on size!
+        # TODO: remove objects that don't fit certain constraints, eg. too small, too thin, too big
+        # TODO: we could show these in a different colour for debugging
+        # TODO: we should work in meters when filtering based on size!
+        # TODO: filter out duplicate detections
         for detection in detections:
             if detection.polygon is not None and detection.polygon.area < 0.1:
                 pass
@@ -191,15 +198,60 @@ class ObjectDetection:
         # form groups, adds group_id property to detections
         graph_relations.make_groups()
         
-        # todo: track groups
+        # print("groups:", graph_relations.list_wc_components)
+        print("groups by tracking id:", graph_relations.list_wc_components_t)
+        
+        # TODO: track groups
+        # TODO: based on groups, orientate HCA to always point the same way, dependent on battery position in the device.
+        for group in graph_relations.groups:
+            hca_back = graph_relations.get_first(group, Label.hca_back)
+            battery = graph_relations.get_first(group, Label.battery)
+            if hca_back is not None and battery is not None:
+                if graph_relations.is_inside(battery, hca_back):
+                    
+                    print("hca_back", hca_back.tracking_id, "and battery:", battery.tracking_id)
+                    
+                    hca_back_np_tf = ros_numpy.numpify(hca_back.tf)
+                    battery_np_tf = ros_numpy.numpify(battery.tf)
+                    print("hca_back_np_tf", hca_back_np_tf)
+                    print("battery_np_tf", battery_np_tf)
+                    
+                    inv_hca = np.linalg.inv(hca_back_np_tf)
+                    
+                    # prod_np_tf = np.dot(hca_back_np_tf, battery_np_tf)
+                    prod_np_tf = np.dot(inv_hca, battery_np_tf)
+                    prod_tf = ros_numpy.msgify(Transform, prod_np_tf)
+                    
+                    print("prod_tf.translation", prod_tf.translation)
+                    print("prod_tf.rotation", prod_tf.rotation)
+                    
+                    # now we check if prod_tf.translation.x > 0, in which case the battery is in the positive direction of the center of the HCA.
+                    if prod_tf.translation.x < 0:
+                        pass
+                        # fix rotation
+                        print("[red] Fix rotation")
+
+                        quat = ros_numpy.numpify(hca_back.tf.rotation)
+                        quat_180 = quaternion_from_euler(0, 0, np.pi)
+                        quat_new = quaternion_multiply(quat_180, quat)
+                        
+                        # write new tf
+                        hca_back.tf = Transform(Vector3(*hca_back.center), Quaternion(*quat_new))
+                        hca_back.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*quat_new))
+                        
+                        # TODO: Also fix other internals like pcb, pcb_uncovered
+                        # TODO: update the direction on the image as well        
+            
+            
+        # if device contains battery:
+            # possibly flip orientation
         
         if self.config.reid:
             # object re-id
             self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
         
         graph_img = None
-        if (self.camera == Camera.basler and self.config.basler.publish_graph_img) \
-            or (self.camera == Camera.realsense and self.config.realsense.publish_graph_img):
+        if self.camera_config.publish_graph_img:
             graph_img = graph_relations.draw_network_x()
         
         # drawing stuff
@@ -207,7 +259,7 @@ class ObjectDetection:
             # draw the cuboids (makers)
             if detection.tf is not None and detection.obb is not None:
                 
-                # todo: x and y could be the wrong way around! they should be chosen depending on the rot_quat
+                # TODO: x and y could be the wrong way around! they should be chosen depending on the rot_quat
                 changing_height = np.linalg.norm(detection.obb[0]-detection.obb[1])
                 changing_width = np.linalg.norm(detection.obb[1]-detection.obb[2])
                 
@@ -216,6 +268,13 @@ class ObjectDetection:
                 if changing_height < changing_width:
                     height = changing_width
                     width = changing_height
+                
+                #! JSI added this implementation instead: Which one is correct? Why do we even need it?                    
+                # o = detection.obb
+                # changing_height = np.linalg.norm((o[0]-o[2], o[1] - o[3]))
+                # changing_width = np.linalg.norm((o[2] - o[4], o[3] - o[5]))
+                # height = np.min((changing_height, changing_width))
+                # width = np.max((changing_height, changing_width))    
                 
                 marker = self.make_marker(detection.tf, height, width, self.object_depth, detection.id, detection.label)
                 markers.markers.append(marker)

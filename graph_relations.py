@@ -84,6 +84,7 @@ def exists_detection(detections, det_or_label):
     return False
 
 
+
 # todo: we can use enums for the relationships instead of strings
 class Relation(IntEnum):
     next_to = 0
@@ -95,6 +96,8 @@ class GraphRelations:
     def __init__(self, detections: List[Detection]):
         self.detections = detections
         
+        self.tracking_ids = {}
+        
         self.G = None
         
         self.edge_labels_dict = None
@@ -102,6 +105,8 @@ class GraphRelations:
         self.next_to_edges = None
         
         self.list_wc_components = None
+        self.list_wc_components_t = None
+        self.groups = []
         
         self.get_relations()
         self.generate_network_x()
@@ -141,6 +146,11 @@ class GraphRelations:
         self.G = nx.DiGraph()
         self.G.add_nodes_from([detection.id for detection in self.detections])
         self.G.add_edges_from(self.inside_edges + self.next_to_edges)
+        
+        self.tracking_ids = {}
+        for detection in self.detections:
+            self.tracking_ids[detection.id] = detection.tracking_id
+        
 
     
     def draw_network_x(self):
@@ -207,8 +217,25 @@ class GraphRelations:
         for group_id, wc_components in enumerate(self.list_wc_components):
             for det_id in wc_components:
                 det = self.get_detection_by_id(det_id)
-                det.group_id = group_id
-    
+                det.group_id = group_id #? do we ever use this group_id?
+        
+        # create list_wc_components but with tracking_ids
+        self.list_wc_components_t = []
+        for wc_component in self.list_wc_components:
+            wc_component_t = []
+            for id in wc_component:
+                wc_component_t.append(self.tracking_ids[id])
+            self.list_wc_components_t.append(wc_component_t)
+        
+        # create the groups as a list of lists
+        self.groups = []
+        for wc_component in self.list_wc_components:
+            group = []
+            for id in wc_component:
+                group.append(self.get_detection_by_id(id))
+            
+            self.groups.append(group)
+        
             
     def get_detection_by_id(self, id):
         for det in self.detections:
@@ -276,3 +303,20 @@ class GraphRelations:
         inside_dets = [detection for detection in self.detections if detection.id in inside_dets_ids]
         
         return inside_dets
+    
+    @staticmethod
+    def get(detections, label):
+        found_dets = []
+        for detection in detections:
+            if detection.label == label:
+                found_dets.append(detection)
+
+        return found_dets
+
+    @staticmethod
+    def get_first(detections, label):
+        for detection in detections:
+            if detection.label == label:
+                return detection
+
+        return None

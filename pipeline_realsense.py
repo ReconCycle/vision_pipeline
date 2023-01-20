@@ -36,8 +36,6 @@ from context_action_framework.types import detections_to_ros, gaps_to_ros, Label
 from context_action_framework.types import Label, Camera
 from context_action_framework.msg import Gaps as ROSGaps
 
-from obb import obb_px_to_quat
-
 
 class PipelineRealsense(PipelineCamera):    
     def __init__(self, yolact, dataset, object_reid, config, static_broadcaster):
@@ -129,7 +127,7 @@ class PipelineRealsense(PipelineCamera):
         self.aruco_point = aruco_point_ros
         
         
-    def process_img(self, fps=None):
+    def process_img(self, fps=None, compute_gaps=False):
         depth_img = CvBridge().imgmsg_to_cv2(self.depth_msg) * self.depth_rescaling_factor
         self.depth_img = rotate_img(depth_img, self.camera_config.rotate_img)
         
@@ -137,17 +135,20 @@ class PipelineRealsense(PipelineCamera):
         
         labelled_img, detections, markers, poses, graph_img, graph_relations = super().process_img(fps, depth_img=self.depth_img, camera_info=self.camera_info)
 
-        # apply mask to depth image and convert to pointcloud
-        gaps, cluster_img, depth_scaled, device_mask \
-            = self.gap_detector.lever_detector(
-                self.colour_img,
-                self.depth_img,
-                detections,
-                graph_relations,
-                self.camera_info,
-                aruco_pose=self.aruco_pose,
-                aruco_point=self.aruco_point
-            )
+        if compute_gaps:
+            # apply mask to depth image and convert to pointcloud
+            gaps, cluster_img, depth_scaled, device_mask \
+                = self.gap_detector.lever_detector(
+                    self.colour_img,
+                    self.depth_img,
+                    detections,
+                    graph_relations,
+                    self.camera_info,
+                    aruco_pose=self.aruco_pose,
+                    aruco_point=self.aruco_point
+                )
+        else:
+            gaps, cluster_img, depth_scaled, device_mask = None, None, None, None
 
         return labelled_img, detections, markers, poses, graph_img, gaps, cluster_img, depth_scaled, device_mask
     

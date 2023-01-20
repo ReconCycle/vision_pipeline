@@ -32,8 +32,6 @@ from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.types import detections_to_ros, gaps_to_ros, Label, Camera
 
-from obb import obb_px_to_quat
-
 
 class PipelineCamera:
     def __init__(self, yolact, dataset, object_reid, config, camera_config, camera_type, static_tf_manager):
@@ -60,6 +58,9 @@ class PipelineCamera:
         # don't automatically start
         self.continuous_mode = False
         self.single_mode = False
+        
+        # is gaps requested?
+        self.single_mode_request_gaps = False
         
         # time of single_mode call
         self.single_mode_time = None
@@ -118,7 +119,7 @@ class PipelineCamera:
         rospy.on_shutdown(self.exit)
     
     def init_pipeline(self, yolact, dataset, object_reid):
-        self.object_detection = ObjectDetection(self.config, yolact, dataset, object_reid, self.camera_type, self.parent_frame)
+        self.object_detection = ObjectDetection(self.config, self.camera_config, yolact, dataset, object_reid, self.camera_type, self.parent_frame)
         self.worksurface_detection = None
 
     def create_subscribers(self):
@@ -166,14 +167,12 @@ class PipelineCamera:
         self.img_msg = img_msg
         self.img_id += 1
         
-        if self.single_mode:
-            if self.processing_acquisition_stamp is None:
-                t = rospy.get_rostime().to_sec()
-                # time since single mode called
-                img_age = np.round(t - self.acquisition_stamp.to_sec(), 2)
-                single_mode_age = str(np.round(t - self.single_mode_time, 2))
-                img_age_since_single_mode = str(np.round(self.acquisition_stamp.to_sec() - self.single_mode_time, 2))
-                print("[blue]"+ self.camera_name +" (single_mode): received img from camera, img_id:" + str(self.img_id) + ", img_age: "+ str(img_age) +", single_mode_age: "+ single_mode_age+", img_age_since_single_mode: "+img_age_since_single_mode+"[/blue]")
+        t = rospy.get_rostime().to_sec()
+        img_age = np.round(t - self.acquisition_stamp.to_sec(), 2)
+        
+        if img_age < -0.1:
+            print("[red]"+self.camera_name +": img arrived with timestamp in the future by 100ms!")
+
       
     def enable_camera_cb(self, req):
         state = req.data
@@ -198,9 +197,13 @@ class PipelineCamera:
         msg = "debug: " + ("enabled" if state else "disabled")
         return True, msg
     
-    # TODO: return false if the cameras aren't running... otherwise the service call will hang forever
     def vision_single_det_cb(self, req):      
         request_gap_detection = req.gap_detection
+        self.single_mode_request_gaps = request_gap_detection
+        
+        if not self.camera_enabled:
+            print("[red]"+self.camera_name +" (single mode): Enable cameras before requesting detection.")
+            return VisionDetectionResponse(False, VisionDetails(), None)
               
         print(self.camera_name +": getting detection")
         self.single_mode = True
@@ -213,10 +216,8 @@ class PipelineCamera:
         t = rospy.get_rostime().to_sec()
  
         img_age = np.round(t - self.processed_acquisition_stamp.to_sec(), 2)
-        single_mode_age = str(np.round(t - single_mode_time, 2))
-        print("[blue]"+self.camera_name +" (single_mode): returning single detection, img_id:" + str(self.processed_img_id) + ", img_age: "+ str(img_age) +", single_mode_age: "+ single_mode_age+"[/blue]")
+        print("[blue]"+self.camera_name +" (single_mode): returning single detection, img_id:" + str(self.processed_img_id) + ", img_age: "+ str(img_age) +"[/blue]")
         
-        # TODO: also only process gap stuff if it is requested... otherwise it is time-wasting
         ros_gaps = []
         will_return_gaps = False
         if self.gaps is not None and request_gap_detection:
@@ -227,10 +228,10 @@ class PipelineCamera:
             header = rospy.Header()
             header.stamp = rospy.Time.now()
             vision_details = VisionDetails(header, self.processed_acquisition_stamp, self.camera_type, will_return_gaps, detections_to_ros(self.detections), ros_gaps)
-            return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(self.labelled_img))
+            return VisionDetectionResponse(True, vision_details, CvBridge().cv2_to_imgmsg(self.labelled_img, encoding="bgr8"))
         else:
             print(self.camera_name +": returning empty response!")
-            return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(self.labelled_img))
+            return VisionDetectionResponse(False, VisionDetails(), CvBridge().cv2_to_imgmsg(self.labelled_img, encoding="bgr8"))
     
     def enable_continuous_cb(self, req):
         state = req.data
@@ -273,8 +274,11 @@ class PipelineCamera:
                     msg += "FAILED to disable camera"
             
         except rospy.ServiceException as e:
-            if "UVC device is streaming" in str(e):
+            if "UVC device is streaming" in str(e) and state:
                 msg += "enabled camera (already streaming)"
+                success = True
+            elif "UVC device is not streaming" in str(e) and not state:
+                msg += "disabled camera (already stopped)"
                 success = True
             else:
                 if state:
@@ -305,20 +309,21 @@ class PipelineCamera:
         if self.single_mode:
             t = rospy.get_rostime().to_sec()
             img_age = np.round(t - self.acquisition_stamp.to_sec(), 2)
-            single_mode_age = str(np.round(t - self.single_mode_time, 2))
-            img_age_since_single_mode = str(np.round(self.acquisition_stamp.to_sec() - self.single_mode_time, 2))
-            # print("[blue]"+self.camera_name + " (single_mode): could process, img_id: " + str(self.img_id) + ", img_age: "+ str(img_age) +", single_mode_age: "+ single_mode_age+", img_age_since_single_mode: "+img_age_since_single_mode+"[/blue]")
             
-            if self.single_mode_time < self.acquisition_stamp.to_sec():
-                print("[blue]"+self.camera_name +" (single_mode): about to process, img_id:" + str(self.img_id) + ", img_age: "+ str(img_age) +", single_mode_age: "+ single_mode_age+", img_age_since_single_mode: "+img_age_since_single_mode+"[/blue]")
+            time_leaway = 0.05 # if the frame arrived very slightly before single_mode_time, then still process it
+            if self.single_mode_time < self.acquisition_stamp.to_sec() + time_leaway:
+                print("[blue]"+self.camera_name +" (single_mode): about to process, img_id:" + str(self.img_id) + ", img_age: "+ str(img_age) + "[/blue]")
                 single_mode_frame_accepted = True
-            # else:
-            #     print("[red]"+self.camera_name +" (single_mode): invalid, img_id:" + str(self.img_id) + ", img_age: "+ str(img_age) +", single_mode_age: "+ single_mode_age+", img_age_since_single_mode: "+img_age_since_single_mode+"[/red]")
+
         
         # process frame if in continuous mode or if single mode frame is accepted
         if self.continuous_mode or single_mode_frame_accepted or self.is_first_frame:
             
-            success = self.run_frame()
+            compute_gaps = True # TODO: we could make this a parameter
+            if single_mode_frame_accepted:
+                compute_gaps = self.single_mode_request_gaps
+            
+            success = self.run_frame(compute_gaps)
 
             # compute the first frame immediately
             if success:
@@ -341,7 +346,7 @@ class PipelineCamera:
             self.rate_limit_single.sleep()
             
     # this has to be run on the main thread
-    def run_frame(self):
+    def run_frame(self, compute_gaps=False):
 
         if self.img_msg is None:
             #print(self.camera_name +": Waiting to receive image.")
@@ -369,7 +374,6 @@ class PipelineCamera:
 
         # All the checks passes, run the pipeline
         #! we should now lock these variables from the callback
-
         
         processing_img_id = self.img_id
         # processing_colour_img = np.copy(self.colour_img) #? unused
@@ -379,8 +383,7 @@ class PipelineCamera:
         if t_prev is not None and self.last_run_time - t_prev > 0:
             fps = "fps_total: " + str(round(1 / (self.last_run_time - t_prev), 1)) + ", "
 
-        # TODO: don't know if remaining_args works
-        labelled_img, detections, markers, poses, graph_img, *remaining_args = self.process_img(fps)
+        labelled_img, detections, markers, poses, graph_img, *remaining_args = self.process_img(fps, compute_gaps)
 
         self.publish(labelled_img, detections, markers, poses, graph_img, *remaining_args)
         
@@ -400,13 +403,14 @@ class PipelineCamera:
         if self.img_id == sys.maxsize:
             self.img_id = 0
             self.processed_img_id = -1
+            
         
-        print("[green]"+self.camera_name +": published img: "+ str(processing_img_id) +", num. dets: " + str(len(detections)) + "[/green]")
+        print("[green]"+self.camera_name +": published img: "+ str(processing_img_id) +", num. dets: " + str(len(detections)) + ", delay: " + str(np.round(self.processed_delay, 2)) + "[/green]")
         
         return True
     
 
-    def process_img(self, fps=None, camera_info=None, depth_img=None):
+    def process_img(self, fps=None, camera_info=None, depth_img=None, compute_gaps=False):
         colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg, "bgr8"))
         self.colour_img = rotate_img(colour_img, self.camera_config.rotate_img)
         
@@ -465,7 +469,6 @@ class PipelineCamera:
         self.poses_pub.publish(poses)
     
         # Publish the TFs
-        #! TFs seem incorrect for Realsense camera
         self.publish_transforms(detections, timestamp)
         
         return header, timestamp
@@ -480,16 +483,6 @@ class PipelineCamera:
                 # t.child_frame_id = "obj_"+ str(detection.id)
                 t.child_frame_id = '%s_%s_%s'%(Label(detection.label).name, detection.id, self.camera_config.parent_frame)
                 t.transform = detection.tf
-                
-                
-                # translation = copy.deepcopy(detection.tf.translation)   # Table should be rotated in config but that is a lot more work
-                # translation.z = 0 #? why not at 2.5cm or whatever for basler? What about for realsense?
-                # tr = (translation.x, translation.y, translation.z)
-                
-                # rotation = detection.tf.rotation
-                # rotation = [rotation.x, rotation.y, rotation.z, rotation.w]
-                
-                
-                # self.tf_broadcaster.sendTransform(tr, rotation, timestamp, child_frame, self.camera_config.parent_frame)
+
                 self.tf_broadcaster.sendTransform(t)
                 
