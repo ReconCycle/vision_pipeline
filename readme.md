@@ -31,13 +31,13 @@ Run example:
 python ros_pipeline.py
 ```
 
-To enable the pipeline for realsense or basler use:
+For the Basler camera (Realsense is equivalent), enabling continuous mode without gap detection:
 ```
-rosservice call /vision/realsense/enable True
+rosservice call /vision/basler/continuous False
 ```
-or
+Getting single shot detection, without gap detection:
 ```
-rosservice call /vision/basler/enable True
+rosservice call /vision/basler/get_detection False
 ```
 
 **Publishes**:
@@ -63,7 +63,7 @@ Realsense:
 
 **Services**:
 
-To enable or disable the cameras:
+To enable or disable the cameras **This should not be required. Cameras are automatically enabled on start, and disabled on program exit**:
 
 - `/vision/basler/enable` True/False
 - `/vision/realsense/enable` True/False

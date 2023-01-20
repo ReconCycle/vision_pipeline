@@ -192,7 +192,7 @@ class ObjectDetection:
         for detection in detections:
             if detection.polygon is not None and detection.polygon.area < 0.1:
                 pass
-
+        
         graph_relations = GraphRelations(detections)
         
         # form groups, adds group_id property to detections
@@ -206,6 +206,10 @@ class ObjectDetection:
         for group in graph_relations.groups:
             hca_back = graph_relations.get_first(group, Label.hca_back)
             battery = graph_relations.get_first(group, Label.battery)
+            # TODO: Also fix other internals like pcb, pcb_uncovered
+            # pcb = graph_relations.get_first(group, Label.pcb)
+            # pcb_covered = graph_relations.get_first(group, Label.pcb_covered)
+            
             if hca_back is not None and battery is not None:
                 if graph_relations.is_inside(battery, hca_back):
                     
@@ -236,12 +240,10 @@ class ObjectDetection:
                         quat_new = quaternion_multiply(quat_180, quat)
                         
                         # write new tf
+                        hca_back.angle_px = (hca_back.angle_px + 180) % 360
                         hca_back.tf = Transform(Vector3(*hca_back.center), Quaternion(*quat_new))
                         hca_back.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*quat_new))
                         
-                        # TODO: Also fix other internals like pcb, pcb_uncovered
-                        # TODO: update the direction on the image as well        
-            
             
         # if device contains battery:
             # possibly flip orientation
@@ -269,7 +271,7 @@ class ObjectDetection:
                     height = changing_width
                     width = changing_height
                 
-                #! JSI added this implementation instead: Which one is correct? Why do we even need it?                    
+                #! JSI added this implementation instead: Which one is correct? Why do we even need it?
                 # o = detection.obb
                 # changing_height = np.linalg.norm((o[0]-o[2], o[1] - o[3]))
                 # changing_width = np.linalg.norm((o[2] - o[4], o[3] - o[5]))
