@@ -44,7 +44,10 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
     info_text = ""
         
     for detection in detections:
-        tracking_id = "t_id " + str(detection.tracking_id) + ", " if detection.tracking_id is not None else ""
+        tracking_id = ""
+        if not detection.valid:
+            tracking_id += "INVALID, "
+        tracking_id += "t_id " + str(detection.tracking_id) + ", " if detection.tracking_id is not None else ""
         # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) if detection.tracking_score is not None else ""
         info_text +=  detection.label.name + ", " + tracking_id + "\n"
 
@@ -80,6 +83,8 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
                 color = torch.Tensor(color).float() / 255.
 
             return color
+
+    # TODO: draw invalid detections in light grey with high opacity
 
     # First, draw the masks on the GPU where we can do it really fast
     # Beware: very fast but possibly unintelligible mask-drawing code ahead
@@ -141,7 +146,7 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
                             (xc - 50, yc+30), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
 
     for detection in detections:
-        if detection.center_px is not None:
+        if detection.valid and detection.center_px is not None:
             cv2.circle(img_numpy, tuple(detection.center_px), 5, (0, 255, 0), -1)
             cv2.drawContours(img_numpy, [detection.obb_px], 0, (0, 255, 0), 2)          
             
@@ -174,44 +179,45 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
     if args.display_text or args.display_bboxes:
         for j in reversed(range(num_dets_to_consider)):
             detection = detections[j]
-            x1 = int(detection.box_px[0, 0])
-            y1 = int(detection.box_px[0, 1])
-            x2 = int(detection.box_px[1, 0])
-            y2 = int(detection.box_px[1, 1])
-            
-            color = get_color(j).cpu().detach().numpy() *255
-            color = [int(i) for i in color]
+            if detection.valid:
+                x1 = int(detection.box_px[0, 0])
+                y1 = int(detection.box_px[0, 1])
+                x2 = int(detection.box_px[1, 0])
+                y2 = int(detection.box_px[1, 1])
+                
+                color = get_color(j).cpu().detach().numpy() *255
+                color = [int(i) for i in color]
 
-            if args.display_bboxes:
-                cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
+                if args.display_bboxes:
+                    cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 2)
 
-            if args.display_text:
-                z1_m = 0
-                if detection.center is not None:
-                    if len(detection.center) == 2:
-                        x1_m, y1_m = detection.center
+                if args.display_text:
+                    z1_m = 0
+                    if detection.center is not None:
+                        if len(detection.center) == 2:
+                            x1_m, y1_m = detection.center
+                        else:
+                            x1_m, y1_m, z1_m = detection.center
                     else:
-                        x1_m, y1_m, z1_m = detection.center
-                else:
-                    x1_m, y1_m = (-1, -1)
+                        x1_m, y1_m = (-1, -1)
 
-                tracking_id = "t_id " + str(detection.tracking_id) + "," if detection.tracking_id is not None else ""
-                # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) + ", " if detection.tracking_score is not None else ""
-                text_str = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (detection.label.name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else detection.label.name
+                    tracking_id = "t_id " + str(detection.tracking_id) + "," if detection.tracking_id is not None else ""
+                    # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) + ", " if detection.tracking_score is not None else ""
+                    text_str = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (detection.label.name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else detection.label.name
 
-                text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
-                text_w = int(text_w)
-                text_h = int(text_h)
+                    text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
+                    text_w = int(text_w)
+                    text_h = int(text_h)
 
-                text_pt = (x1, y1 - 3)
-                text_color = (int(255), int(255), int(255))
+                    text_pt = (x1, y1 - 3)
+                    text_color = (int(255), int(255), int(255))
 
-                cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
-                cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+                    cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
+                    cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
     
     # show tracking obbs
     for detection in detections:
-        if detection.tracking_box is not None:
+        if detection.valid and detection.tracking_box is not None:
             x1, y1, x2, y2 = detection.tracking_box
             x1 = int(x1)
             x2 = int(x2)

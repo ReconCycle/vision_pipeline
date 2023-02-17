@@ -151,13 +151,19 @@ class PipelineCamera:
         labelled_img_enable = path(self.config.node_name, self.camera_config.topic, "labelled_img", "enable")
         graph_img_enable = path(self.config.node_name, self.camera_config.topic, "graph_img", "enable")
         debug_enable = path(self.config.node_name, self.camera_config.topic, "debug", "enable")
+        gaps_enable = path(self.config.node_name, self.camera_config.topic, "gaps")
+        reid_enable = path(self.config.node_name, self.camera_config.topic, "reid")
+        
         vision_get_detection = path(self.config.node_name, self.camera_config.topic, "get_detection")
         continuous_enable = path(self.config.node_name, self.camera_config.topic, "continuous")
-        
+
         rospy.Service(camera_enable, SetBool, self.enable_camera_cb)
         rospy.Service(labelled_img_enable, SetBool, self.labelled_img_enable_cb)
         rospy.Service(graph_img_enable, SetBool, self.graph_img_enable_cb)
         rospy.Service(debug_enable, SetBool, self.debug_enable_cb)
+        rospy.Service(gaps_enable, SetBool, self.gaps_enable_cb)
+        rospy.Service(reid_enable, SetBool, self.reid_enable_cb)
+        
         rospy.Service(vision_get_detection, VisionDetection, self.vision_single_det_cb)
         rospy.Service(continuous_enable, SetBool, self.enable_continuous_cb)
         
@@ -196,6 +202,19 @@ class PipelineCamera:
         self.camera_config.debug_work_surface_detection = state
         msg = "debug: " + ("enabled" if state else "disabled")
         return True, msg
+    
+    def gaps_enable_cb(self, req):
+        state = req.data
+        # TODO: toggle gap detection
+        
+        return True, "todo: implementation"
+    
+    def reid_enable_cb(self, req):
+        state = req.data
+        
+        # TODO: toggle re-id
+        
+        return True, "todo: implementation"
     
     def vision_single_det_cb(self, req):      
         request_gap_detection = req.gap_detection
@@ -448,10 +467,12 @@ class PipelineCamera:
             graph_img_msg.header.stamp = timestamp
             self.graph_img_pub.publish(graph_img_msg)
         
-        # publish detections
+        # publish valid detections
+        valid_detections = [detection for detection in detections if detection.valid]
+        
         header = rospy.Header()
         header.stamp = timestamp
-        ros_detections = ROSDetections(header, self.acquisition_stamp, detections_to_ros(detections))
+        ros_detections = ROSDetections(header, self.acquisition_stamp, detections_to_ros(valid_detections))
         self.detections_pub.publish(ros_detections)
         
         # publish markers
@@ -469,7 +490,7 @@ class PipelineCamera:
         self.poses_pub.publish(poses)
     
         # Publish the TFs
-        self.publish_transforms(detections, timestamp)
+        self.publish_transforms(valid_detections, timestamp)
         
         return header, timestamp
 

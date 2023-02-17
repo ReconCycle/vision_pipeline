@@ -234,20 +234,21 @@ class WorkSurfaceDetection:
         self.blur = cv2.GaussianBlur(gray, (5, 5), 0)
         
         # 1st estimate for affine transform using only bolts
-        self.find_bolts()
-        self.bolt_point_matching()
-        self.compute_affine_transform()
-        
-        self.estimate_corners_using_transform()
-        
-        # 2nd estimate for affine transformation using also corners
-        #! this usually makes things worse
-        # self.improve_corner_estimate_using_corner_detection(img)
-        # self.compute_affine_transform()
-        
-        # for debugging, draw everything
-        # if self.debug:
-        #     self.draw_corners_and_circles(img, show=True)
+        found_bolts = self.find_bolts()
+        if found_bolts:
+            self.bolt_point_matching()
+            self.compute_affine_transform()
+            
+            self.estimate_corners_using_transform()
+            
+            # 2nd estimate for affine transformation using also corners
+            #! this usually makes things worse
+            # self.improve_corner_estimate_using_corner_detection(img)
+            # self.compute_affine_transform()
+            
+            # for debugging, draw everything
+            # if self.debug:
+            #     self.draw_corners_and_circles(img, show=True)
         
     def mask_worksurface(self, img):
         
@@ -505,13 +506,13 @@ class WorkSurfaceDetection:
         #          The smaller it is, the more false circles may be detected.
         circles = cv2.HoughCircles(self.blur, cv2.HOUGH_GRADIENT, dp=1, minDist=50,
                                     param1=50, param2=20, minRadius=10, maxRadius=20)
+        circles_ignoring = []
 
         if circles is not None:
             circles = np.array([[x, y, r] for (x, y, r) in circles[0]])
             
             # remove circles that are on the edge of the image, these can lead to incorrect results
             # in the case that worksurfaces are next to each other
-            circles_ignoring = []
             circles_inner_region = []
             for (x, y, r) in circles:
                 if x < self.border_width \
@@ -528,8 +529,12 @@ class WorkSurfaceDetection:
             circles = np.array(circles_inner_region)
             circles_ignoring = np.array(circles_ignoring)
                 
-            self.circles = circles
-            self.circles_ignoring = circles_ignoring
+        self.circles = circles
+        self.circles_ignoring = circles_ignoring
+        
+        if circles is None:
+            print("[red]No circles found! [/red]")
+            return False
             
     
     def improve_corner_estimate_using_corner_detection(self, img):
@@ -734,6 +739,9 @@ class WorkSurfaceDetection:
             cv2.destroyAllWindows()
 
     def pixels_to_meters(self, coords, depth=None):
+        if self.coord_transform is None:
+            return coords
+        
         if isinstance(coords, Polygon):
             # coords.exterior.coords[:-1] for non repeated list
             polygon_px_coords = np.asarray(list(coords.exterior.coords))
@@ -754,6 +762,8 @@ class WorkSurfaceDetection:
             return self.coord_transform(coords)
         
     def meters_to_pixels(self, coords):
+        if self.coord_transform is None:
+            return coords
         # todo: deal with depth
         if isinstance(coords, Polygon):
             polygon_coords = np.asarray(list(coords.exterior.coords))
