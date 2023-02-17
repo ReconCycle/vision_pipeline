@@ -4,6 +4,7 @@ import torch
 from torch.utils.data.sampler import SubsetRandomSampler
 # import albumentations as A
 # import albumentations.pytorch
+import time
 import numpy as np
 import cv2
 import os
@@ -108,7 +109,7 @@ class EvenPairwiseDataset(torch.utils.data.Dataset):
         # n is number of items
         self.n = len(dataset)
         # print("self.n", self.n)
-        self.dataset_labels = [label for _, label in dataset]
+        self.dataset_labels = [label for _, label, *_ in dataset]
         self.samples_per_class = Counter(self.dataset_labels)
         # print("samples_per_class", self.samples_per_class)
         
@@ -142,6 +143,9 @@ class EvenPairwiseDataset(torch.utils.data.Dataset):
         
         sum = 0
         positive_pair = False
+        
+        # start = time.time()
+        
         for class_id, num_pairs in self.pairs_per_class.items():
         # for i in np.arange(len(self.pairs_per_class)):
             if idx < sum + num_pairs:
@@ -159,6 +163,7 @@ class EvenPairwiseDataset(torch.utils.data.Dataset):
                 # print("x2", x2)
                 
                 # the dataset isn't ordered, so we need to find the 'x1'th sample with label 'class_id' in the dataset
+                
                 id1 = nth_item(x1, class_id, self.dataset_labels)
                 id2 = nth_item(x2, class_id, self.dataset_labels)
                 break
@@ -182,7 +187,9 @@ class EvenPairwiseDataset(torch.utils.data.Dataset):
         sample1, label1, *_ = self.dataset[id1]
         sample2, label2, *_ = self.dataset[id2]
         
-        
+        # end = time.time()
+        # print("__getitem__ elapsed time:", end - start)
+                
         # print("label1", label1)
         # print("label2", label2)
         # print("")
@@ -198,7 +205,8 @@ class DataLoaderEvenPairwise():
     """dataloader for EvenPairwiseDataset
     """
     def __init__(self, 
-                 img_dir="MNIST", 
+                 img_path="MNIST",
+                 preprocessing_path=None,
                  batch_size=256, 
                  shuffle=True, 
                  validation_split=.2,
@@ -206,7 +214,7 @@ class DataLoaderEvenPairwise():
                  unseen_classes = ["hca_7", "hca_8", "hca_9"],
                  transform=None):
         
-        if img_dir == "MNIST":
+        if img_path == "MNIST":
             raise NotImplementedError
             # dataloader_imgs = DataLoaderMNIST(batch_size=batch_size, 
             #                                   shuffle=shuffle,
@@ -215,7 +223,8 @@ class DataLoaderEvenPairwise():
             #                                   unseen_classes=unseen_classes)
 
         else:
-            dataloader_imgs = DataLoader(img_dir, 
+            dataloader_imgs = DataLoader(img_path,
+                                         preprocessing_path=preprocessing_path,
                                          batch_size=batch_size, 
                                          shuffle=shuffle,
                                          validation_split=validation_split,
@@ -292,9 +301,9 @@ class DataLoaderEvenPairwise():
         
 if __name__ == '__main__':
     print("Run this for testing the dataloader only.")
-    img_dir = "/home/sruiz/datasets2/reconcycle/simon_rgbd_dataset/hca_simon/sorted_in_folders"
-    # img_dir = "/home/sruiz/datasets/labelme/hca_front_21-10-01/cropped"
-    # img_dir = "MNIST"
+    img_path = "/home/sruiz/datasets2/reconcycle/simon_rgbd_dataset/hca_simon/sorted_in_folders"
+    # img_path = "/home/sruiz/datasets/labelme/hca_front_21-10-01/cropped"
+    # img_path = "MNIST"
     utils.init_seeds(1, cuda_deterministic=False)
-    dataloader = DataLoaderEvenPairwise(img_dir, 32, shuffle=True)
+    dataloader = DataLoaderEvenPairwise(img_path, 32, shuffle=True)
     dataloader.example()

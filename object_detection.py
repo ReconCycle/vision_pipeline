@@ -31,7 +31,7 @@ import ros_numpy
 
 
 class ObjectDetection:
-    def __init__(self, config, camera_config, yolact, dataset, object_reid, camera, frame_id=""):
+    def __init__(self, config, camera_config, yolact, dataset, object_reid, camera, frame_id="", use_ros=True):
         
         self.config = config
         self.camera_config = camera_config
@@ -54,8 +54,10 @@ class ObjectDetection:
         self.tracker = BYTETracker(self.tracker_args)
         self.fps_graphics = -1.
         self.fps_objdet = -1.
+        
+        self.use_ros = use_ros
 
-    def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None):
+    def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None, use_tracker=True):
         t_start = time.time()
         
         if depth_img is not None:
@@ -96,31 +98,37 @@ class ObjectDetection:
                 detection.polygon_px = poly
             
             detections.append(detection)
-                
-        tracker_start = time.time()
-        # apply tracker
-        # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
         
-        # todo: add classes to tracker
-        online_targets = self.tracker.update(boxes, scores)
+        if use_tracker:   
+            tracker_start = time.time()
+            # apply tracker
+            # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
+            
+            # todo: add classes to tracker
+            online_targets = self.tracker.update(boxes, scores)
 
-        for t in online_targets:
-            detections[t.input_id].tracking_id = int(t.track_id)
-            detections[t.input_id].tracking_box = t.tlbr
-            detections[t.input_id].score = float(t.score)
+            for t in online_targets:
+                detections[t.input_id].tracking_id = int(t.track_id)
+                detections[t.input_id].tracking_box = t.tlbr
+                detections[t.input_id].score = float(t.score)
 
-        fps_tracker = 1.0 / (time.time() - tracker_start)
+            fps_tracker = 1.0 / (time.time() - tracker_start)
+        else:
+            fps_tracker = 0
         
         
         obb_start = time.time()
         
-        markers = MarkerArray()
-        markers.markers = []
-        markers.markers.append(self.delete_all_markers())
-        
-        poses = PoseArray()
-        poses.header.frame_id = self.frame_id
-        poses.header.stamp = rospy.Time.now()
+        markers = None
+        poses = None
+        if self.use_ros:
+            markers = MarkerArray()
+            markers.markers = []
+            markers.markers.append(self.delete_all_markers())
+            
+            poses = PoseArray()
+            poses.header.frame_id = self.frame_id
+            poses.header.stamp = rospy.Time.now()
         
         # calculate the oriented bounding boxes
         for detection in detections:
@@ -184,15 +192,48 @@ class ObjectDetection:
                 detection.obb = None
                 detection.tf = None
         
-        
-        # TODO: remove objects that don't fit certain constraints, eg. too small, too thin, too big
+            
+        # remove objects that don't fit certain constraints, eg. too small, too thin, too big
+        def is_valid_detection(detection):
+            # area should be larger than 1cm^2
+            if detection.polygon is not None and detection.polygon.area < 0.01:
+                return False
+            
+            # check ratio of obb sides
+            edge_small = np.linalg.norm(detection.obb[0] - detection.obb[1])
+            edge_large = np.linalg.norm(detection.obb[1] - detection.obb[2])
+            
+            if edge_large < edge_small:
+                edge_small, edge_large = edge_large, edge_small
+                
+            ratio = edge_large / edge_small
+            
+            # edge_small should be longer than 1mm
+            if edge_small < 0.001:
+                print("[red]invalid: edge too small")
+                return False
+            
+            # edge_large should be shorter than 20cm
+            if edge_large > 0.2:
+                print("[red]invalid: edge too large")
+                return False
+            
+            # ratio of longest HCA: 3.4
+            # ratio of Kalo 1.5 battery: 1.7
+            # a really big ratio corresponds to a really long device. Ratio of 5 is probably false positive.
+            if ratio > 5:
+                print("[red]invalid: obb ratio of sides too large")
+                return False
+            
+            return True
+                    
         # TODO: we could show these in a different colour for debugging
-        # TODO: we should work in meters when filtering based on size!
-        # TODO: filter out duplicate detections
+        # TODO: filter out invalid detections        
         for detection in detections:
-            if detection.polygon is not None and detection.polygon.area < 0.1:
-                pass
+            is_valid = is_valid_detection(detection)
+            detection.valid = is_valid
         
+        # graph relations only uses valid detections
         graph_relations = GraphRelations(detections)
         
         # form groups, adds group_id property to detections
@@ -200,41 +241,36 @@ class ObjectDetection:
         
         # print("groups:", graph_relations.list_wc_components)
         print("groups by tracking id:", graph_relations.list_wc_components_t)
+            
+        
+        # TODO: filter out duplicate detections in a group
+        for group in graph_relations.groups:
+            for detection in group:
+                pass
+                    
         
         # TODO: track groups
-        # TODO: based on groups, orientate HCA to always point the same way, dependent on battery position in the device.
+        # based on groups, orientate HCA to always point the same way, dependent on battery position in the device.
         for group in graph_relations.groups:
             hca_back = graph_relations.get_first(group, Label.hca_back)
             battery = graph_relations.get_first(group, Label.battery)
-            # TODO: Also fix other internals like pcb, pcb_uncovered
+            # TODO: Also fix orientation of other internals like pcb, pcb_uncovered
             # pcb = graph_relations.get_first(group, Label.pcb)
             # pcb_covered = graph_relations.get_first(group, Label.pcb_covered)
             
             if hca_back is not None and battery is not None:
                 if graph_relations.is_inside(battery, hca_back):
                     
-                    print("hca_back", hca_back.tracking_id, "and battery:", battery.tracking_id)
-                    
+                    # compute relative TF of battery w.r.t. hca_back
                     hca_back_np_tf = ros_numpy.numpify(hca_back.tf)
                     battery_np_tf = ros_numpy.numpify(battery.tf)
-                    print("hca_back_np_tf", hca_back_np_tf)
-                    print("battery_np_tf", battery_np_tf)
                     
                     inv_hca = np.linalg.inv(hca_back_np_tf)
-                    
-                    # prod_np_tf = np.dot(hca_back_np_tf, battery_np_tf)
                     prod_np_tf = np.dot(inv_hca, battery_np_tf)
-                    prod_tf = ros_numpy.msgify(Transform, prod_np_tf)
+                    battery_rel_tf = ros_numpy.msgify(Transform, prod_np_tf)
                     
-                    print("prod_tf.translation", prod_tf.translation)
-                    print("prod_tf.rotation", prod_tf.rotation)
-                    
-                    # now we check if prod_tf.translation.x > 0, in which case the battery is in the positive direction of the center of the HCA.
-                    if prod_tf.translation.x < 0:
-                        pass
-                        # fix rotation
-                        print("[red] Fix rotation")
-
+                    # now we check if battery_rel_tf.translation.x > 0, in which case the battery is in the positive direction of the center of the HCA.
+                    if battery_rel_tf.translation.x < 0:
                         quat = ros_numpy.numpify(hca_back.tf.rotation)
                         quat_180 = quaternion_from_euler(0, 0, np.pi)
                         quat_new = quaternion_multiply(quat_180, quat)
@@ -259,7 +295,7 @@ class ObjectDetection:
         # drawing stuff
         for detection in detections:            
             # draw the cuboids (makers)
-            if detection.tf is not None and detection.obb is not None:
+            if detection.valid and detection.tf is not None and detection.obb is not None:
                 
                 # TODO: x and y could be the wrong way around! they should be chosen depending on the rot_quat
                 changing_height = np.linalg.norm(detection.obb[0]-detection.obb[1])
@@ -282,7 +318,7 @@ class ObjectDetection:
                 markers.markers.append(marker)
             
             # draw the poses
-            if detection.tf is not None:                
+            if detection.valid and detection.tf is not None:                
                 pose = Pose()
                 pose.position = detection.tf.translation
                 pose.orientation = detection.tf.rotation

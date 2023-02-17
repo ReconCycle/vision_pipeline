@@ -12,14 +12,27 @@ import os
 import regex as re
 from tqdm import tqdm
 from rich import print
+import jsonpickle
+import jsonpickle.ext.numpy as jsonpickle_numpy
 
 
 class ImageDataset(datasets.ImageFolder):
-    def __init__(self, main_dir, class_dirs, unseen_class_offset=0, transform=None, exemplar_transform=None, limit_imgs_per_class=None):
-        self.main_dir = main_dir
+    def __init__(self, 
+                 main_path, 
+                 preprocessing_path=None,
+                 class_dirs=[],
+                 unseen_class_offset=0,
+                 transform=None,
+                 exemplar_transform=None,
+                 limit_imgs_per_class=None):
+        
+        self.main_path = main_path
+        self.preprocessing_path = preprocessing_path
+        
         self.class_dirs = class_dirs
         self.unseen_class_offset = unseen_class_offset
         self.exemplar_transform = exemplar_transform
+        
         
         if limit_imgs_per_class is not None:
             print("\n"+"="*20)
@@ -38,7 +51,7 @@ class ImageDataset(datasets.ImageFolder):
             is_valid_file = None
         
         
-        super(ImageDataset, self).__init__(main_dir, transform, is_valid_file=is_valid_file)
+        super(ImageDataset, self).__init__(main_path, transform, is_valid_file=is_valid_file)
         
     def __getitem__(self, index: int):
         """
@@ -68,17 +81,31 @@ class ImageDataset(datasets.ImageFolder):
 
         # also return an examplar image of that class (maybe useful for the autoencoder)
         item_class_name = os.path.dirname(path)
-        exemplar_path = os.path.join(self.main_dir, item_class_name + ".png")
+        exemplar_path = os.path.join(self.main_path, item_class_name + ".png")
         exemplar = None
         if os.path.isfile(exemplar_path):
             exemplar = Image.open(exemplar_path)
             if self.exemplar_transform is not None:
                 exemplar = self.transform(exemplar)
-
-        #! do here one time per image processing
+        
+        # get preprocessed detections for img (if they exist)
+        detections = None
+        if self.preprocessing_path is not None:
+            filename = os.path.basename(path)
+            file_path = os.path.join(self.preprocessing_path, item_class_name, filename + ".json")
+            if os.path.isfile(file_path):
+                print("file_path", file_path, "exists!")
+                
+                try:
+                    with open(file_path, 'r') as json_file:
+                        detections = jsonpickle.decode(json_file.read(), keys=True)
+                        
+                        print("[green]loaded: " + file_path + "[/green]")
+                except ValueError as e:
+                    print("couldn't read json file properly: ", e)
         
         # return sample, label, exemplar, path
-        return sample, label, path
+        return sample, label, path, detections
         
     # restrict classes to those in subfolder_dirs
     def find_classes(self, dir: str):
@@ -91,7 +118,8 @@ class ImageDataset(datasets.ImageFolder):
     
 class DataLoader():
     def __init__(self, 
-                 img_dir, 
+                 img_path,
+                 preprocessing_path=None,
                  batch_size=16, 
                  validation_split=.2,
                  shuffle=True,
@@ -103,7 +131,7 @@ class DataLoader():
         
         random_seed= 42
         
-        self.img_dir = img_dir    
+        self.img_path = img_path    
         self.batch_size = batch_size
         
         # use seen_classes and unseen_classes to specify which directories to load
@@ -126,11 +154,12 @@ class DataLoader():
         #                         std=[0.1180, 0.1220, 0.1092])
         # ])
 
-        seen_dataset = ImageDataset(img_dir, 
-                               self.seen_dirs, 
-                               transform=transform, 
-                               exemplar_transform=transform, 
-                               limit_imgs_per_class=limit_imgs_per_class)
+        seen_dataset = ImageDataset(img_path,
+                                    preprocessing_path,
+                                    self.seen_dirs, 
+                                    transform=transform, 
+                                    exemplar_transform=transform, 
+                                    limit_imgs_per_class=limit_imgs_per_class)
 
         # Create data indices for training and validation splits
         dataset_size = len(seen_dataset)
@@ -150,11 +179,12 @@ class DataLoader():
                     for x in ["seen_train", "seen_val"]}
         
         # add unseen dataset
-        self.datasets["unseen_val"] = ImageDataset(img_dir, 
-                                      self.unseen_dirs, 
-                                      unseen_class_offset=len(seen_dataset.classes), 
-                                      transform=transform, 
-                                      limit_imgs_per_class=limit_imgs_per_class)
+        self.datasets["unseen_val"] = ImageDataset(img_path, 
+                                                preprocessing_path,
+                                                self.unseen_dirs, 
+                                                unseen_class_offset=len(seen_dataset.classes), 
+                                                transform=transform, 
+                                                limit_imgs_per_class=limit_imgs_per_class)
         
         # concat seen_val and unseen_val datasets
         self.datasets["val"] = torch.utils.data.ConcatDataset([self.datasets["seen_val"], self.datasets["unseen_val"]])
@@ -251,13 +281,11 @@ class DataLoader():
 
         print("label_dist_seen_train", label_dist_seen_train)
         print("label_dist_seen_val", label_dist_seen_val)
-
-
         
         
 if __name__ == '__main__':
     print("Run this for testing the dataloader only.")
-    img_dir = "/home/sruiz/datasets2/reconcycle/simon_rgbd_dataset/hca_simon/sorted_in_folders"
-    dataloader = DataLoader(img_dir)
+    img_path = "/home/sruiz/datasets2/reconcycle/simon_rgbd_dataset/hca_simon/sorted_in_folders"
+    dataloader = DataLoader(img_path)
     dataloader.compute_mean_std()
     dataloader.example()
