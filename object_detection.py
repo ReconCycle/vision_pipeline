@@ -99,7 +99,7 @@ class ObjectDetection:
             
             detections.append(detection)
         
-        if use_tracker:   
+        if use_tracker:
             tracker_start = time.time()
             # apply tracker
             # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
@@ -137,66 +137,73 @@ class ObjectDetection:
             detection.center_px = center_px
             detection.angle_px = angle
             
-            if worksurface_detection is not None:
-                # detections from basler, w.r.t. vision module table
-                rot_quat = Rotation.from_euler('xyz', [0, 0, angle], degrees=True).inv().as_quat() # ? why inverse?
-            else:
-                # detections from realsense, w.r.t. realsense camera
-                # rotate 180 degrees because camera is pointing down
-                rot_quat = Rotation.from_euler('xyz', [180, 0, angle], degrees=True).as_quat()
-            
-            # todo: obb_3d
-            detection.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*rot_quat))
-            
-            if worksurface_detection is not None and corners_px is not None:
-                center = worksurface_detection.pixels_to_meters(center_px)
-                corners = worksurface_detection.pixels_to_meters(corners_px)
-                
-                detection.center = np.array([*center, 0])
-                detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
-                detection.box = worksurface_detection.pixels_to_meters(detection.box_px)
-                detection.obb = corners
-                detection.polygon = worksurface_detection.pixels_to_meters(detection.polygon_px, depth=self.object_depth)
-                
-                # obb_3d calculations
-                # first convert to x, y, z coords by adding 0 to each coord for z
-                # original obb + obb raised 2.5cm
-                corners_padded = np.pad(corners, [(0, 0), (0, 1)], mode='constant')
-                corners_padded_high = np.pad(corners, [(0, 0), (0, 1)], mode='constant', constant_values=self.object_depth)
-                corners_3d = np.concatenate((corners_padded, corners_padded_high))
-                
-                detection.obb_3d = corners_3d
-                
-            elif camera_info is not None and depth_img is not None and center_px is not None and corners_px is not None:
-                # mask depth image
-                depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
-                depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
-                depth_mean = depth_masked_np.mean()
-                
-                if isinstance(depth_mean, np.float):
+            if angle is not None:
+                if worksurface_detection is not None:
+                    # detections from basler, w.r.t. vision module table
                     
-                    # tf translation comes from img_to_camera_coords(...)
+                    rot_quat = Rotation.from_euler('xyz', [0, 0, angle], degrees=True).inv().as_quat() # ? why inverse?
+                else:
+                    # detections from realsense, w.r.t. realsense camera
+                    # rotate 180 degrees because camera is pointing down
+                    rot_quat = Rotation.from_euler('xyz', [180, 0, angle], degrees=True).as_quat()
+                
+                # todo: obb_3d
+                detection.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*rot_quat))
+                
+                if worksurface_detection is not None and corners_px is not None:
+                    center = worksurface_detection.pixels_to_meters(center_px)
+                    corners = worksurface_detection.pixels_to_meters(corners_px)
                     
-                    detection.center = img_to_camera_coords(center_px, depth_mean, camera_info)
+                    detection.center = np.array([*center, 0])
                     detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
-                    detection.box = img_to_camera_coords(detection.box_px, depth_mean, camera_info)
-                    detection.polygon = img_to_camera_coords(detection.polygon_px, depth_mean, camera_info)
-                    
-                    corners = img_to_camera_coords(corners_px, depth_mean, camera_info)
-                    # the lower corners are 2.5cm further away from the camera
-                    corners_low = img_to_camera_coords(corners_px, depth_mean - self.object_depth, camera_info)
+                    detection.box = worksurface_detection.pixels_to_meters(detection.box_px)
                     detection.obb = corners
-                    detection.obb_3d = np.concatenate((corners, corners_low))
-                
-            else:
-                detection.obb = None
-                detection.tf = None
+                    detection.polygon = worksurface_detection.pixels_to_meters(detection.polygon_px, depth=self.object_depth)
+                    
+                    # obb_3d calculations
+                    # first convert to x, y, z coords by adding 0 to each coord for z
+                    # original obb + obb raised 2.5cm
+                    corners_padded = np.pad(corners, [(0, 0), (0, 1)], mode='constant')
+                    corners_padded_high = np.pad(corners, [(0, 0), (0, 1)], mode='constant', constant_values=self.object_depth)
+                    corners_3d = np.concatenate((corners_padded, corners_padded_high))
+                    
+                    detection.obb_3d = corners_3d
+                    
+                elif camera_info is not None and depth_img is not None and center_px is not None and corners_px is not None:
+                    # mask depth image
+                    depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
+                    depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
+                    depth_mean = depth_masked_np.mean()
+                    
+                    if isinstance(depth_mean, np.float):
+                        
+                        # tf translation comes from img_to_camera_coords(...)
+                        
+                        detection.center = img_to_camera_coords(center_px, depth_mean, camera_info)
+                        detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
+                        detection.box = img_to_camera_coords(detection.box_px, depth_mean, camera_info)
+                        detection.polygon = img_to_camera_coords(detection.polygon_px, depth_mean, camera_info)
+                        
+                        corners = img_to_camera_coords(corners_px, depth_mean, camera_info)
+                        # the lower corners are 2.5cm further away from the camera
+                        corners_low = img_to_camera_coords(corners_px, depth_mean - self.object_depth, camera_info)
+                        detection.obb = corners
+                        detection.obb_3d = np.concatenate((corners, corners_low))
+                    
+                else:
+                    detection.obb = None
+                    detection.tf = None
         
             
         # remove objects that don't fit certain constraints, eg. too small, too thin, too big
         def is_valid_detection(detection):
-            # area should be larger than 1cm^2
-            if detection.polygon is not None and detection.polygon.area < 0.01:
+            if detection.angle_px is None:
+                print("[red]angle is None![/red]")
+                return False
+
+            # area should be larger than 1cm^2 = 0.0001 m^2
+            if detection.polygon is not None and detection.polygon.area < 0.0001:
+                print("[red]invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
                 return False
             
             # check ratio of obb sides
@@ -210,25 +217,25 @@ class ObjectDetection:
             
             # edge_small should be longer than 1mm
             if edge_small < 0.001:
-                print("[red]invalid: edge too small")
+                print("[red]invalid: edge too small[/red]")
                 return False
             
             # edge_large should be shorter than 20cm
             if edge_large > 0.2:
-                print("[red]invalid: edge too large")
+                print("[red]invalid: edge too large[/red]")
                 return False
             
             # ratio of longest HCA: 3.4
             # ratio of Kalo 1.5 battery: 1.7
             # a really big ratio corresponds to a really long device. Ratio of 5 is probably false positive.
             if ratio > 5:
-                print("[red]invalid: obb ratio of sides too large")
+                print("[red]invalid: obb ratio of sides too large[/red]")
                 return False
             
             return True
                     
         # TODO: we could show these in a different colour for debugging
-        # TODO: filter out invalid detections        
+        # TODO: filter out invalid detections
         for detection in detections:
             is_valid = is_valid_detection(detection)
             detection.valid = is_valid
@@ -293,7 +300,7 @@ class ObjectDetection:
             graph_img = graph_relations.draw_network_x()
         
         # drawing stuff
-        for detection in detections:            
+        for detection in detections:
             # draw the cuboids (makers)
             if detection.valid and detection.tf is not None and detection.obb is not None:
                 
@@ -312,13 +319,13 @@ class ObjectDetection:
                 # changing_height = np.linalg.norm((o[0]-o[2], o[1] - o[3]))
                 # changing_width = np.linalg.norm((o[2] - o[4], o[3] - o[5]))
                 # height = np.min((changing_height, changing_width))
-                # width = np.max((changing_height, changing_width))    
-                
-                marker = self.make_marker(detection.tf, height, width, self.object_depth, detection.id, detection.label)
-                markers.markers.append(marker)
+                # width = np.max((changing_height, changing_width))
+                if self.use_ros:
+                    marker = self.make_marker(detection.tf, height, width, self.object_depth, detection.id, detection.label)
+                    markers.markers.append(marker)
             
             # draw the poses
-            if detection.valid and detection.tf is not None:                
+            if self.use_ros and detection.valid and detection.tf is not None:
                 pose = Pose()
                 pose.position = detection.tf.translation
                 pose.orientation = detection.tf.rotation

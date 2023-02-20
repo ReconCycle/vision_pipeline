@@ -126,15 +126,15 @@ class Main():
         return labelled_img, detections, markers, poses, graph_img, graph_relations
 
     def run(self):
-        img_dir = "experiments/datasets/hca_simon/sorted_in_folders"
-        preprocessing_dir = "experiments/datasets/preprocessing"
+        img_dir = "experiments/datasets/2023-02-20_hca_backs"
+        preprocessing_dir = "experiments/datasets/2023-02-20_hca_backs_preprocessing"
         
-        dl = DataLoader(img_dir, shuffle=False, shuffle_train_val_split=False)
+        dl = DataLoader(img_dir,
+                        shuffle=False,
+                        shuffle_train_val_split=False,
+                        seen_classes=["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"],
+                        unseen_classes=["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"])
         
-        # TODO: iterate over all images in dataset
-        # TODO: for each image, run Yolact and determine OBBs.
-        # TODO: save OBBs to file
-        # TODO: load OBBs from file
         
         # make preprocessing directory for each class
         for dirs in [dl.seen_dirs, dl.unseen_dirs]:
@@ -145,7 +145,7 @@ class Main():
         
         for dl_name in ["seen_train", "seen_val", "unseen_val"]:
         
-            for i, (inputs, labels, path) in enumerate(dl.dataloaders[dl_name]):
+            for i, (inputs, labels, path, *_) in enumerate(dl.dataloaders[dl_name]):
                 
                 inputs = inputs.cpu().detach().numpy()
                 for j in np.arange(len(inputs)):

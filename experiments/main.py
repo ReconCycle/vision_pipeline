@@ -33,18 +33,24 @@ from data_loader import DataLoader
 class Main():
     def __init__(self) -> None:
         
-        img_path = "experiments/datasets/hca_simon/sorted_in_folders"
-        preprocessing_path = "experiments/datasets/preprocessing"
+        img_path = "experiments/datasets/2023-02-20_hca_backs"
+        preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing"
+        seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
+        unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
         
-        dl = DataLoaderEvenPairwise(img_path, preprocessing_path, 32, shuffle=True)
+        dl = DataLoaderEvenPairwise(img_path,
+                                    preprocessing_path=preprocessing_path,
+                                    batch_size=1,
+                                    shuffle=True,
+                                    seen_classes=seen_classes,
+                                    unseen_classes=unseen_classes)
         
-        # TODO: dataloader should return detections too
-                    
         # TODO: speed up enumeration
         
-        for i, (sample1, label1, sample2, label2) in enumerate(dl.dataloaders["seen_train"]):
-            pass
-            print("asdf")
+        for i, (sample1, label1, dets1, sample2, label2, dets2) in enumerate(dl.dataloaders["seen_train"]):
+            print("num dets:", len(dets1), len(dets2))
+            print("labels:", label1, label2)
+            
 
             
             # TODO: plug the two images + detections into object_reid

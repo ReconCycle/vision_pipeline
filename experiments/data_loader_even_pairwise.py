@@ -17,7 +17,7 @@ import itertools
 import functools
 import operator
 from rich import print
-import utils as utils
+import exp_utils as exp_utils
 
 from data_loader import DataLoader
 # from data_loader_mnist import DataLoaderMNIST
@@ -184,8 +184,8 @@ class EvenPairwiseDataset(torch.utils.data.Dataset):
         if id1 == -1 or id2 == -1:
             raise SystemExit("id1 or id2 is negative")
         
-        sample1, label1, *_ = self.dataset[id1]
-        sample2, label2, *_ = self.dataset[id2]
+        sample1, label1, path1, detections1 = self.dataset[id1]
+        sample2, label2, path2, detections2 = self.dataset[id2]
         
         # end = time.time()
         # print("__getitem__ elapsed time:", end - start)
@@ -197,26 +197,27 @@ class EvenPairwiseDataset(torch.utils.data.Dataset):
         if positive_pair and label1 != label2:
             raise SystemExit("the labels of the pair should be the same, but they aren't")
         
-        return sample1, label1, sample2, label2
+        return sample1, label1, detections1, sample2, label2, detections2
     
 
     
 class DataLoaderEvenPairwise():
     """dataloader for EvenPairwiseDataset
     """
-    def __init__(self, 
+    def __init__(self,
                  img_path="MNIST",
                  preprocessing_path=None,
-                 batch_size=256, 
-                 shuffle=True, 
+                 batch_size=256,
+                 shuffle=True,
                  validation_split=.2,
-                 seen_classes = ["hca_0", "hca_1", "hca_2", "hca_3", "hca_4", "hca_5", "hca_6"],
-                 unseen_classes = ["hca_7", "hca_8", "hca_9"],
-                 transform=None):
+                 seen_classes=[],
+                 unseen_classes=[],
+                 transform=None,
+                 cuda=True):
         
         if img_path == "MNIST":
             raise NotImplementedError
-            # dataloader_imgs = DataLoaderMNIST(batch_size=batch_size, 
+            # dataloader_imgs = DataLoaderMNIST(batch_size=batch_size,
             #                                   shuffle=shuffle,
             #                                   validation_split=validation_split,
             #                                   seen_classes=seen_classes,
@@ -225,19 +226,44 @@ class DataLoaderEvenPairwise():
         else:
             dataloader_imgs = DataLoader(img_path,
                                          preprocessing_path=preprocessing_path,
-                                         batch_size=batch_size, 
+                                         batch_size=batch_size,
                                          shuffle=shuffle,
                                          validation_split=validation_split,
                                          seen_classes=seen_classes,
                                          unseen_classes=unseen_classes,
-                                         limit_imgs_per_class=30,
-                                         transform=transform) #! why limit?
+                                         limit_imgs_per_class=30, #! why limit?
+                                         transform=transform,
+                                         cuda=cuda)
+
+        def custom_collate(instances):
+            # handle sample, label, and path like normal
+            # but handle detections as list of lists.
+            
+            # elem = instances[0] # tuple: (sample1, label1, detections1, sample2, label2, detections2)
+            
+            
+            batch = []
+            
+            for i in range(len(instances[0])):
+                batch.append([instance[i] for instance in instances])
+
+            print("custom_collate", len(batch), len(batch[0]), type(batch[0][0]))
+            
+            # apply default collate for: sample1, label1, ..., sample2, label2
+            batch[0] = torch.utils.data.default_collate(batch[0])
+            batch[1] = torch.utils.data.default_collate(batch[1])
+            
+            batch[3] = torch.utils.data.default_collate(batch[3])
+            batch[4] = torch.utils.data.default_collate(batch[4])
+
+            return batch
 
         self.classes = dataloader_imgs.classes
         self.dataloaders = {x: torch.utils.data.DataLoader(
-                                    EvenPairwiseDataset(dataloader_imgs.datasets[x]), 
-                                    batch_size=batch_size, 
-                                    shuffle=shuffle
+                                    EvenPairwiseDataset(dataloader_imgs.datasets[x]),
+                                    batch_size=batch_size,
+                                    shuffle=shuffle,
+                                    collate_fn=custom_collate
                                 )
                             for x in ["seen_train", "seen_val", "unseen_val", "val"]}
         
@@ -252,7 +278,7 @@ class DataLoaderEvenPairwise():
 
         print("classes seen_train", self.classes["seen_train"])
 
-        for i, (sample1, label1, sample2, label2) in enumerate(self.dataloaders["seen_train"]):
+        for i, (sample1, label1, dets1, sample2, label2, dets2) in enumerate(self.dataloaders["seen_train"]):
             # print("\ni", i)
             # print("i % 100", i % 100)
             # print("sample1.shape", sample1.shape)
@@ -301,9 +327,19 @@ class DataLoaderEvenPairwise():
         
 if __name__ == '__main__':
     print("Run this for testing the dataloader only.")
-    img_path = "/home/sruiz/datasets2/reconcycle/simon_rgbd_dataset/hca_simon/sorted_in_folders"
+    # img_path = "/home/sruiz/datasets2/reconcycle/simon_rgbd_dataset/hca_simon/sorted_in_folders"
     # img_path = "/home/sruiz/datasets/labelme/hca_front_21-10-01/cropped"
     # img_path = "MNIST"
-    utils.init_seeds(1, cuda_deterministic=False)
-    dataloader = DataLoaderEvenPairwise(img_path, 32, shuffle=True)
+    img_path = "experiments/datasets/2023-02-20_hca_backs"
+    preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing"
+    seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
+    unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
+    
+    exp_utils.init_seeds(1, cuda_deterministic=False)
+    dataloader = DataLoaderEvenPairwise(img_path,
+                                        preprocessing_path=preprocessing_path,
+                                        batch_size=32,
+                                        shuffle=True,
+                                        seen_classes=seen_classes,
+                                        unseen_classes=unseen_classes)
     dataloader.example()

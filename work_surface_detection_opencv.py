@@ -235,20 +235,26 @@ class WorkSurfaceDetection:
         
         # 1st estimate for affine transform using only bolts
         found_bolts = self.find_bolts()
-        if found_bolts:
-            self.bolt_point_matching()
-            self.compute_affine_transform()
+        
+        if not found_bolts:
+            print("[red]work surface detection: no bolts found![/red]")
+            return
+        
+        self.bolt_point_matching()
+        self.compute_affine_transform()
+        
+        self.estimate_corners_using_transform()
+        
+        # 2nd estimate for affine transformation using also corners
+        #! this usually makes things worse
+        # self.improve_corner_estimate_using_corner_detection(img)
+        # self.compute_affine_transform()
+        
+        # for debugging, draw everything
+        # if self.debug:
+        #     self.draw_corners_and_circles(img, show=True)
+
             
-            self.estimate_corners_using_transform()
-            
-            # 2nd estimate for affine transformation using also corners
-            #! this usually makes things worse
-            # self.improve_corner_estimate_using_corner_detection(img)
-            # self.compute_affine_transform()
-            
-            # for debugging, draw everything
-            # if self.debug:
-            #     self.draw_corners_and_circles(img, show=True)
         
     def mask_worksurface(self, img):
         
@@ -535,6 +541,8 @@ class WorkSurfaceDetection:
         if circles is None:
             print("[red]No circles found! [/red]")
             return False
+        
+        return True
             
     
     def improve_corner_estimate_using_corner_detection(self, img):
@@ -740,6 +748,7 @@ class WorkSurfaceDetection:
 
     def pixels_to_meters(self, coords, depth=None):
         if self.coord_transform is None:
+            print("[red]coord_transform is None![/red]")
             return coords
         
         if isinstance(coords, Polygon):
@@ -763,6 +772,7 @@ class WorkSurfaceDetection:
         
     def meters_to_pixels(self, coords):
         if self.coord_transform is None:
+            print("[red]coord_transform is None![/red]")
             return coords
         # todo: deal with depth
         if isinstance(coords, Polygon):
