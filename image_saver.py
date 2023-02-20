@@ -55,7 +55,7 @@ class Main():
         self.counter = 1
         self.save = False
         
-        self.save_path = "experiments/datasets/new_dataset"
+        self.save_path = "experiments/datasets/new_dataset/untitled"
         
         # check if file path is empty
         if not os.path.exists(self.save_path):
