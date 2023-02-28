@@ -4,6 +4,7 @@ import numpy as np
 import time
 import commentjson
 import cv2
+import torch
 from rich import print
 from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
 from shapely.validation import make_valid
@@ -19,6 +20,7 @@ import obb
 import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords
 from context_action_framework.types import Detection, Label, Camera
+from object_detector_opencv import SimpleDetector
 
 from geometry_msgs.msg import Transform, Vector3, Quaternion, Pose, PoseArray, TransformStamped
 from visualization_msgs.msg import Marker, MarkerArray
@@ -42,6 +44,10 @@ class ObjectDetection:
         self.frame_id = frame_id
         self.object_depth = 0.025 # in meters, the depth of the objects
         
+        self.simple_detector = None
+        if yolact is None:
+            self.simple_detector = SimpleDetector()
+        
         self.object_reid = object_reid
 
         self.tracker_args = SimpleNamespace()
@@ -64,40 +70,81 @@ class ObjectDetection:
             if colour_img.shape[:2] != depth_img.shape[:2]:
                 raise ValueError("[red]image and depth image shapes do not match! [/red]")
         
-        frame, classes, scores, boxes, masks = self.yolact.infer(colour_img)
-        fps_nn = 1.0 / (time.time() - t_start)
-
-        detections = []
-        for i in np.arange(len(classes)):
+        
+        if self.simple_detector is not None:
+            # simple detector opencv
+            cnts, boxes = self.simple_detector.run(colour_img)
+            frame = torch.from_numpy(colour_img)
+            fps_nn = 1.0 / (time.time() - t_start)
+            masks = None
+            # After this, mask is of size [num_dets, h, w, 1]
+            # masks = []
+            # for i in np.arange(len(cnts)):
+            #     mask = np.zeros((colour_img.shape[0], colour_img.shape[1], 1), np.uint8)
+            #     print("mask.shape", mask.shape)
+            #     # cv2.drawContours(mask, [cnts[i]], -1, (0,255,0), 1)
+            #     cv2.drawContours(mask, [cnts[i]], -1, 255, -1)
+            #     masks.append(mask)
+            
+            # masks = np.array(masks)
+            # masks = torch.from_numpy(masks)
+            
+            # print("masks.shape", masks.shape)
+            
+            detections = []
+            for i in np.arange(len(cnts)):
+                detection = Detection()
+                detection.id = int(i)
                 
-            detection = Detection()
-            detection.id = int(i)
-            
-            detection.label = Label(classes[i]) # self.dataset.class_names[classes[i]]
-            
-            detection.score = float(scores[i])
-            
-            box_px = boxes[i].reshape((-1,2)) # convert tlbr
-            detection.box_px = obb.clip_box_to_img_shape(box_px, colour_img.shape)
-            detection.mask = masks[i]
-            
-            # compute contour. Required for obb and graph_relations
-            mask = masks[i].cpu().numpy().astype("uint8")
-            # print("mask.shape", mask.shape)
-            cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if len(cnts) > 0:
-                # get the contour with the largest area. Assume this is the one containing our object
-                cnt = max(cnts, key = cv2.contourArea)
-                detection.mask_contour = np.squeeze(cnt)
-
+                # hardcode all detections as hca_back
+                detection.label = Label.hca_back
+                detection.score = float(1.0)
+                detection.box_px = boxes[i].reshape((-1,2))
+                detection.mask_contour = np.squeeze(cnts[i])
+                
                 poly = None
                 if len(detection.mask_contour) > 2:
                     poly = Polygon(detection.mask_contour)
                     poly = make_valid_poly(poly)
 
                 detection.polygon_px = poly
-            
-            detections.append(detection)
+                
+                detections.append(detection)
+                
+        else:
+        
+            frame, classes, scores, boxes, masks = self.yolact.infer(colour_img)
+            fps_nn = 1.0 / (time.time() - t_start)
+
+            detections = []
+            for i in np.arange(len(classes)):
+                    
+                detection = Detection()
+                detection.id = int(i)
+                detection.label = Label(classes[i]) # self.dataset.class_names[classes[i]]
+                detection.score = float(scores[i])
+                
+                box_px = boxes[i].reshape((-1,2)) # convert tlbr
+                detection.box_px = obb.clip_box_to_img_shape(box_px, colour_img.shape)
+                detection.mask = masks[i]
+                
+                # compute contour. Required for obb and graph_relations
+                mask = masks[i].cpu().numpy().astype("uint8")
+                # print("mask.shape", mask.shape)
+                cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if len(cnts) > 0:
+                    # get the contour with the largest area. Assume this is the one containing our object
+                    cnt = max(cnts, key = cv2.contourArea)
+                    detection.mask_contour = np.squeeze(cnt)
+
+                    poly = None
+                    if len(detection.mask_contour) > 2:
+                        poly = Polygon(detection.mask_contour)
+                        poly = make_valid_poly(poly)
+
+                    detection.polygon_px = poly
+                
+                detections.append(detection)
         
         if use_tracker:
             tracker_start = time.time()

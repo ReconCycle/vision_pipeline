@@ -23,7 +23,7 @@ def rotated_line(point, angle, length):
 
     return point2
 
-def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
+def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_transform=False, class_color=True, mask_alpha=0.45, fps=None, worksurface_detection=None):
 
     args = types.SimpleNamespace()
     args.display_masks=True
@@ -89,7 +89,7 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
     # First, draw the masks on the GPU where we can do it really fast
     # Beware: very fast but possibly unintelligible mask-drawing code ahead
     # I wish I had access to OpenGL or Vulkan but alas, I guess Pytorch tensor operations will have to suffice
-    if args.display_masks and cfg.eval_mask_branch and num_dets_to_consider > 0:
+    if args.display_masks and cfg.eval_mask_branch and num_dets_to_consider > 0 and masks is not None:
         # Prepare the RGB images for each mask given their color (size [num_dets, h, w, 1])
         if torch.cuda.is_available():
             colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
@@ -148,7 +148,7 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
     for detection in detections:
         if detection.valid and detection.center_px is not None:
             cv2.circle(img_numpy, tuple(detection.center_px), 5, (0, 255, 0), -1)
-            cv2.drawContours(img_numpy, [detection.obb_px], 0, (0, 255, 0), 2)          
+            cv2.drawContours(img_numpy, [detection.obb_px], 0, (0, 255, 0), 2)
             
             # draw the arrow
             point2 = rotated_line(tuple(detection.center_px), detection.angle_px, 60)
@@ -227,7 +227,7 @@ def get_labelled_img(img, masks, detections, h=None, w=None, undo_transform=Fals
             
             # bbox
             #! not showing this right now because it makes visualisation messy
-            # cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1) 
+            # cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1)
             
             # text_str = 'tracking: %d, %.2f' % (detection.online_id, detection.online_score)
 

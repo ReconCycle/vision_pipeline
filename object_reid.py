@@ -12,6 +12,7 @@ from scipy.spatial.transform import Rotation
 from shapely.geometry import Polygon, Point
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
+from types import SimpleNamespace
 
 from graph_relations import GraphRelations, exists_detection, compute_iou
 
@@ -115,7 +116,7 @@ class ObjectReId:
                     print("couldn't read json file properly: ", e)
         else:
             print("[red]" + os.path.join(self.folder, self.filename) + " doesn't exist![/red]")
-            
+    
     
     def save_templates(self, new_object_template=None, object_img=None):
         if new_object_template is not None:
@@ -153,8 +154,51 @@ class ObjectReId:
         
         # convert to json and save
         print("saving object templates!")
+
+    # comparison function for experiments
+    def comparison(self, img1, dets1, graph1, img2, dets2, graph2, visualise=False):
         
+        # some kind of derivative of: process_detection
+        detections_hca_back1 = graph1.exists(Label.hca_back)
+        print("dets1, num. of hca_back: " + str(len(detections_hca_back1)))
+        if len(detections_hca_back1) < 1:
+            print("dets1, hca_back not found")
+            return None
         
+        detection_hca_back1 = detections_hca_back1[0]
+        
+        detections_hca_back2 = graph2.exists(Label.hca_back)
+        print("dets2, num. of hca_back: " + str(len(detections_hca_back2)))
+        
+        if len(detections_hca_back2) < 1:
+            print("dets2, hca_back not found")
+            return None
+        
+        detection_hca_back2 = detections_hca_back2[0]
+        
+        img1_cropped, center1_cropped = self.get_det_img(img1, detection_hca_back1)
+        keypoints1, descriptors1 = self.calculate_sift(img1_cropped, center1_cropped, detection_hca_back1, visualise, vis_id=1)
+        
+        template1 = SimpleNamespace()
+        template1.id = detection_hca_back1.id
+        template1.sift_keypoints = keypoints1
+        template1.sift_descriptors = descriptors1
+        
+        img2_cropped, center2_cropped = self.get_det_img(img2, detection_hca_back2)
+        keypoints2, descriptors2 = self.calculate_sift(img2_cropped, center2_cropped, detection_hca_back2, visualise, vis_id=2)
+        
+        template2 = SimpleNamespace()
+        template2.id = detection_hca_back2.id
+        template2.sift_keypoints = keypoints2
+        template2.sift_descriptors = descriptors2
+        
+        # TODO: ... write code to put in templates... and to run this:
+    
+        sift_score = self.calculate_sift_results(img1_cropped, template1, img2_cropped, template2, False, visualise)
+        
+        return sift_score
+
+
     def process_detection(self, img, detections, graph_relations, visualise=False):
         
         print("\nobject re-id, processing detections..." + str(len(detections)))
@@ -202,6 +246,9 @@ class ObjectReId:
             # there exist object templates. Let's compare
             scores_list = []
             for object_template_id, object_template in enumerate(self.object_templates):
+                
+                # ! Move to comparison function: above
+                
                 # compare
                 tp_dets = object_template.detections
                 
@@ -537,7 +584,7 @@ class ObjectReId:
         return img_cropped, center_cropped
     
     
-    def calculate_sift(self, img_cropped, center_cropped, hca_back, visualise=False):
+    def calculate_sift(self, img_cropped, center_cropped, hca_back, visualise=False, vis_id=1):
 
         keypoints, descriptors = self.sift.detectAndCompute(img_cropped, None)
         keypoints_in_poly = []
@@ -575,7 +622,7 @@ class ObjectReId:
                                                     np.array([]),
                                                     (0, 0, 255),
                                                     cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-            cv2.imshow("keypoints", im_with_keypoints)
+            cv2.imshow("keypoints_" + str(vis_id), im_with_keypoints)
 
         return keypoints_in_poly, descriptors_in_poly
     

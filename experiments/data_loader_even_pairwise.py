@@ -241,7 +241,6 @@ class DataLoaderEvenPairwise():
             
             # elem = instances[0] # tuple: (sample1, label1, detections1, sample2, label2, detections2)
             
-            
             batch = []
             
             for i in range(len(instances[0])):

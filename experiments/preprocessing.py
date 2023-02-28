@@ -36,7 +36,14 @@ class Main():
         self.config = load_config()
         
         # load yolact
-        yolact, dataset = self.load_yolact(self.config.obj_detection)
+        # yolact, dataset = self.load_yolact(self.config.obj_detection)
+        #! using simple detector opencv:
+        yolact = None
+        dataset = None
+        
+        self.cuda = False
+        if yolact is not None:
+            self.cuda = True
         
         # load object reid
         object_reid = None
@@ -127,13 +134,14 @@ class Main():
 
     def run(self):
         img_dir = "experiments/datasets/2023-02-20_hca_backs"
-        preprocessing_dir = "experiments/datasets/2023-02-20_hca_backs_preprocessing"
+        preprocessing_dir = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
         
         dl = DataLoader(img_dir,
                         shuffle=False,
                         shuffle_train_val_split=False,
                         seen_classes=["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"],
-                        unseen_classes=["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"])
+                        unseen_classes=["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"],
+                        cuda=self.cuda)
         
         
         # make preprocessing directory for each class
@@ -159,9 +167,13 @@ class Main():
                     print("dirname", dirname)
                     print("label", labels[j])
                     
+                    print("img", type(labelled_img), labelled_img.shape)
+                    print("img range", np.min(labelled_img, axis=None), np.max(labelled_img, axis=None))
                     # save labelled img
-                    im = Image.fromarray(labelled_img)
-                    im.save(os.path.join(preprocessing_dir, dirname, filename))
+                    im_save_path = os.path.join(preprocessing_dir, dirname, filename)
+                    im = Image.fromarray(labelled_img.astype(np.uint8))
+                    im.save(im_save_path)
+                    print("img save path:", im_save_path)
                     
                 
                     # remove properties we don't need to save
@@ -173,6 +185,8 @@ class Main():
                     obj_templates_json_str = jsonpickle.encode(detections, keys=True, warn=True, indent=2)
                     with open(os.path.join(preprocessing_dir, dirname, filename + ".json"), 'w', encoding='utf-8') as f:
                         f.write(obj_templates_json_str)
+                        
+                    # return # ! debugging
 
 
 if __name__ == '__main__':
