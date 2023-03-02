@@ -294,7 +294,7 @@ class ObjectDetection:
         graph_relations.make_groups()
         
         # print("groups:", graph_relations.list_wc_components)
-        print("groups by tracking id:", graph_relations.list_wc_components_t)
+        # print("groups by tracking id:", graph_relations.list_wc_components_t)
             
         
         # TODO: filter out duplicate detections in a group

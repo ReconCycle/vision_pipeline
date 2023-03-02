@@ -17,11 +17,11 @@ class SimpleDetector:
         # define a mask
         mask_top = 200
         mask_left = 200
-        mask_bottom = 200
+        mask_bottom = 340 # hide the groove in plate at bottom
         mask_right = 200
         
         # crop image
-        gray = gray[mask_left:(img.shape[0] - mask_right), mask_top: (img.shape[1] - mask_bottom)]
+        gray = gray[mask_top:(img.shape[0] - mask_bottom), mask_left: (img.shape[1] - mask_right)]
         # gray = cv2.GaussianBlur(gray,(3,3),cv2.BORDER_DEFAULT)
         
         # ret, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)

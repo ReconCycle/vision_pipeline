@@ -245,8 +245,6 @@ class DataLoaderEvenPairwise():
             
             for i in range(len(instances[0])):
                 batch.append([instance[i] for instance in instances])
-
-            print("custom_collate", len(batch), len(batch[0]), type(batch[0][0]))
             
             # apply default collate for: sample1, label1, ..., sample2, label2
             batch[0] = torch.utils.data.default_collate(batch[0])

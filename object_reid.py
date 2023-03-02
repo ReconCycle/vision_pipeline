@@ -160,7 +160,7 @@ class ObjectReId:
         
         # some kind of derivative of: process_detection
         detections_hca_back1 = graph1.exists(Label.hca_back)
-        print("dets1, num. of hca_back: " + str(len(detections_hca_back1)))
+        # print("dets1, num. of hca_back: " + str(len(detections_hca_back1)))
         if len(detections_hca_back1) < 1:
             print("dets1, hca_back not found")
             return None
@@ -168,8 +168,7 @@ class ObjectReId:
         detection_hca_back1 = detections_hca_back1[0]
         
         detections_hca_back2 = graph2.exists(Label.hca_back)
-        print("dets2, num. of hca_back: " + str(len(detections_hca_back2)))
-        
+        # print("dets2, num. of hca_back: " + str(len(detections_hca_back2)))
         if len(detections_hca_back2) < 1:
             print("dets2, hca_back not found")
             return None
@@ -590,6 +589,14 @@ class ObjectReId:
         keypoints_in_poly = []
         descriptors_in_poly = []
 
+        if keypoints is None:
+            print("keypoints is None!")
+            return [], []
+        
+        if descriptors is None:
+            print("descriptors is None!")
+            return [], []
+        
         # unrotated obb:
         # obb = hca_back.obb_px - hca_back.center_px + center_cropped
         # obb_arr = np.array(obb).astype(int)
@@ -738,11 +745,11 @@ class ObjectReId:
         
         # a median error of less than 0.5 is good
         strength = 1.0 # increase strength for harsher score function
-        score = 1/(strength*median_error + 1)
+        score = 1/(strength*median_error + 1) #! we should test this score function
         
         # penalty for few matches
         if len(matches) < 10:
-            score = np.clip(score - 0.1, 0, 1)
+            score = np.clip(score - 0.1, 0, 1) #! do we want this?
         
         if len(matches) > 0 and visualise:
             plot = self.get_sift_plot(uk_img, tp_img, keypoints1, keypoints2, matches)
@@ -760,6 +767,7 @@ class ObjectReId:
             cv2.putText(plot, "median_error: " + str(np.round(median_error, 2)), [10, 140], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             cv2.putText(plot, "max_error: " + str(np.round(max_error, 2)), [10, 160], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             
-            cv2.imshow("sift_result_" + str(unknown_template.id) + "_" + str(object_template.id) + "_" + str(int(rotated)), plot)
+            # cv2.imshow("sift_result_" + str(unknown_template.id) + "_" + str(object_template.id) + "_" + str(int(rotated)), plot)
+            cv2.imshow("sift_result", plot)
         
         return score

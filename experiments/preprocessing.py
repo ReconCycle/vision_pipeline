@@ -2,13 +2,8 @@ import sys
 import os
 import cv2
 import numpy as np
-import json
-import argparse
-import time
-import atexit
 from rich import print
 import commentjson
-import asyncio
 from PIL import Image
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
@@ -134,7 +129,7 @@ class Main():
 
     def run(self):
         img_dir = "experiments/datasets/2023-02-20_hca_backs"
-        preprocessing_dir = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
+        preprocessing_dir = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv2"
         
         dl = DataLoader(img_dir,
                         shuffle=False,
@@ -162,19 +157,23 @@ class Main():
                     filename = os.path.basename(path[j])
                     dirname = os.path.basename(os.path.dirname(path[j]))
                     
-                    print("path", path[j])
-                    print("filename", filename)
-                    print("dirname", dirname)
-                    print("label", labels[j])
+                    # print("path", path[j])
+                    # print("filename", filename)
+                    # print("dirname", dirname)
+                    # print("label", labels[j])
                     
-                    print("img", type(labelled_img), labelled_img.shape)
-                    print("img range", np.min(labelled_img, axis=None), np.max(labelled_img, axis=None))
+                    # print("img", type(labelled_img), labelled_img.shape)
+                    # print("img range", np.min(labelled_img, axis=None), np.max(labelled_img, axis=None))
                     # save labelled img
                     im_save_path = os.path.join(preprocessing_dir, dirname, filename)
                     im = Image.fromarray(labelled_img.astype(np.uint8))
                     im.save(im_save_path)
-                    print("img save path:", im_save_path)
-                    
+                    print("img save path:", dirname, filename)
+                    if len(detections) > 1:
+                        print("[red]more than one detection![/red]\n")
+                        
+                    if len(detections) == 0:
+                        print("[red]no detection![/red]\n")
                 
                     # remove properties we don't need to save
                     for detection in detections:
