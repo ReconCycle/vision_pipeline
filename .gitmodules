@@ -1,3 +1,6 @@
 [submodule "yolact_pkg"]
 	path = yolact_pkg
 	url = git@github.com:sebastian-ruiz/yolact.git
+[submodule "superglue"]
+	path = superglue
+	url = git@github.com:magicleap/SuperGluePretrainedNetwork.git

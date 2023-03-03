@@ -19,7 +19,9 @@ from yolact_pkg.yolact import Yolact
 # from object_detection import ObjectDetection
 from graph_relations import GraphRelations
 
-from object_reid import ObjectReId
+from object_reid_sift import ObjectReIdSift
+from object_reid_superglue import ObjectReIdSuperGlue
+
 from config import load_config
 
 # from context_action_framework.types import Camera
@@ -32,7 +34,7 @@ class Main():
         
         exp_utils.init_seeds(1, cuda_deterministic=False)
         visualise = False
-        cutoff = 0.1
+        cutoff = 0.3
         img_path = "experiments/datasets/2023-02-20_hca_backs"
         preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
         results_base_path = "experiments/results/"
@@ -58,7 +60,8 @@ class Main():
                                     seen_classes=seen_classes,
                                     unseen_classes=unseen_classes)
         
-        object_reid = ObjectReId()
+        # object_reid = ObjectReIdSift()
+        object_reid = ObjectReIdSuperGlue()
         
         results = []
         
@@ -92,7 +95,7 @@ class Main():
             
             # TODO: log results
             # TODO: optimise by moving SIFT calculation to outside of pairwise loop
-            result = object_reid.comparison(img1, dets1, graph1, img2, dets2, graph2, visualise=visualise)
+            result = object_reid.compare(img1, graph1, img2, graph2, visualise=visualise)
             
             # TODO: should never be None
             if result is None:
