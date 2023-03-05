@@ -62,7 +62,7 @@ class ObjectReId:
         return mean_error, median_error, max_error
 
 
-    def find_and_crop_det(self, img, graph):
+    def find_and_crop_det(self, img, graph, rotate_180=False):
         # some kind of derivative of: process_detection
         detections_hca_back = graph.exists(Label.hca_back)
         # print("dets1, num. of hca_back: " + str(len(detections_hca_back1)))

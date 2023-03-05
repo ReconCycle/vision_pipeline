@@ -15,7 +15,6 @@ from types import SimpleNamespace
 
 from graph_relations import GraphRelations, exists_detection, compute_iou
 
-
 from helpers import scale_img
 from object_reid import ObjectReId
 
@@ -60,84 +59,101 @@ class ObjectReIdSuperGlue(ObjectReId):
         self.opt = opt
         # self.timer = AverageTimer()
 
-    def compare(self, img1, graph1, img2, graph2, visualise=False):
+    def compare(self, img0, graph1, img1, graph2, visualise=False):
+        print("[blue]starting compare...[/blue]")
+        img0_cropped, obb_poly1 = self.find_and_crop_det(img0, graph1)
+        img1_cropped, obb_poly2 = self.find_and_crop_det(img1, graph2)
         
-        img1_cropped, obb_poly1 = self.find_and_crop_det(img1, graph1)
-        img2_cropped, obb_poly2 = self.find_and_crop_det(img2, graph2)
-        
-        img0 = cv2.cvtColor(img1_cropped, cv2.COLOR_RGB2GRAY)
-        img1 = cv2.cvtColor(img2_cropped, cv2.COLOR_RGB2GRAY)
+        img0 = cv2.cvtColor(img0_cropped, cv2.COLOR_RGB2GRAY)
+        img1 = cv2.cvtColor(img1_cropped, cv2.COLOR_RGB2GRAY)
         # self.timer.update('data')
         
         img0_tensor = frame2tensor(img0, self.device)
-        
-        # TODO: superglue doesn't seem to be
-        # TODO: ignore matches outside OBB?
         
         # frame_tensor = frame2tensor(frame, device)
         last_data = self.matching.superpoint({'image': img0_tensor})
         last_data = {k+'0': last_data[k] for k in self.keys}
         last_data['image0'] = img0_tensor
         
-        img1_tensor = frame2tensor(img1, self.device)
+        scores = []
         
-        pred = self.matching({**last_data, 'image1': img1_tensor})
-        kpts0 = last_data['keypoints0'][0].cpu().numpy()
-        kpts1 = pred['keypoints1'][0].cpu().numpy()
-        matches = pred['matches0'][0].cpu().numpy()
-        confidence = pred['matching_scores0'][0].cpu().numpy()
-        # self.timer.update('forward')
+        # superglue isn't rotation invariant. Try both rotations.
+        for rotate_180 in [False, True]:
+            if rotate_180 is True:
+                #! we should also rotate polygon!
+                img1 = cv2.rotate(img1, cv2.ROTATE_180)
+            
+            print("\nrotate:" + str(rotate_180))
+            
+            # TODO: ignore matches outside OBB
+            
+            img1_tensor = frame2tensor(img1, self.device)
+            
+            pred = self.matching({**last_data, 'image1': img1_tensor})
+            kpts0 = last_data['keypoints0'][0].cpu().numpy()
+            kpts1 = pred['keypoints1'][0].cpu().numpy()
+            matches = pred['matches0'][0].cpu().numpy()
+            confidence = pred['matching_scores0'][0].cpu().numpy()
+            # self.timer.update('forward')
 
-        valid = matches > -1
-        mkpts0 = kpts0[valid]
-        mkpts1 = kpts1[matches[valid]]
-        
+            valid = matches > -1
+            mkpts0 = kpts0[valid]
+            mkpts1 = kpts1[matches[valid]]
 
-        k_thresh = self.matching.superpoint.config['keypoint_threshold']
-        m_thresh = self.matching.superglue.config['match_threshold']
+            k_thresh = self.matching.superpoint.config['keypoint_threshold']
+            m_thresh = self.matching.superglue.config['match_threshold']
+            
+            # print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
+            # print("kpts0", len(kpts0), kpts0.shape)
+            # print("kpts0", len(kpts1), kpts1.shape)
+            # 3 matches will always score perfectly because of affine transform
+            # let's say we want at least 5 matches to work
+            if len(matches[valid]) <= 5:
+                print("not enough matches for SuperGlue")
+                # todo: return something else than 0.0, more like undefined.
+                # return 0.0
+                scores.append([0.0, 0.0])
+            else:
+                mean_error, median_error, max_error = self.calculate_matching_error(mkpts0, mkpts1)
+                
+                # a median error of less than 0.5 is good
+                strength = 1.0 # increase strength for harsher score function
+                score = 1/(strength*median_error + 1) #! we should test this score function
+                
+                print("median_error", median_error)
+                print("score", score)
+                
+                min_num_kpts = min(len(kpts0), len(kpts1))
+                
+                score_matching = len(matches[valid])/min_num_kpts
+                print("matching score", score_matching)
+                
+                scores.append([score, score_matching])
+                
+                
+            if visualise:
+                color = cm.jet(confidence[valid])
+                text = [
+                    'SuperGlue',
+                    'Keypoints: {}:{}'.format(len(kpts0), len(kpts1)),
+                    'Matches: {}'.format(len(mkpts0))
+                ]
+                small_text = [
+                    'Keypoint Threshold: {:.4f}'.format(k_thresh),
+                    'Match Threshold: {:.2f}'.format(m_thresh),
+                    # 'Image Pair: {:06}:{:06}'.format(stem0, stem1),
+                ]
+                out = make_matching_plot_fast(
+                    img0, img1, kpts0, kpts1, mkpts0, mkpts1, color, text,
+                    path=None, show_keypoints=self.opt.show_keypoints, small_text=small_text)
+                cv2.imshow('SuperGlue matches', out)
+                cv2.waitKey() # visualise
         
-        if visualise:
-            color = cm.jet(confidence[valid])
-            text = [
-                'SuperGlue',
-                'Keypoints: {}:{}'.format(len(kpts0), len(kpts1)),
-                'Matches: {}'.format(len(mkpts0))
-            ]
-            small_text = [
-                'Keypoint Threshold: {:.4f}'.format(k_thresh),
-                'Match Threshold: {:.2f}'.format(m_thresh),
-                # 'Image Pair: {:06}:{:06}'.format(stem0, stem1),
-            ]
-            out = make_matching_plot_fast(
-                img0, img1, kpts0, kpts1, mkpts0, mkpts1, color, text,
-                path=None, show_keypoints=self.opt.show_keypoints, small_text=small_text)
-            cv2.imshow('SuperGlue matches', out)
+        scores = np.array(scores)
+        # get the best matching score over the two rotations
+        max_matching_score = max(scores[0, 1], scores[1, 1])
+
+        print("[green]max_matching_score", max_matching_score)
         
-        # TODO: FINISH THIS...
-        
-        print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
-        print("kpts0", len(kpts0), kpts0.shape)
-        print("kpts0", len(kpts1), kpts1.shape)
-        # 3 matches will always score perfectly because of affine transform
-        # let's say we want at least 5 matches to work
-        if len(matches[valid]) <= 5:
-            print("not enough matches for SuperGlue")
-            # todo: return something else than 0.0, more like undefined.
-            return 0.0
-        
-        mean_error, median_error, max_error = self.calculate_matching_error(mkpts0, mkpts1)
-        
-        # a median error of less than 0.5 is good
-        strength = 1.0 # increase strength for harsher score function
-        score = 1/(strength*median_error + 1) #! we should test this score function
-        
-        print("median_error", median_error)
-        print("score", score)
-        
-        min_num_kpts = min(len(kpts0), len(kpts1))
-        
-        score_matching = len(matches[valid])/min_num_kpts
-        print("matching score", score_matching)
-        
-        return score_matching
+        return max_matching_score
 

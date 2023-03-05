@@ -24,7 +24,7 @@ import tf
 from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
 
-from object_reid import ObjectReId
+from object_reid_sift import ObjectReIdSift
 from config import load_config
 from pipeline_basler import PipelineBasler
 from pipeline_realsense import PipelineRealsense
@@ -55,13 +55,13 @@ class ROSPipeline():
         # load object reid
         object_reid = None
         if self.config.reid:
-            object_reid = ObjectReId()
+            object_reid = ObjectReIdSift()
 
         self.pipeline_basler = PipelineBasler(yolact, dataset, object_reid, self.config, self.static_tf_manager)
         self.pipeline_realsense = PipelineRealsense(yolact, dataset, object_reid, self.config, self.static_tf_manager)
         
         def exit_handler():
-            time.sleep(2) # sleep such that on restart, the cameras are not immediately re-enabled 
+            time.sleep(2) # sleep such that on restart, the cameras are not immediately re-enabled
             print("stopping pipeline and exiting...")
         
         atexit.register(exit_handler)

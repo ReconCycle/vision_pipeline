@@ -545,7 +545,7 @@ class ObjectReIdSift(ObjectReId):
         pts1_matches = np.array([keypoints1[match[0].queryIdx].pt for match in matches])
         pts2_matches = np.array([keypoints2[match[0].trainIdx].pt for match in matches])
         
-        mean_error, median_error, max_error = self.calculate_matching_error(pts1_matches, pts2_matches, matches)
+        mean_error, median_error, max_error = self.calculate_matching_error(pts1_matches, pts2_matches)
         
         # a median error of less than 0.5 is good
         strength = 1.0 # increase strength for harsher score function

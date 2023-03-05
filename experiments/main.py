@@ -34,7 +34,8 @@ class Main():
         
         exp_utils.init_seeds(1, cuda_deterministic=False)
         visualise = False
-        cutoff = 0.3
+        cutoff = 0.5
+        model = "superglue"
         img_path = "experiments/datasets/2023-02-20_hca_backs"
         preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
         results_base_path = "experiments/results/"
@@ -50,8 +51,15 @@ class Main():
         else:
             os.makedirs(results_path)
         
-        
         logging.basicConfig(filename=os.path.join(results_path, 'eval.log'), level=logging.DEBUG)
+        
+        logging.info("visualise: " + str(visualise))
+        logging.info("cutoff: " + str(cutoff))
+        logging.info("model: " + str(model))
+        logging.info("img_path: " + str(img_path))
+        logging.info("preprocessing_path: " + str(preprocessing_path))
+        logging.info("seen_classes: " + str(seen_classes))
+        logging.info("unseen_classes: " + str(unseen_classes))
         
         dl = DataLoaderEvenPairwise(img_path,
                                     preprocessing_path=preprocessing_path,
@@ -60,8 +68,10 @@ class Main():
                                     seen_classes=seen_classes,
                                     unseen_classes=unseen_classes)
         
-        # object_reid = ObjectReIdSift()
-        object_reid = ObjectReIdSuperGlue()
+        if model.lower() == "sift":
+            object_reid = ObjectReIdSift()
+        elif model.lower() == "superglue":
+            object_reid = ObjectReIdSuperGlue()
         
         results = []
         
@@ -109,8 +119,8 @@ class Main():
             
             results.append([label1[item], label2[item], ground_truth, result, accuracy])
             
-            if visualise:
-                cv2.waitKey() # visualise
+            # if visualise:
+                
             
             print("accuracy", i, accuracy)
             
