@@ -547,6 +547,9 @@ class ObjectReIdSift(ObjectReId):
         
         mean_error, median_error, max_error = self.calculate_matching_error(pts1_matches, pts2_matches)
         
+        min_num_kpts = min(len(keypoints1), len(keypoints2))
+        score_ratio = len(matches)/min_num_kpts
+        
         # a median error of less than 0.5 is good
         strength = 1.0 # increase strength for harsher score function
         score = 1/(strength*median_error + 1) #! we should test this score function
@@ -574,4 +577,5 @@ class ObjectReIdSift(ObjectReId):
             # cv2.imshow("sift_result_" + str(unknown_template.id) + "_" + str(object_template.id) + "_" + str(int(rotated)), plot)
             cv2.imshow("sift_result", plot)
         
-        return score
+        # return score
+        return score_ratio

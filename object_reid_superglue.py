@@ -75,6 +75,10 @@ class ObjectReIdSuperGlue(ObjectReId):
         last_data = {k+'0': last_data[k] for k in self.keys}
         last_data['image0'] = img0_tensor
         
+        # scores0 = last_data.scores0
+        # descriptors0 = last_data.descriptors0
+        # print("last_data", last_data)
+        
         scores = []
         
         # superglue isn't rotation invariant. Try both rotations.
@@ -125,10 +129,10 @@ class ObjectReIdSuperGlue(ObjectReId):
                 
                 min_num_kpts = min(len(kpts0), len(kpts1))
                 
-                score_matching = len(matches[valid])/min_num_kpts
-                print("matching score", score_matching)
+                score_ratio = len(matches[valid])/min_num_kpts
+                print("score_ratio", score_ratio)
                 
-                scores.append([score, score_matching])
+                scores.append([score, score_ratio])
                 
                 
             if visualise:
@@ -151,9 +155,9 @@ class ObjectReIdSuperGlue(ObjectReId):
         
         scores = np.array(scores)
         # get the best matching score over the two rotations
-        max_matching_score = max(scores[0, 1], scores[1, 1])
+        max_score_ratio = max(scores[0, 1], scores[1, 1])
 
-        print("[green]max_matching_score", max_matching_score)
+        print("[green]max_score_ratio", max_score_ratio)
         
-        return max_matching_score
+        return max_score_ratio
 

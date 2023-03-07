@@ -194,8 +194,14 @@ class EvenPairwiseDataset(torch.utils.data.Dataset):
         # print("label2", label2)
         # print("")
         
+        
         if positive_pair and label1 != label2:
             raise SystemExit("the labels of the pair should be the same, but they aren't")
+        
+        
+        
+        
+        
         
         return sample1, label1, detections1, sample2, label2, detections2
     

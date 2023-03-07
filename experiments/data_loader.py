@@ -9,11 +9,17 @@ import PIL.Image as Image
 import numpy as np
 import cv2
 import os
+import sys
 import regex as re
 from tqdm import tqdm
 from rich import print
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
+
+# do as if we are in the parent directory
+sys.path.insert(1, os.path.join(sys.path[0], '..'))
+from graph_relations import GraphRelations
+from object_reid import ObjectReId
 
 
 class ImageDataset(datasets.ImageFolder):
@@ -105,6 +111,27 @@ class ImageDataset(datasets.ImageFolder):
                     print("couldn't read json file properly: ", e)
             else:
                 print("[red]detection file doesn't exist:" + file_path + "[/red]")
+        
+        
+            # graph = GraphRelations(detections)
+
+            # # form groups, adds group_id property to detections
+            # graph.make_groups()
+        
+            # # img1 = sample.detach().cpu().numpy()
+            
+            # img = cv2.cvtColor(sample, cv2.COLOR_BGR2RGB)
+            
+            # # print("img1", type(img1), img1.shape)
+            
+            # img_cropped, poly1 = ObjectReId.find_and_crop_det(img, graph)
+            # img_cropped = cv2.cvtColor(img_cropped, cv2.COLOR_RGB2GRAY)
+            
+            # # img1_tensor = frame2tensor(img1_cropped, self.device)
+            # # img2_tensor = frame2tensor(img2_cropped, self.device)
+        
+        
+        
         
         # return sample, label, exemplar, path
         return sample, label, path, detections

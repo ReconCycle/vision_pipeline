@@ -62,7 +62,8 @@ class ObjectReId:
         return mean_error, median_error, max_error
 
 
-    def find_and_crop_det(self, img, graph, rotate_180=False):
+    @classmethod
+    def find_and_crop_det(cls, img, graph, rotate_180=False):
         # some kind of derivative of: process_detection
         detections_hca_back = graph.exists(Label.hca_back)
         # print("dets1, num. of hca_back: " + str(len(detections_hca_back1)))
@@ -72,7 +73,7 @@ class ObjectReId:
         
         det_hca_back = detections_hca_back[0]
         
-        img_cropped, center_cropped = self.get_det_img(img, det_hca_back)
+        img_cropped, center_cropped = cls.get_det_img(img, det_hca_back)
         
         # unrotated obb:
         # obb = hca_back.obb_px - hca_back.center_px + center_cropped
@@ -80,7 +81,7 @@ class ObjectReId:
         # cv2.drawContours(img_cropped, [obb_arr], 0, (0, 255, 255), 2)
         
         # rotated obb:
-        obb2 = self.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.tf.rotation, center_cropped)
+        obb2 = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.tf.rotation, center_cropped)
         obb2_arr = np.array(obb2).astype(int)
         obb2_poly = Polygon(obb2_arr)
         

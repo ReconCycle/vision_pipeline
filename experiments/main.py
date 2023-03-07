@@ -31,9 +31,8 @@ import exp_utils as exp_utils
 
 class Main():
     def __init__(self) -> None:
-        
         exp_utils.init_seeds(1, cuda_deterministic=False)
-        visualise = False
+        visualise = True
         cutoff = 0.5
         model = "superglue"
         img_path = "experiments/datasets/2023-02-20_hca_backs"
@@ -42,8 +41,8 @@ class Main():
         # seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
         # unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
         
-        seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6", "hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a"]
-        unseen_classes = ["hca_12"]
+        seen_classes = ["hca_0", "hca_1", "hca_2" , "hca_3", "hca_4", "hca_5", "hca_6", "hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_12"]
+        unseen_classes = ["hca_2a", "hca_11a"]
         
         results_path = os.path.join(results_base_path, datetime.now().strftime('%Y-%m-%d__%H-%M-%S'))
         if os.path.isdir(results_path):
