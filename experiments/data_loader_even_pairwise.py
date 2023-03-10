@@ -214,6 +214,7 @@ class DataLoaderEvenPairwise():
                  img_path="MNIST",
                  preprocessing_path=None,
                  batch_size=256,
+                 num_workers=8,
                  shuffle=True,
                  validation_split=.2,
                  seen_classes=[],
@@ -266,6 +267,8 @@ class DataLoaderEvenPairwise():
                                     EvenPairwiseDataset(dataloader_imgs.datasets[x]),
                                     batch_size=batch_size,
                                     shuffle=shuffle,
+                                    num_workers=num_workers,
+                                    worker_init_fn = lambda id: np.random.seed(id), # same output each time
                                     collate_fn=custom_collate
                                 )
                             for x in ["seen_train", "seen_val", "unseen_val", "val"]}

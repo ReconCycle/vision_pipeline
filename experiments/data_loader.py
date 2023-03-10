@@ -70,16 +70,12 @@ class ImageDataset(datasets.ImageFolder):
         path, label = self.samples[index]
 
         sample = Image.open(path) # use PIL to work with pytorch transforms
-        sample = np.array(sample)
-
-        # only rgb if it is an rgbd image
-        sample = sample[:, :, :3]
-
-        if self.transform is not None:
-            # convert back to PIL
-            sample = Image.fromarray(sample)
-            sample = self.transform(sample)
-
+        
+        # convert to rgb if it is an rgbd image
+        # sample = np.array(sample)
+        # sample = sample[:, :, :3]
+        # sample = Image.fromarray(sample)
+            
         if self.target_transform is not None:
             label = self.target_transform(label)
             
@@ -112,29 +108,33 @@ class ImageDataset(datasets.ImageFolder):
             else:
                 print("[red]detection file doesn't exist:" + file_path + "[/red]")
         
-        
-            # graph = GraphRelations(detections)
+            graph = GraphRelations(detections)
 
-            # # form groups, adds group_id property to detections
-            # graph.make_groups()
-        
-            # # img1 = sample.detach().cpu().numpy()
+            # form groups, adds group_id property to detections
+            graph.make_groups()
             
-            # img = cv2.cvtColor(sample, cv2.COLOR_BGR2RGB)
+            sample = np.array(sample) # convert to numpy
+            sample = cv2.cvtColor(sample, cv2.COLOR_BGR2RGB)
             
-            # # print("img1", type(img1), img1.shape)
+            #! we should pass this poly as well.
+            sample_cropped, poly = ObjectReId.find_and_crop_det(sample, graph)
+            sample_cropped = cv2.cvtColor(sample_cropped, cv2.COLOR_RGB2GRAY)
+            # sample_cropped = Image.fromarray(sample_cropped)# convert back to PIL
             
-            # img_cropped, poly1 = ObjectReId.find_and_crop_det(img, graph)
-            # img_cropped = cv2.cvtColor(img_cropped, cv2.COLOR_RGB2GRAY)
-            
-            # # img1_tensor = frame2tensor(img1_cropped, self.device)
-            # # img2_tensor = frame2tensor(img2_cropped, self.device)
+        if self.transform is None:
+            #! maybe I can pick better normalising values, or just divide by 255
+            # self.transform = transforms.Compose([
+            #     transforms.ToTensor()
+            # ])
+            sample_cropped = torch.from_numpy(sample_cropped/255.).float()[None, None]
         
-        
-        
+            # (1, 1, 400, 400) -> (1, 400, 400)
+            sample_cropped = torch.squeeze(sample_cropped, dim=1)
+        else:
+            sample_cropped = self.transform(sample_cropped)
         
         # return sample, label, exemplar, path
-        return sample, label, path, detections
+        return sample_cropped, label, path, detections
         
     # restrict classes to those in subfolder_dirs
     def find_classes(self, dir: str):
@@ -349,7 +349,7 @@ if __name__ == '__main__':
     # img_path = "/home/sruiz/datasets2/reconcycle/simon_rgbd_dataset/hca_simon/sorted_in_folders"
     # img_path = "experiments/datasets/hca_simon/sorted_in_folders"
     img_path = "experiments/datasets/2023-02-20_hca_backs"
-    preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing"
+    preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
     seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
     unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
     
