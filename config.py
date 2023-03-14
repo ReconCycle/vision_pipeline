@@ -1,7 +1,7 @@
 import os
 import yaml
 from helpers import Struct
-import rosparam
+# import rosparam
 from rich import print
 
 def load_config(filepath="./config.yaml"):

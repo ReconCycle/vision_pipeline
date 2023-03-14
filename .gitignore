@@ -9,6 +9,7 @@ datasets_symlink
 camera_images/
 labelled_images/
 object_templates/
+context_action_framework/
 
 __pycache__/
 .vscode/

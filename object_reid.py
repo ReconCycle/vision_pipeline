@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 from graph_relations import GraphRelations, exists_detection, compute_iou
 
-from context_action_framework.types import Action, Detection, Gap, Label, detections_to_ros, detections_to_py
+from context_action_framework.types import Action, Detection, Gap, Label
 
 from helpers import scale_img
 

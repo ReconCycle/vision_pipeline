@@ -117,24 +117,28 @@ class ImageDataset(datasets.ImageFolder):
             sample = cv2.cvtColor(sample, cv2.COLOR_BGR2RGB)
             
             #! we should pass this poly as well.
-            sample_cropped, poly = ObjectReId.find_and_crop_det(sample, graph)
-            sample_cropped = cv2.cvtColor(sample_cropped, cv2.COLOR_RGB2GRAY)
+            sample, poly = ObjectReId.find_and_crop_det(sample, graph)
+            sample = cv2.cvtColor(sample, cv2.COLOR_RGB2GRAY)
             # sample_cropped = Image.fromarray(sample_cropped)# convert back to PIL
             
-        if self.transform is None:
-            #! maybe I can pick better normalising values, or just divide by 255
-            # self.transform = transforms.Compose([
-            #     transforms.ToTensor()
-            # ])
-            sample_cropped = torch.from_numpy(sample_cropped/255.).float()[None, None]
+            if self.transform is None:
+                #! maybe I can pick better normalising values, or just divide by 255
+                # self.transform = transforms.Compose([
+                #     transforms.ToTensor()
+                # ])
+                sample = torch.from_numpy(sample/255.).float()[None, None]
+            
+                # (1, 1, 400, 400) -> (1, 400, 400)
+                sample = torch.squeeze(sample, dim=1)
+            else:
+                sample = self.transform(sample)
         
-            # (1, 1, 400, 400) -> (1, 400, 400)
-            sample_cropped = torch.squeeze(sample_cropped, dim=1)
         else:
-            sample_cropped = self.transform(sample_cropped)
+            # for the preprocessing step
+            sample = np.array(sample)
         
         # return sample, label, exemplar, path
-        return sample_cropped, label, path, detections
+        return sample, label, path, detections
         
     # restrict classes to those in subfolder_dirs
     def find_classes(self, dir: str):

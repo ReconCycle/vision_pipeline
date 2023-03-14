@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 import cv2
 import numpy as np
-import json
+# import json
 from rich import print
 from PIL import Image
 from tqdm import tqdm
@@ -82,7 +82,7 @@ class PairwiseClassifier():
         self.dl = DataLoaderEvenPairwise(self.args.img_path,
                                     preprocessing_path=self.args.preprocessing_path,
                                     batch_size=self.args.batch_size,
-                                    num_workers=2,
+                                    num_workers=8,
                                     shuffle=True,
                                     seen_classes=self.args.seen_classes,
                                     unseen_classes=self.args.unseen_classes)

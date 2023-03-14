@@ -17,7 +17,7 @@ from yolact_pkg.yolact import Yolact
 from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
 
-from object_reid_sift import ObjectReIdSift
+# from object_reid_sift import ObjectReIdSift
 from config import load_config
 
 from context_action_framework.types import Camera
@@ -42,8 +42,8 @@ class Main():
         
         # load object reid
         object_reid = None
-        if self.config.reid:
-            object_reid = ObjectReIdSift()
+        # if self.config.reid:
+        #     object_reid = ObjectReIdSift()
         
         # pretend to use Basler camera
         self.camera_type = Camera.basler
