@@ -83,14 +83,19 @@ class ObjectReId:
         # rotated obb:
         obb2 = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.tf.rotation, center_cropped)
         obb2_arr = np.array(obb2).astype(int)
-        obb2_poly = Polygon(obb2_arr)
+        # obb2_list = list(obb2_arr)
+
+        # print("obb2_arr", obb2_arr.shape)
+
+        #! somehow go to list and then back to polygon
+        # obb2_poly = Polygon(obb2_arr)
         
         # rotated polygon
         # poly = self.rotated_and_centered_obb(hca_back.polygon_px, hca_back.center_px, hca_back.tf.rotation, center_cropped)
         # poly_arr = np.array(poly.exterior.coords).astype(int)
         # print("poly_arr", poly_arr)
         
-        return img_cropped, obb2_poly
+        return img_cropped, obb2_arr
 
     @classmethod
     def rotated_and_centered_obb(cls, obb_or_poly, center, quat, new_center=None, world_coords=False):

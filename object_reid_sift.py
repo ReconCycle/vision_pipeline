@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 from graph_relations import GraphRelations, exists_detection, compute_iou
 
-from context_action_framework.types import Action, Detection, Gap, Label, detections_to_ros, detections_to_py
+from context_action_framework.types import Action, Detection, Gap, Label
 
 from helpers import scale_img
 from object_reid import ObjectReId
@@ -159,28 +159,30 @@ class ObjectReIdSift(ObjectReId):
 
 
     # comparison function for experiments
-    def compare(self, img1, graph1, img2, graph2, visualise=False):
+    def compare(self, img1, poly1, img2, poly2, visualise=False):
         
-        img1_cropped, obb_poly1 = self.find_and_crop_det(img1, graph1)
-        img2_cropped, obb_poly2 = self.find_and_crop_det(img2, graph2)
+        # img1_cropped, obb_poly1 = self.find_and_crop_det(img1, graph1)
+        # img2_cropped, obb_poly2 = self.find_and_crop_det(img2, graph2)
         
-        keypoints1, descriptors1 = self.calculate_sift(img1_cropped, obb_poly1, visualise, vis_id=1)
+        keypoints1, descriptors1 = self.calculate_sift(img1, poly1, visualise, vis_id=1)
         
         template1 = SimpleNamespace()
         template1.id = 1
         template1.sift_keypoints = keypoints1
         template1.sift_descriptors = descriptors1
         
-        keypoints2, descriptors2 = self.calculate_sift(img2_cropped, obb_poly2, visualise, vis_id=2)
+        keypoints2, descriptors2 = self.calculate_sift(img2, poly2, visualise, vis_id=2)
         
         template2 = SimpleNamespace()
         template2.id = 2
         template2.sift_keypoints = keypoints2
         template2.sift_descriptors = descriptors2
-        
-        # TODO: ... write code to put in templates... and to run this:
     
-        sift_score = self.calculate_sift_results(img1_cropped, template1, img2_cropped, template2, False, visualise)
+        sift_score = self.calculate_sift_results(img1, template1, img2, template2, False, visualise)
+
+        if visualise:
+            cv2.waitKey()
+            cv2.destroyAllWindows()
         
         return sift_score
 
@@ -537,7 +539,8 @@ class ObjectReIdSift(ObjectReId):
         # 3 matches will always score perfectly because of affine transform
         # let's say we want at least 5 matches to work
         if len(matches) <= 5:
-            print("not enough matches for SIFT")
+            if visualise:
+                print("not enough matches for SIFT")
             # todo: return something else than 0.0, more like undefined.
             return 0.0
         
@@ -548,11 +551,15 @@ class ObjectReIdSift(ObjectReId):
         mean_error, median_error, max_error = self.calculate_matching_error(pts1_matches, pts2_matches)
         
         min_num_kpts = min(len(keypoints1), len(keypoints2))
-        score_ratio = len(matches)/min_num_kpts
+
+        #! score function 1:
+        # score = len(matches)/min_num_kpts
         
         # a median error of less than 0.5 is good
         strength = 1.0 # increase strength for harsher score function
-        score = 1/(strength*median_error + 1) #! we should test this score function
+
+        #! score function 2:
+        score = 1/(strength*median_error + 1)
         
         # penalty for few matches
         if len(matches) < 10:
@@ -578,4 +585,4 @@ class ObjectReIdSift(ObjectReId):
             cv2.imshow("sift_result", plot)
         
         # return score
-        return score_ratio
+        return score

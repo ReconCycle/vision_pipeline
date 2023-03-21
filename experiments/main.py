@@ -3,147 +3,226 @@ import os
 from datetime import datetime
 import cv2
 import numpy as np
-import json
+# import json
 from rich import print
 from PIL import Image
 from tqdm import tqdm
 import logging
+from types import SimpleNamespace
+import torch
+from torch import optim, nn, utils, Tensor
+from torchvision.datasets import MNIST
+from torchvision.transforms import ToTensor
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import Callback
+from torchmetrics import Accuracy
+from torchmetrics.classification import BinaryAccuracy
+import argparse
+
+import exp_utils as exp_utils
+
+from data_loader_even_pairwise import DataLoaderEvenPairwise
+from model_pairwise_classifier import PairWiseClassifierModel
+from model_superglue import SuperGlueModel
+from model_sift import SIFTModel
 
 # do as if we are in the parent directory
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
-
-from yolact_pkg.data.config import Config
-from yolact_pkg.yolact import Yolact
-
-# from work_surface_detection_opencv import WorkSurfaceDetection
-# from object_detection import ObjectDetection
 from graph_relations import GraphRelations
+from object_reid import ObjectReId
 
-from object_reid_sift import ObjectReIdSift
-from object_reid_superglue import ObjectReIdSuperGlue
+from superglue.models.matching import Matching
+from superglue.models.utils import (AverageTimer, VideoStreamer,
+                          make_matching_plot_fast, frame2tensor)    
 
-from config import load_config
-
-# from context_action_framework.types import Camera
-
-from data_loader_even_pairwise import DataLoaderEvenPairwise
-import exp_utils as exp_utils
 
 class Main():
     def __init__(self) -> None:
         exp_utils.init_seeds(1, cuda_deterministic=False)
-        visualise = True
-        cutoff = 0.5
-        model = "superglue"
+
+        parser = argparse.ArgumentParser(
+            description='pairwise classifier',
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+        # seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a"]
+        # unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10"]
+        seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
+        unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
+
         img_path = "experiments/datasets/2023-02-20_hca_backs"
         preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
         results_base_path = "experiments/results/"
-        # seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
-        # unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
-        
-        seen_classes = ["hca_0", "hca_1", "hca_2" , "hca_3", "hca_4", "hca_5", "hca_6", "hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_12"]
-        unseen_classes = ["hca_2a", "hca_11a"]
-        
-        results_path = os.path.join(results_base_path, datetime.now().strftime('%Y-%m-%d__%H-%M-%S'))
-        if os.path.isdir(results_path):
-            print("[red]results_path already exists!")
-        else:
-            os.makedirs(results_path)
-        
-        logging.basicConfig(filename=os.path.join(results_path, 'eval.log'), level=logging.DEBUG)
-        
-        logging.info("visualise: " + str(visualise))
-        logging.info("cutoff: " + str(cutoff))
-        logging.info("model: " + str(model))
-        logging.info("img_path: " + str(img_path))
-        logging.info("preprocessing_path: " + str(preprocessing_path))
-        logging.info("seen_classes: " + str(seen_classes))
-        logging.info("unseen_classes: " + str(unseen_classes))
-        
-        dl = DataLoaderEvenPairwise(img_path,
-                                    preprocessing_path=preprocessing_path,
-                                    batch_size=1,
-                                    shuffle=True,
-                                    seen_classes=seen_classes,
-                                    unseen_classes=unseen_classes)
-        
-        if model.lower() == "sift":
-            object_reid = ObjectReIdSift()
-        elif model.lower() == "superglue":
-            object_reid = ObjectReIdSuperGlue()
-        
-        results = []
-        
-        for i, (sample1, label1, dets1, sample2, label2, dets2) in tqdm(enumerate(dl.dataloaders["seen_train"])):
-            
-            # batch size = 1
-            item = 0 # first element in batch
-            
-            # print("dets1:", len(dets1[item])) # list of detections
-            # print("dets2:", len(dets2[item])) # list of detections
-                    
-            # print("labels:", label1[item], label2[item])
-            
-            ground_truth = label1[item] == label2[item]
-            
-            # graph relations actually computed in object_detection.py.... but we don't have that result here.
-            
-            graph1 = GraphRelations(dets1[item])
-            graph2 = GraphRelations(dets2[item])
-            # form groups, adds group_id property to detections
-            graph1.make_groups()
-            graph2.make_groups()
-            
-            img1 = sample1.detach().cpu().numpy()[item]
-            img2 = sample2.detach().cpu().numpy()[item]
-            
-            img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
-            img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
-            
-            # print("img1", type(img1), img1.shape)
-            
-            # TODO: log results
-            # TODO: optimise by moving SIFT calculation to outside of pairwise loop
-            result = object_reid.compare(img1, graph1, img2, graph2, visualise=visualise)
-            
-            # TODO: should never be None
-            if result is None:
-                result = 0.0
-                
-            result_bin = False
-            if result > cutoff:
-                result_bin = True
-            
-            accuracy = ground_truth == result_bin
-            
-            results.append([label1[item], label2[item], ground_truth, result, accuracy])
-            
-            # if visualise:
-                
-            
-            print("accuracy", i, accuracy)
-            
-            # if i > 5:
-            #     break #! debug
-            
-            if i > 0 and (i == 5 or i % 100 == 0):
-                results_np = np.array(results)
-                avg_accuracy = np.sum(results_np[:, -1])/len(results_np)
-                print("\navg_accuracy", avg_accuracy, "\n")
-                logging.info("avg accuracy, with " + str(i) + " samples: "+ str(avg_accuracy))
-                
-                # TODO: log this accuracy.
 
-                    
-                    # print("path", path[j])
-                    # print("filename", filename)
-                    # print("dirname", dirname)
-                csv_path = os.path.join(results_path, "acc_" + str(i) + ".csv")
-                np.savetxt(csv_path, results_np, delimiter=",", fmt=['%i', '%i', '%i', '%.5f', '%.5f'])
-                print("saved path:", csv_path)
-            
-            if i > 10001:
+        # for eval only with pairwise_classifier:
+        results_path = "experiments/results/2023-03-14__17-38-43"
+        checkpoint_path = "lightning_logs/version_0/checkpoints/epoch=19-step=2000.ckpt"
+
+        parser.add_argument('--mode', type=str, default="eval") # train/eval
+        parser.add_argument('--visualise', type=bool, default=False)
+        parser.add_argument('--cutoff', type=float, default=0.01) # SIFT=0.01, superglue=0.5
+        parser.add_argument('--batch_size', type=float, default=8)
+        parser.add_argument('--batches_per_epoch', type=float, default=100)
+        parser.add_argument('--train_epochs', type=float, default=30)
+        parser.add_argument('--eval_epochs', type=float, default=1)
+        parser.add_argument('--model', type=str, default='sift') # superglue/sift/pairwise_classifier
+        parser.add_argument('--img_path', type=str, default=img_path)
+        parser.add_argument('--preprocessing_path', type=str, default=preprocessing_path)
+        parser.add_argument('--results_base_path', type=str, default=results_base_path)
+        parser.add_argument('--seen_classes', type=str, nargs='+', default=seen_classes)
+        parser.add_argument('--unseen_classes', type=str, nargs='+', default=unseen_classes)
+
+        # for eval only:
+        parser.add_argument('--results_path', type=str, default=results_path)
+        parser.add_argument('--checkpoint_path', type=str, default=checkpoint_path)
+        
+        # for pairwise_classifier only (during training):
+        parser.add_argument('--freeze_backbone', type=bool, default=True)
+
+        self.args = parser.parse_args()
+        
+        if self.args.mode == "train" or \
+        (self.args.mode == "eval" and (self.args.model == "superglue" or  self.args.model == "sift")):
+            # ignore checkpoint
+            self.args.checkpoint_path = ""
+
+            # create a new directory when we train
+            results_path = os.path.join(self.args.results_base_path, datetime.now().strftime('%Y-%m-%d__%H-%M-%S' + f"_{self.args.model}"))
+            if os.path.isdir(results_path):
+                print("[red]results_path already exists!")
                 return
+            else:
+                os.makedirs(results_path)
+            self.args.results_path = results_path
+        
+        
+        torch.set_grad_enabled(True)
+        
+        opt = SimpleNamespace()
+        opt.superglue = "indoor"
+        opt.nms_radius = 4
+        opt.sinkhorn_iterations = 20
+        opt.match_threshold = 0.5 # default 0.2
+        opt.show_keypoints = True
+        opt.keypoint_threshold = 0.005
+        opt.max_keypoints = -1
+        
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        if self.args.model == "superglue":
+            print("using SuperGlueModel")
+            if self.args.mode == "train":
+                print("[red]This model is eval only![/red]")
+                return
+            self.model = SuperGlueModel(opt=opt, visualise=self.args.visualise)
+        elif self.args.model == "sift":
+            print("using SIFT")
+            self.model = SIFTModel(cutoff=self.args.cutoff, visualise=self.args.visualise)
+
+            if self.args.mode == "train":
+                print("[red]This model is eval only![/red]")
+                return
+        elif self.args.model == "pairwise_classifier":
+            print("using pairwise_classifier")
+            self.model = PairWiseClassifierModel(opt=opt, 
+                                             freeze_backbone=self.args.freeze_backbone)
+        
+        self.dl = DataLoaderEvenPairwise(self.args.img_path,
+                                    preprocessing_path=self.args.preprocessing_path,
+                                    batch_size=self.args.batch_size,
+                                    num_workers=8,
+                                    shuffle=True,
+                                    seen_classes=self.args.seen_classes,
+                                    unseen_classes=self.args.unseen_classes)
+        
+        logging.basicConfig(filename=os.path.join(self.args.results_path, f'{self.args.mode}.log'), level=logging.DEBUG)
+        self.log_args()
+
+        if self.args.mode == "train":
+            self.train()
+        elif self.args.mode == "eval":
+            self.eval()
+    
+    def log_args(self):
+        for arg in vars(self.args):
+            logging.info(str(arg) + ": " + str(getattr(self.args, arg)))
+    
+        logging.info("device: " + str(self.device))
+
+    
+    def train(self):
+        
+        trainer = pl.Trainer(
+            callbacks=[OverrideEpochStepCallback()],
+            default_root_dir=self.args.results_path,
+            limit_train_batches=self.args.batches_per_epoch,
+            limit_val_batches=self.args.batches_per_epoch,
+            limit_test_batches=self.args.batches_per_epoch,
+            max_epochs=self.args.train_epochs,
+            accelerator="gpu",
+            devices=1)
+        trainer.fit(model=self.model, 
+                    train_dataloaders=self.dl.dataloaders["seen_train"],
+                    val_dataloaders=self.dl.dataloaders["seen_val"])
+
+    def eval(self):
+        # TODO: based on model, run the right one
+        if self.args.model == "pairwise_classifier":
+            self.model = PairWiseClassifierModel.load_from_checkpoint(os.path.join(self.args.results_path, self.checkpoint), strict=False)
+
+        
+        trainer = pl.Trainer(callbacks=[OverrideEpochStepCallback()],
+                            default_root_dir=self.args.results_path,
+                            limit_train_batches=self.args.batches_per_epoch,
+                            limit_val_batches=self.args.batches_per_epoch,
+                            limit_test_batches=self.args.batches_per_epoch,
+                            max_epochs=self.args.eval_epochs,
+                            accelerator='gpu',
+                            devices=1)
+
+        # model.eval()
+
+        # test the model
+        print("[blue]eval_results:[/blue]")
+        datasets = ["seen_train", "seen_val", "unseen_val"]
+        output = trainer.validate(self.model, 
+                                  dataloaders=[self.dl.dataloaders[name] for name in datasets])
+        for i, name in enumerate(datasets):
+            logging.info(f"eval {name}:" + str(output[i]))
+
+        
+        
+    # def eval_manual(self):
+    #     self.results_path = "experiments/results/2023-03-10__15-28-03"
+    #     self.checkpoint = "lightning_logs/version_0/checkpoints/epoch=19-step=2000.ckpt"
+    #     self.model.load_from_checkpoint(os.path.join(self.results_path, self.checkpoint), strict=False)
+    #     self.model.to(self.device)
+    #     self.model.eval()
+        
+    #     for i, (sample1, label1, dets1, sample2, label2, dets2) in enumerate(self.dl.dataloaders["seen_train"]):
+    #         sample1 = sample1.to(self.device)
+    #         sample2 = sample2.to(self.device)
+            
+    #         out = self.model(sample1, sample2)
+            
+    #         print("out", out)
+
+# https://github.com/Lightning-AI/lightning/issues/2110#issuecomment-1114097730
+class OverrideEpochStepCallback(Callback):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        self._log_step_as_current_epoch(trainer, pl_module)
+
+    def on_test_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        self._log_step_as_current_epoch(trainer, pl_module)
+
+    def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        self._log_step_as_current_epoch(trainer, pl_module)
+
+    def _log_step_as_current_epoch(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        pl_module.log("step", trainer.current_epoch)
 
 if __name__ == '__main__':
     main = Main()
+    

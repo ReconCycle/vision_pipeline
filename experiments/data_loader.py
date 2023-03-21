@@ -98,7 +98,7 @@ class ImageDataset(datasets.ImageFolder):
             
             file_path = os.path.join(self.preprocessing_path, dirname, filename + ".json")
             if os.path.isfile(file_path):
-                
+
                 try:
                     with open(file_path, 'r') as json_file:
                         detections = jsonpickle.decode(json_file.read(), keys=True)
@@ -116,20 +116,14 @@ class ImageDataset(datasets.ImageFolder):
             sample = np.array(sample) # convert to numpy
             sample = cv2.cvtColor(sample, cv2.COLOR_BGR2RGB)
             
-            #! we should pass this poly as well.
             sample, poly = ObjectReId.find_and_crop_det(sample, graph)
             sample = cv2.cvtColor(sample, cv2.COLOR_RGB2GRAY)
             # sample_cropped = Image.fromarray(sample_cropped)# convert back to PIL
             
             if self.transform is None:
-                #! maybe I can pick better normalising values, or just divide by 255
-                # self.transform = transforms.Compose([
-                #     transforms.ToTensor()
-                # ])
-                sample = torch.from_numpy(sample/255.).float()[None, None]
-            
-                # (1, 1, 400, 400) -> (1, 400, 400)
-                sample = torch.squeeze(sample, dim=1)
+                sample = torch.from_numpy(sample/255.).float()
+                # (400, 400) -> (1, 400, 400)
+                sample = torch.unsqueeze(sample, 0)
             else:
                 sample = self.transform(sample)
         
@@ -137,8 +131,8 @@ class ImageDataset(datasets.ImageFolder):
             # for the preprocessing step
             sample = np.array(sample)
         
-        # return sample, label, exemplar, path
-        return sample, label, path, detections
+        # if needed we could pass detections and original image too
+        return sample, label, path, poly
         
     # restrict classes to those in subfolder_dirs
     def find_classes(self, dir: str):
@@ -221,6 +215,7 @@ class DataLoader():
                                                 limit_imgs_per_class=limit_imgs_per_class)
         
         # concat seen_val and unseen_val datasets
+        #! make this correct. Test set should not contain pairs found in validate
         self.datasets["val"] = torch.utils.data.ConcatDataset([self.datasets["seen_val"], self.datasets["unseen_val"]])
         
         # create the dataloaders
@@ -250,10 +245,7 @@ class DataLoader():
             batch[2] = torch.utils.data.default_collate(batch[2])
 
             return batch
-
         
-        # ! DOESN'T WORK!
-        # TODO: let's pad the detections with None or something like that?
         
         self.dataloaders = {x: torch.utils.data.DataLoader(self.datasets[x],
                                                            num_workers=0,
@@ -323,11 +315,21 @@ class DataLoader():
         for a_class in self.classes[type_name]:
             label_distribution[a_class] = 0
         
-        for i, (inputs, labels, *_) in enumerate(self.dataloaders[type_name]):
+        for i, (sample, labels, path, detections) in enumerate(self.dataloaders[type_name]):
             # print("i", i)
             # print("inputs.shape", inputs.shape)
             # print("labels", labels)
             # print("")
+            # sample[0]
+            for item in [0, 1]:
+                print("item", item)
+                img = sample.detach().cpu().numpy()[item]
+                img = (img * 255).astype(dtype=np.uint8)
+                img = np.squeeze(img, axis=0)
+                print("img1.shape", img.shape)
+                cv2.imshow("img", img)
+                k = cv2.waitKey(0)
+
 
             labels_name = [self.classes[type_name][label] for label in labels]
 
@@ -363,5 +365,6 @@ if __name__ == '__main__':
                             unseen_classes=unseen_classes,
                             cuda=False)
     
-    dataloader.compute_mean_std()
-    dataloader.example()
+    # dataloader.compute_mean_std()
+    # dataloader.example()
+    dataloader.example_iterate()

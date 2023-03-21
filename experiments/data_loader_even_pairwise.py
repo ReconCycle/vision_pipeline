@@ -76,9 +76,6 @@ def pair_idx(n, x, y):
     return k
 
 
-
-
-
 def nth_item(n, item, iterable):
     """find the index of the n'th occurrence of an item in a list
     source: https://stackoverflow.com/questions/8337069/find-the-index-of-the-nth-item-in-a-list
@@ -198,11 +195,6 @@ class EvenPairwiseDataset(torch.utils.data.Dataset):
         if positive_pair and label1 != label2:
             raise SystemExit("the labels of the pair should be the same, but they aren't")
         
-        
-        
-        
-        
-        
         return sample1, label1, detections1, sample2, label2, detections2
     
 
@@ -296,6 +288,16 @@ class DataLoaderEvenPairwise():
             label1 = [self.classes["seen_train"][label] for label in label1]
             label2 = [self.classes["seen_train"][label] for label in label2]
 
+            def show_img(sample):
+                img = sample.detach().cpu().numpy()
+                img = (img * 255).astype(dtype=np.uint8)
+                img = np.squeeze(img, axis=0)
+                print("img1.shape", img.shape)
+                cv2.imshow("img", img)
+                k = cv2.waitKey(0)
+
+            show_img(sample1[0])
+            show_img(sample2[0])
 
             for j in np.arange(len(label1)):
                 if label1[j] == label2[j]:
@@ -337,7 +339,7 @@ if __name__ == '__main__':
     # img_path = "/home/sruiz/datasets/labelme/hca_front_21-10-01/cropped"
     # img_path = "MNIST"
     img_path = "experiments/datasets/2023-02-20_hca_backs"
-    preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing"
+    preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
     seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
     unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
     
