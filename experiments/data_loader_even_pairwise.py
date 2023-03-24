@@ -260,10 +260,9 @@ class DataLoaderEvenPairwise():
                                     batch_size=batch_size,
                                     shuffle=shuffle,
                                     num_workers=num_workers,
-                                    worker_init_fn = lambda id: np.random.seed(id), # same output each time
                                     collate_fn=custom_collate
                                 )
-                            for x in ["seen_train", "seen_val", "unseen_val", "val"]}
+                            for x in ["seen_train", "seen_val", "seen_test", "unseen_test", "test"]}
         
     def example(self):
         positive_pairs = 0

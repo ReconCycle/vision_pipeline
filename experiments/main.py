@@ -13,16 +13,24 @@ import torch
 from torch import optim, nn, utils, Tensor
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
+import torchvision.transforms as transforms
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
 from torchmetrics import Accuracy
 from torchmetrics.classification import BinaryAccuracy
+
 import argparse
 
 import exp_utils as exp_utils
+from exp_utils import str2bool
 
 from data_loader_even_pairwise import DataLoaderEvenPairwise
+from data_loader_triplet import DataLoaderTriplet
+
 from model_pairwise_classifier import PairWiseClassifierModel
+from model_pairwise_classifier2 import PairWiseClassifier2Model
+from model_triplet import TripletModel
 from model_superglue import SuperGlueModel
 from model_sift import SIFTModel
 
@@ -37,7 +45,7 @@ from superglue.models.utils import (AverageTimer, VideoStreamer,
 
 
 class Main():
-    def __init__(self) -> None:
+    def __init__(self, raw_args=None) -> None:
         exp_utils.init_seeds(1, cuda_deterministic=False)
 
         parser = argparse.ArgumentParser(
@@ -57,14 +65,19 @@ class Main():
         results_path = "experiments/results/2023-03-14__17-38-43"
         checkpoint_path = "lightning_logs/version_0/checkpoints/epoch=19-step=2000.ckpt"
 
-        parser.add_argument('--mode', type=str, default="eval") # train/eval
-        parser.add_argument('--visualise', type=bool, default=False)
+        parser.add_argument('--mode', type=str, default="train") # train/eval
+        parser.add_argument('--model', type=str, default='triplet') # superglue/sift/pairwise_classifier/pairwise_classifier2/triplet
+        parser.add_argument('--visualise', type=str2bool, default=False)
         parser.add_argument('--cutoff', type=float, default=0.01) # SIFT=0.01, superglue=0.5
         parser.add_argument('--batch_size', type=float, default=8)
         parser.add_argument('--batches_per_epoch', type=float, default=100)
-        parser.add_argument('--train_epochs', type=float, default=30)
+        parser.add_argument('--train_epochs', type=float, default=50)
         parser.add_argument('--eval_epochs', type=float, default=1)
-        parser.add_argument('--model', type=str, default='sift') # superglue/sift/pairwise_classifier
+        parser.add_argument('--early_stopping', type=str2bool, default=True)
+        # , nargs='?', const=True,
+        # for pairwise_classifier only (during training):
+        parser.add_argument('--freeze_backbone', type=str2bool, default=True)
+
         parser.add_argument('--img_path', type=str, default=img_path)
         parser.add_argument('--preprocessing_path', type=str, default=preprocessing_path)
         parser.add_argument('--results_base_path', type=str, default=results_base_path)
@@ -74,11 +87,8 @@ class Main():
         # for eval only:
         parser.add_argument('--results_path', type=str, default=results_path)
         parser.add_argument('--checkpoint_path', type=str, default=checkpoint_path)
-        
-        # for pairwise_classifier only (during training):
-        parser.add_argument('--freeze_backbone', type=bool, default=True)
 
-        self.args = parser.parse_args()
+        self.args = parser.parse_args(raw_args)
         
         if self.args.mode == "train" or \
         (self.args.mode == "eval" and (self.args.model == "superglue" or  self.args.model == "sift")):
@@ -107,32 +117,90 @@ class Main():
         opt.max_keypoints = -1
         
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.transform = None
 
         if self.args.model == "superglue":
             print("using SuperGlueModel")
             if self.args.mode == "train":
                 print("[red]This model is eval only![/red]")
                 return
-            self.model = SuperGlueModel(opt=opt, visualise=self.args.visualise)
+            self.model = SuperGlueModel(self.args.batch_size, opt=opt, visualise=self.args.visualise)
         elif self.args.model == "sift":
             print("using SIFT")
-            self.model = SIFTModel(cutoff=self.args.cutoff, visualise=self.args.visualise)
+            self.model = SIFTModel(self.args.batch_size, cutoff=self.args.cutoff, visualise=self.args.visualise)
 
             if self.args.mode == "train":
                 print("[red]This model is eval only![/red]")
                 return
         elif self.args.model == "pairwise_classifier":
             print("using pairwise_classifier")
-            self.model = PairWiseClassifierModel(opt=opt, 
+            self.transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.RandomRotation(degrees=5),
+                # transforms.RandomAutocontrast(p=0.2),
+                transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
+                transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
+                transforms.ColorJitter(brightness=(0.1,0.6), hue=0.3),
+                # transforms.RandomPerspective(distortion_scale=0.3, p=0.2),
+                transforms.Grayscale()
+            ])
+            self.model = PairWiseClassifierModel(self.args.batch_size, opt=opt, 
                                              freeze_backbone=self.args.freeze_backbone)
-        
-        self.dl = DataLoaderEvenPairwise(self.args.img_path,
-                                    preprocessing_path=self.args.preprocessing_path,
-                                    batch_size=self.args.batch_size,
-                                    num_workers=8,
-                                    shuffle=True,
-                                    seen_classes=self.args.seen_classes,
-                                    unseen_classes=self.args.unseen_classes)
+            
+        elif self.args.model == "pairwise_classifier2":
+            print("using pairwise_classifier2")
+            self.transform = transforms.Compose([
+                # transforms.Resize((64, 64)),
+                transforms.ToTensor(),
+                transforms.RandomRotation(degrees=5),
+                # transforms.RandomAutocontrast(p=0.2),
+                # transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
+                transforms.ColorJitter(brightness=(0.1,0.6), hue=0.3),
+                # transforms.RandomPerspective(distortion_scale=0.3, p=0.2),
+                # computed transform using compute_mean_std() to give:
+                transforms.Normalize(mean=[0.5895, 0.5935, 0.6036],
+                                    std=[0.1180, 0.1220, 0.1092])
+            ])
+
+            self.model = PairWiseClassifier2Model(self.args.batch_size,
+                                             freeze_backbone=self.args.freeze_backbone)
+            
+        elif self.args.model == "triplet":
+            print("using triplet")
+            self.transform = transforms.Compose([
+                # transforms.Resize((64, 64)),
+                transforms.ToTensor(),
+                transforms.RandomRotation(degrees=5),
+                # transforms.RandomAutocontrast(p=0.2),
+                # transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
+                transforms.ColorJitter(brightness=(0.1,0.6), hue=0.3),
+                # transforms.RandomPerspective(distortion_scale=0.3, p=0.2),
+                # computed transform using compute_mean_std() to give:
+                transforms.Normalize(mean=[0.5895, 0.5935, 0.6036],
+                                    std=[0.1180, 0.1220, 0.1092])
+            ])
+            self.model = TripletModel(self.args.batch_size,
+                                             freeze_backbone=self.args.freeze_backbone)
+            
+        if self.args.model in ["superglue", "sift", "pairwise_classifier", "pairwise_classifier2"]:
+            self.dl = DataLoaderEvenPairwise(self.args.img_path,
+                                        preprocessing_path=self.args.preprocessing_path,
+                                        batch_size=self.args.batch_size,
+                                        num_workers=8,
+                                        shuffle=True,
+                                        seen_classes=self.args.seen_classes,
+                                        unseen_classes=self.args.unseen_classes,
+                                        transform=self.transform)
+        elif self.args.model in ["triplet"]:
+            self.dl = DataLoaderTriplet(self.args.img_path,
+                                        preprocessing_path=self.args.preprocessing_path,
+                                        batch_size=self.args.batch_size,
+                                        num_workers=8,
+                                        shuffle=True,
+                                        seen_classes=self.args.seen_classes,
+                                        unseen_classes=self.args.unseen_classes,
+                                        transform=self.transform)
+
         
         logging.basicConfig(filename=os.path.join(self.args.results_path, f'{self.args.mode}.log'), level=logging.DEBUG)
         self.log_args()
@@ -141,18 +209,28 @@ class Main():
             self.train()
         elif self.args.mode == "eval":
             self.eval()
+
     
     def log_args(self):
         for arg in vars(self.args):
+            print(str(arg) + ": " + str(getattr(self.args, arg)))
             logging.info(str(arg) + ": " + str(getattr(self.args, arg)))
-    
+
+        print("device: " + str(self.device))
         logging.info("device: " + str(self.device))
 
-    
+
     def train(self):
-        
+        callbacks = [OverrideEpochStepCallback()]
+        if self.args.early_stopping:
+            early_stop_callback = EarlyStopping(monitor="val/seen_val/acc_epoch", mode="max", patience=10, verbose=False, strict=True)
+            checkpoint_callback = ModelCheckpoint(monitor="val/seen_val/acc_epoch", mode="max", save_top_k=1)
+            callbacks.append(early_stop_callback)
+            callbacks.append(checkpoint_callback)
+
         trainer = pl.Trainer(
-            callbacks=[OverrideEpochStepCallback()],
+            callbacks=callbacks,
+            enable_checkpointing=True,
             default_root_dir=self.args.results_path,
             limit_train_batches=self.args.batches_per_epoch,
             limit_val_batches=self.args.batches_per_epoch,
@@ -160,14 +238,37 @@ class Main():
             max_epochs=self.args.train_epochs,
             accelerator="gpu",
             devices=1)
+        
+        print(self.model)
+        self.model.val_datasets = ["seen_val"]
         trainer.fit(model=self.model, 
                     train_dataloaders=self.dl.dataloaders["seen_train"],
                     val_dataloaders=self.dl.dataloaders["seen_val"])
+        
+        if self.args.early_stopping:
+            logging.info(f"best model path: {checkpoint_callback.best_model_path}")
+            logging.info(f"best model score: {checkpoint_callback.best_model_score}")
+            print(f"best model path: {checkpoint_callback.best_model_path}")
+            print(f"best model score: {checkpoint_callback.best_model_score}")
 
-    def eval(self):
+            # TODO: immediately run eval
+            self.eval(model_path=checkpoint_callback.best_model_path)
+        
+
+    def eval(self, model_path=None):
         # TODO: based on model, run the right one
+        if model_path is None:
+            model_path = os.path.join(self.args.results_path, self.checkpoint)
+        
+        print(f"model_path {model_path}")
+        logging.info(f"model_path {model_path}")
+
         if self.args.model == "pairwise_classifier":
-            self.model = PairWiseClassifierModel.load_from_checkpoint(os.path.join(self.args.results_path, self.checkpoint), strict=False)
+            self.model = PairWiseClassifierModel.load_from_checkpoint(model_path, strict=False)
+        elif self.args.model == "pairwise_classifier2":
+            self.model = PairWiseClassifier2Model.load_from_checkpoint(model_path, strict=False)
+        elif self.args.model == "triplet":
+            self.model = TripletModel.load_from_checkpoint(model_path, strict=False)
 
         
         trainer = pl.Trainer(callbacks=[OverrideEpochStepCallback()],
@@ -179,18 +280,15 @@ class Main():
                             accelerator='gpu',
                             devices=1)
 
-        # model.eval()
-
         # test the model
         print("[blue]eval_results:[/blue]")
-        datasets = ["seen_train", "seen_val", "unseen_val"]
-        output = trainer.validate(self.model, 
-                                  dataloaders=[self.dl.dataloaders[name] for name in datasets])
-        for i, name in enumerate(datasets):
+        test_datasets = ["seen_train", "seen_val", "test"]
+        self.model.test_datasets = test_datasets
+        output = trainer.test(self.model,
+                                  dataloaders=[self.dl.dataloaders[name] for name in test_datasets])
+        for i, name in enumerate(test_datasets):
             logging.info(f"eval {name}:" + str(output[i]))
 
-        
-        
     # def eval_manual(self):
     #     self.results_path = "experiments/results/2023-03-10__15-28-03"
     #     self.checkpoint = "lightning_logs/version_0/checkpoints/epoch=19-step=2000.ckpt"
@@ -221,7 +319,8 @@ class OverrideEpochStepCallback(Callback):
         self._log_step_as_current_epoch(trainer, pl_module)
 
     def _log_step_as_current_epoch(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
-        pl_module.log("step", trainer.current_epoch)
+        pl_module.log("step", torch.tensor(trainer.current_epoch, dtype=torch.float32))
+        
 
 if __name__ == '__main__':
     main = Main()

@@ -7,6 +7,7 @@ import torch
 from torch import optim, nn, utils, Tensor
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
+import torchvision
 import pytorch_lightning as pl
 from torchmetrics import Accuracy
 from torchmetrics.classification import BinaryAccuracy
@@ -15,69 +16,43 @@ import exp_utils as exp_utils
 
 from data_loader_even_pairwise import DataLoaderEvenPairwise
 
-from superglue.models.matching import Matching
+# from superglue.models.matching import Matching
 
 # define the LightningModule
-class PairWiseClassifierModel(pl.LightningModule):
-    def __init__(self, batch_size, opt=None, freeze_backbone=True):
+class PairWiseClassifier2Model(pl.LightningModule):
+    def __init__(self, batch_size, freeze_backbone=True):
         super().__init__()
         self.save_hyperparameters() # save paramaters (matching_config) to checkpoint
         
         self.batch_size = batch_size
-        matching_config = {
-            'superpoint': {
-                'nms_radius': opt.nms_radius,
-                'keypoint_threshold': opt.keypoint_threshold,
-                'max_keypoints': opt.max_keypoints
-            },
-            'superglue': {
-                'weights': opt.superglue,
-                'sinkhorn_iterations': opt.sinkhorn_iterations,
-                'match_threshold': opt.match_threshold,
-            }
-        }
-
         self.freeze_backbone = freeze_backbone
-        self.matching = Matching(matching_config).to(self.device)
-        self.superpoint= self.matching.superpoint
-
         self.accuracy = BinaryAccuracy().to(self.device)
 
         self.test_datasets = None
         self.val_datasets = None
+        
+        self.resnet18_model = torchvision.models.resnet18(pretrained=True).to(self.device)
 
         # TODO: make model better
         self.model = nn.Sequential(
-                # (1, 65+65, 50, 50)
-                nn.Conv2d(130, 64, kernel_size=3, stride=2, padding=1),
-                nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1),
-                nn.Flatten(),
-                nn.Linear(1875, 1024),
+                nn.Linear(2000, 512),
                 nn.LeakyReLU(),
-                nn.Linear(1024, 256),
+                nn.Linear(512, 256),
                 nn.LeakyReLU(),
                 nn.Linear(256, 64),
                 nn.LeakyReLU(),
                 nn.Linear(64, 1)
                 )
         
-        #! I don't think I need these lines...
-        self.model.requires_grad = True
-        for param in self.model.parameters():
-            param.requires_grad = True
-        # https://pytorch-lightning.readthedocs.io/en/stable/notebooks/lightning_examples/cifar10-baseline.html
-        # ? maybe I should end with F.log_softmax(out, dim=1)
-        # ? then do: loss = F.nll_loss(logits, y)
 
     def backbone(self, sample):
-        img_data = self.superpoint({'image': sample})
-        x = img_data["x_waypoint"] # shape: (1, 65, 50, 50)
-        return x
+        # print("sample", sample.shape) # shape (batch, 3, 400, 400)
+        
+        out = self.resnet18_model(sample) # shape (batch, 1000)
+        return out
 
     def forward(self, sample1, sample2):
 
-        # self.superpoint.eval()
-        # print("sample2.requires_grad", sample2.requires_grad)
         if self.freeze_backbone:
             with torch.no_grad():
                 x1 = self.backbone(sample1)
@@ -139,10 +114,10 @@ class PairWiseClassifierModel(pl.LightningModule):
         
         criterion = nn.BCEWithLogitsLoss() # This loss combines a Sigmoid layer and BCELoss in one class
         loss = criterion(x_out, ground_truth)
-        self.log(f"{stage}/{name}/loss_epoch", loss, on_step=False, on_epoch=True, batch_size=self.batch_size)
+        self.log(f"{stage}_{name}/loss_epoch", loss, on_step=False, on_epoch=True, batch_size=self.batch_size)
 
         acc = self.accuracy(x_out, ground_truth)
-        self.log(f"{stage}/{name}/acc_epoch", acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
+        self.log(f"{stage}_{name}/acc_epoch", acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         name = dataloader_idx + 1

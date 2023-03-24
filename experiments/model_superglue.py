@@ -13,18 +13,21 @@ from object_reid_superglue import ObjectReIdSuperGlue
 
 # define the LightningModule
 class SuperGlueModel(pl.LightningModule):
-    def __init__(self, opt=None, cutoff=0.5, visualise=False):
+    def __init__(self, batch_size, opt=None, cutoff=0.5, visualise=False):
         super().__init__()
         self.save_hyperparameters() # save paramaters (matching_config) to checkpoint
         
+        self.batch_size = batch_size
         self.cutoff = cutoff
         self.visualise = visualise
         self.object_reid = ObjectReIdSuperGlue(opt=opt)
 
         self.accuracy = BinaryAccuracy().to(self.device)
 
+        self.test_datasets = None
+        self.val_datasets = None
 
-    def evaluate(self, batch, dataloader_idx, stage=None):
+    def evaluate(self, batch, name, stage=None):
         sample1, label1, dets1, sample2, label2, dets2 = batch
         
         ground_truth = (label1 == label2).float()
@@ -64,13 +67,21 @@ class SuperGlueModel(pl.LightningModule):
 
         criterion = nn.BCEWithLogitsLoss() # This loss combines a Sigmoid layer and BCELoss in one class
         loss = criterion(batch_result, ground_truth)
-        self.log(f"{stage}_{dataloader_idx + 1}/loss", loss)
+        self.log(f"{stage}_{name}/loss", loss, batch_size=self.batch_size)
 
         acc = self.accuracy(batch_result, ground_truth)
-        self.log(f"{stage}_{dataloader_idx + 1}/acc", acc, on_epoch=True)
+        self.log(f"{stage}/{name}/acc", acc, on_epoch=True, prog_bar=True,batch_size=self.batch_size)
 
-    def validation_step(self, batch, batch_idx, dataloader_idx):
-        self.evaluate(batch, dataloader_idx, "val")
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        name = dataloader_idx + 1
+        if self.val_datasets is not None:
+            name = self.val_datasets[dataloader_idx]
+        
+        self.evaluate(batch, name, "val")
 
-    def test_step(self, batch, batch_idx):
-        self.evaluate(batch, "test")
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
+        name = dataloader_idx + 1
+        if self.test_datasets is not None:
+            name = self.test_datasets[dataloader_idx]
+
+        self.evaluate(batch, name, "test")

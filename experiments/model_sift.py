@@ -13,18 +13,21 @@ from shapely.geometry import Polygon, Point
 
 # define the LightningModule
 class SIFTModel(pl.LightningModule):
-    def __init__(self, cutoff=0.5, visualise=False):
+    def __init__(self, batch_size, cutoff=0.5, visualise=False):
         super().__init__()
         self.save_hyperparameters() # save paramaters (matching_config) to checkpoint
         
+        self.batch_size = batch_size
         self.cutoff = cutoff
         self.visualise = visualise
         self.object_reid = ObjectReIdSift()
 
         self.accuracy = BinaryAccuracy().to(self.device)
 
+        self.test_datasets = None
+        self.val_datasets = None
 
-    def evaluate(self, batch, dataloader_idx, stage=None):
+    def evaluate(self, batch, name, stage=None):
         sample1, label1, list_poly1, sample2, label2, list_poly2 = batch
         
         ground_truth = (label1 == label2).float()
@@ -71,13 +74,21 @@ class SIFTModel(pl.LightningModule):
 
         criterion = nn.BCEWithLogitsLoss() # This loss combines a Sigmoid layer and BCELoss in one class
         loss = criterion(batch_result, ground_truth)
-        self.log(f"{stage}_loss_{dataloader_idx + 1}", loss)
+        self.log(f"{stage}/{name}/loss_epoch", loss, on_epoch=True, batch_size=self.batch_size)
 
         acc = self.accuracy(batch_result, ground_truth)
-        self.log(f"{stage}_acc_{dataloader_idx + 1}", acc, on_epoch=True)
+        self.log(f"{stage}/{name}/acc_epoch", acc, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
 
-    def validation_step(self, batch, batch_idx, dataloader_idx):
-        self.evaluate(batch, dataloader_idx, "val")
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        name = dataloader_idx + 1
+        if self.val_datasets is not None:
+            name = self.val_datasets[dataloader_idx]
+        
+        self.evaluate(batch, name, "val")
 
-    def test_step(self, batch, batch_idx):
-        self.evaluate(batch, "test")
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
+        name = dataloader_idx + 1
+        if self.test_datasets is not None:
+            name = self.test_datasets[dataloader_idx]
+
+        self.evaluate(batch, name, "test")

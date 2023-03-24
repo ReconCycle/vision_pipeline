@@ -161,7 +161,7 @@ class SuperPoint(nn.Module):
         cPa = self.relu(self.convPa(x))
         scores = self.convPb(cPa)
         
-        x_waypoint = scores.clone() #! Should I detach??
+        x_waypoint = scores.clone()
         
         scores = torch.nn.functional.softmax(scores, 1)[:, :-1]
         b, _, h, w = scores.shape
@@ -192,6 +192,7 @@ class SuperPoint(nn.Module):
         # Compute the dense descriptors
         cDa = self.relu(self.convDa(x))
         descriptors = self.convDb(cDa)
+        descriptors_waypoint = descriptors.clone()
         descriptors = torch.nn.functional.normalize(descriptors, p=2, dim=1)
 
         # Extract descriptors
@@ -202,5 +203,6 @@ class SuperPoint(nn.Module):
             'keypoints': keypoints,
             'scores': scores,
             'descriptors': descriptors,
-            'x_waypoint' : x_waypoint
+            'x_waypoint' : x_waypoint,
+            'descriptors_waypoint': descriptors_waypoint
         }

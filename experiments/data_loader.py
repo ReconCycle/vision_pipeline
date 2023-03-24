@@ -117,10 +117,9 @@ class ImageDataset(datasets.ImageFolder):
             sample = cv2.cvtColor(sample, cv2.COLOR_BGR2RGB)
             
             sample, poly = ObjectReId.find_and_crop_det(sample, graph)
-            sample = cv2.cvtColor(sample, cv2.COLOR_RGB2GRAY)
-            # sample_cropped = Image.fromarray(sample_cropped)# convert back to PIL
             
             if self.transform is None:
+                sample = cv2.cvtColor(sample, cv2.COLOR_RGB2GRAY)
                 sample = torch.from_numpy(sample/255.).float()
                 # (400, 400) -> (1, 400, 400)
                 sample = torch.unsqueeze(sample, 0)
@@ -148,6 +147,7 @@ class DataLoader():
                  img_path,
                  preprocessing_path=None,
                  batch_size=16,
+                 num_workers=8,
                  validation_split=.2,
                  shuffle=True,
                  shuffle_train_val_split=True,
@@ -163,12 +163,9 @@ class DataLoader():
         self.batch_size = batch_size
         
         # use seen_classes and unseen_classes to specify which directories to load
-        #? have more training data by giving it more classes (for now)
         self.seen_classes = seen_classes
         self.unseen_classes = unseen_classes
 
-        # seen_dirs = [folder_prefixes + str(class_num) for class_num in seen_classes]
-        # unseen_dirs = [folder_prefixes + str(class_num) for class_num in unseen_classes]
         self.seen_dirs = seen_classes
         self.unseen_dirs = unseen_classes
         
@@ -189,34 +186,33 @@ class DataLoader():
                                     exemplar_transform=transform,
                                     limit_imgs_per_class=limit_imgs_per_class)
 
-        # Create data indices for training and validation splits
-        dataset_size = len(seen_dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(validation_split * dataset_size))
-        if shuffle_train_val_split:
-            np.random.seed(random_seed)
-            np.random.shuffle(indices)
-        seen_train_indices, seen_val_indices = indices[split:], indices[:split]
-        indices = {"seen_train": seen_train_indices,
-                "seen_val": seen_val_indices}
-        
-        #! I don't think the train/val split is random!!
-        
-        # Create train and validation datasets
-        self.datasets = {x: torch.utils.data.Subset(seen_dataset, indices[x])
-                    for x in ["seen_train", "seen_val"]}
+        # create seen train/val/test split
+        generator = torch.Generator().manual_seed(random_seed)
+        len_seen_train = int((1.0 - 2*validation_split) * len(seen_dataset)) # 0.6/0.2/0.2 split
+        len_seen_val = int(validation_split * len(seen_dataset))
+        len_seen_test = len(seen_dataset) - len_seen_train - len_seen_val
+
+        seen_train_dataset, seen_val_dataset, seen_test_dataset = torch.utils.data.random_split(
+            seen_dataset,
+            (len_seen_train, len_seen_val, len_seen_test),
+            generator=generator
+        )
+
+        self.datasets = {}
+        self.datasets["seen_train"] = seen_train_dataset
+        self.datasets["seen_val"] = seen_val_dataset
+        self.datasets["seen_test"] = seen_test_dataset
         
         # add unseen dataset
-        self.datasets["unseen_val"] = ImageDataset(img_path,
+        self.datasets["unseen_test"] = ImageDataset(img_path,
                                                 preprocessing_path,
                                                 self.unseen_dirs,
                                                 unseen_class_offset=len(seen_dataset.classes),
                                                 transform=transform,
                                                 limit_imgs_per_class=limit_imgs_per_class)
         
-        # concat seen_val and unseen_val datasets
-        #! make this correct. Test set should not contain pairs found in validate
-        self.datasets["val"] = torch.utils.data.ConcatDataset([self.datasets["seen_val"], self.datasets["unseen_val"]])
+        # concat seen_test and unseen_test datasets
+        self.datasets["test"] = torch.utils.data.ConcatDataset([self.datasets["seen_test"], self.datasets["unseen_test"]])
         
         # create the dataloaders
         # todo: fix bug, either requiring: generator=torch.Generator(device='cuda'),
@@ -248,25 +244,23 @@ class DataLoader():
         
         
         self.dataloaders = {x: torch.utils.data.DataLoader(self.datasets[x],
-                                                           num_workers=0,
+                                                           num_workers=num_workers,
                                                            batch_size=batch_size,
                                                            generator=generator,
                                                            shuffle=shuffle,
                                                            collate_fn=custom_collate)
-                            for x in ["seen_train", "seen_val", "unseen_val", "val"]}
+                            for x in ["seen_train", "seen_val", "seen_test", "unseen_test", "test"]}
         
-        self.dataset_sizes = {x: len(self.datasets[x]) for x in ["seen_train", "seen_val", "unseen_val", "val"]}
+        self.dataset_lens = {x: len(self.datasets[x]) for x in ["seen_train", "seen_val", "seen_test", "unseen_test", "test"]}
         
-        # class names for train/val, unseen, unseen+val/all
         self.classes = {
             "seen_train": seen_dataset.classes,
             "seen_val": seen_dataset.classes,
-            "unseen_val": self.datasets["unseen_val"].classes,
-            "val": np.concatenate((seen_dataset.classes, self.datasets["unseen_val"].classes)),
-            "all": np.concatenate((seen_dataset.classes, self.datasets["unseen_val"].classes))
+            "seen_test": seen_dataset.classes,
+            "unseen_test": self.datasets["unseen_test"].classes,
+            "test": np.concatenate((seen_dataset.classes, self.datasets["unseen_test"].classes)),
+            "all": np.concatenate((seen_dataset.classes, self.datasets["unseen_test"].classes))
         }
-        
-        # self.img_shape = list(self.datasets["train"][0][0].shape)
         
         
     def compute_mean_std(self):
