@@ -96,21 +96,25 @@ class RealsensePipeline:
         self.publish_labeled_img = self.config.realsense.publish_labelled_img
         self.publish_depth_img = self.config.realsense.publish_depth_img
         self.publish_cluster_img = self.config.realsense.publish_cluster_img
+        self.do_gap_detection = False # can add this to config
  
         self.publish_labeled_rosparamname = path(self.realsense_topic, "publish_labeled_img")
         self.publish_depth_rosparamname = path(self.realsense_topic, "publish_depth_img")
         self.publish_cluster_rosparamname = path(self.realsense_topic, "publish_cluster_img")
+        self.do_gap_detection_rosparamname = path(self.realsense_topic, "do_gap_detection")
 
         self.last_rosparam_check_time = time.time() # Keeping track of when we last polled the rosparam server
-        self.rosparam_check_dt_seconds = 1 # Check rosparam server every 1 second for changes.
+        self.rosparam_check_dt_seconds = 2 # Check rosparam server every 1 second for changes.
         try:
             self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
             self.publish_depth_img = rospy.get_param(self.publish_depth_rosparamname)
             self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
+            self.do_gap_detection = rospy.get_param(self.do_gap_detection_rosparamname)
         except:
             rospy.set_param(self.publish_labeled_rosparamname, self.publish_labeled_img)
             rospy.set_param(self.publish_depth_rosparamname, self.publish_depth_img)
             rospy.set_param(self.publish_cluster_rosparamname, self.publish_cluster_img)
+            rospy.set_param(self.do_gap_detection_rosparamname, self.do_gap_detection)
             
         self.dummy_transform = Transform() # Make an object so we dont make it every time
 
@@ -123,6 +127,7 @@ class RealsensePipeline:
             self.publish_labeled_img = rospy.get_param(self.publish_labeled_rosparamname)
             self.publish_depth_img = rospy.get_param(self.publish_depth_rosparamname)
             self.publish_cluster_img = rospy.get_param(self.publish_cluster_rosparamname)
+            self.do_gap_detection = rospy.get_param(self.do_gap_detection_rosparamname)
 
     def init_realsense_pipeline(self, yolact, dataset):
         self.object_detection = ObjectDetection(yolact, dataset, self.frame_id)
@@ -472,7 +477,7 @@ class RealsensePipeline:
         
         # check we haven't processed this frame already
         if self.processed_img_id >= self.img_id:
-            print("Realsense already got this image")
+            #print("Realsense already got this image")
             return 0
         
         # pipeline is enabled and we have an image
@@ -491,7 +496,7 @@ class RealsensePipeline:
         # Check that more than minimal time has elapsed since last running the pipeline
         dt = np.abs(t - self.last_run_time)
         if (dt < self.min_run_pipeline_dt):
-            #print("Realsense not running due to minimal dt")
+            print("Realsense not running due to minimal dt")
             return 0
 
         t_prev = self.last_run_time
@@ -545,17 +550,19 @@ class RealsensePipeline:
     def process_img(self, fps=None):
         # 2. apply yolact to image and get hca_back
         labelled_img, detections, markers, poses = self.object_detection.get_prediction(self.colour_img, depth_img=self.depth_img, extra_text=fps, camera_info=self.camera_info)
-
-        # 3. apply mask to depth image and convert to pointcloud
-        gaps, cluster_img, depth_scaled, device_mask \
-            = self.gap_detector.lever_detector(
-                self.depth_img,
-                detections,
-                self.camera_info,
-                aruco_pose=self.aruco_pose,
-                aruco_point=self.aruco_point
-            )
-
+        
+        gaps = None; cluster_img=None; depth_scaled=None; device_mask = None
+        #if 1:
+        if self.do_gap_detection:
+            # 3. apply mask to depth image and convert to pointcloud
+            gaps, cluster_img, depth_scaled, device_mask \
+                = self.gap_detector.lever_detector(
+                    self.depth_img,
+                    detections,
+                    self.camera_info,
+                    aruco_pose=self.aruco_pose,
+                    aruco_point=self.aruco_point
+                )
         return labelled_img, detections, markers, poses, gaps, cluster_img, depth_scaled, device_mask
 
     def parse_calib_yaml(self, fn):

@@ -161,7 +161,7 @@ class ObjectDetection:
                 depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
                 depth_mean = depth_masked_np.mean()
                 
-                if isinstance(depth_mean, np.float):
+                if isinstance(depth_mean, float):
                 
                     detection.center = img_to_camera_coords(center_px, depth_mean, camera_info)
                     detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
