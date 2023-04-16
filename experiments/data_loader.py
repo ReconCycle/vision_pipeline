@@ -1,10 +1,9 @@
-from torchvision import datasets
+from torchvision import datasets, transforms
+from torchvision.utils import make_grid
 import torch
-# from torch.utils.data import DataLoader
-from torch.utils.data.sampler import SubsetRandomSampler
-import torchvision.transforms as transforms
-# import albumentations as A
-# import albumentations.pytorch
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+import time
 import PIL.Image as Image
 import numpy as np
 import cv2
@@ -16,10 +15,12 @@ from rich import print
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
 
+
 # do as if we are in the parent directory
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from graph_relations import GraphRelations
 from object_reid import ObjectReId
+from exp_utils import scale_img
 
 
 class ImageDataset(datasets.ImageFolder):
@@ -69,7 +70,7 @@ class ImageDataset(datasets.ImageFolder):
         """
         path, label = self.samples[index]
 
-        sample = Image.open(path) # use PIL to work with pytorch transforms
+        sample = cv2.imread(path)
         
         # convert to rgb if it is an rgbd image
         # sample = np.array(sample)
@@ -81,14 +82,7 @@ class ImageDataset(datasets.ImageFolder):
             
         label = label + self.unseen_class_offset
 
-        # also return an examplar image of that class (maybe useful for the autoencoder)
         dirname = os.path.basename(os.path.dirname(path))
-        # exemplar_path = os.path.join(self.main_path, dirname + ".png")
-        # exemplar = None
-        # if os.path.isfile(exemplar_path):
-        #     exemplar = Image.open(exemplar_path)
-        #     if self.exemplar_transform is not None:
-        #         exemplar = self.transform(exemplar)
         
         # get preprocessed detections for img (if they exist)
         detections = []
@@ -113,18 +107,11 @@ class ImageDataset(datasets.ImageFolder):
             # form groups, adds group_id property to detections
             graph.make_groups()
             
-            sample = np.array(sample) # convert to numpy
-            sample = cv2.cvtColor(sample, cv2.COLOR_BGR2RGB)
-            
             sample, poly = ObjectReId.find_and_crop_det(sample, graph)
             
-            if self.transform is None:
-                sample = cv2.cvtColor(sample, cv2.COLOR_RGB2GRAY)
-                sample = torch.from_numpy(sample/255.).float()
-                # (400, 400) -> (1, 400, 400)
-                sample = torch.unsqueeze(sample, 0)
-            else:
-                sample = self.transform(sample)
+            # apply albumentations transform
+            sample = cv2.cvtColor(sample, cv2.COLOR_BGR2RGB)
+            sample = self.transform(image=sample)["image"]
         
         else:
             # for the preprocessing step
@@ -150,10 +137,10 @@ class DataLoader():
                  num_workers=8,
                  validation_split=.2,
                  shuffle=True,
-                 shuffle_train_val_split=True,
                  seen_classes=[],
                  unseen_classes=[],
-                 transform=None,
+                 train_transform=None,
+                 val_transform=None,
                  limit_imgs_per_class=None,
                  cuda=True):
         
@@ -168,47 +155,57 @@ class DataLoader():
 
         self.seen_dirs = seen_classes
         self.unseen_dirs = unseen_classes
-        
-        #! albumentations is doing funny things with the normalisation. Let's use pytorch inbuilt thingy first.
-        # transform is passed to dataloader
-        # transform = transforms.Compose([
-        #     transforms.Resize((64, 64)),
-        #     transforms.ToTensor(),
-        #     # computed transform using compute_mean_std() to give:
-        #     transforms.Normalize(mean=[0.5895, 0.5935, 0.6036],
-        #                         std=[0.1180, 0.1220, 0.1092])
-        # ])
 
-        seen_dataset = ImageDataset(img_path,
+
+
+        # train_tf_dataset = datasets.StanfordCars(root="/home/sruiz/datasets2", 
+        #                                         split="train", 
+        #                                         download=True, 
+        #                                         transform=train_transform)
+        
+        # val_tf_dataset = datasets.StanfordCars(root="/home/sruiz/datasets2", 
+        #                                         split="test",
+        #                                         download=True,
+        #                                         transform=val_transform)
+                
+        #! note the only difference is the transform!
+        train_tf_dataset = ImageDataset(img_path,
                                     preprocessing_path,
                                     self.seen_dirs,
-                                    transform=transform,
-                                    exemplar_transform=transform,
+                                    transform=train_transform,
                                     limit_imgs_per_class=limit_imgs_per_class)
+    
+        val_tf_dataset = ImageDataset(img_path,
+                                    preprocessing_path,
+                                    self.seen_dirs,
+                                    transform=val_transform,
+                                    limit_imgs_per_class=limit_imgs_per_class)
+        
+        len_dataset = len(train_tf_dataset)
 
         # create seen train/val/test split
         generator = torch.Generator().manual_seed(random_seed)
-        len_seen_train = int((1.0 - 2*validation_split) * len(seen_dataset)) # 0.6/0.2/0.2 split
-        len_seen_val = int(validation_split * len(seen_dataset))
-        len_seen_test = len(seen_dataset) - len_seen_train - len_seen_val
+        len_seen_train = int((1.0 - 2*validation_split) * len_dataset) # 0.6/0.2/0.2 split
+        len_seen_val = int(validation_split * len_dataset)
+        len_seen_test = len_dataset - len_seen_train - len_seen_val
 
-        seen_train_dataset, seen_val_dataset, seen_test_dataset = torch.utils.data.random_split(
-            seen_dataset,
+        seen_train_idxs, seen_val_idxs, seen_test_idxs = torch.utils.data.random_split(
+            np.arange(len_dataset),
             (len_seen_train, len_seen_val, len_seen_test),
             generator=generator
         )
 
         self.datasets = {}
-        self.datasets["seen_train"] = seen_train_dataset
-        self.datasets["seen_val"] = seen_val_dataset
-        self.datasets["seen_test"] = seen_test_dataset
+        self.datasets["seen_train"] = torch.utils.data.Subset(train_tf_dataset, seen_train_idxs)
+        self.datasets["seen_val"] = torch.utils.data.Subset(val_tf_dataset, seen_val_idxs)
+        self.datasets["seen_test"] = torch.utils.data.Subset(val_tf_dataset, seen_test_idxs)
         
         # add unseen dataset
         self.datasets["unseen_test"] = ImageDataset(img_path,
                                                 preprocessing_path,
                                                 self.unseen_dirs,
-                                                unseen_class_offset=len(seen_dataset.classes),
-                                                transform=transform,
+                                                unseen_class_offset=len(train_tf_dataset.classes),
+                                                transform=val_transform,
                                                 limit_imgs_per_class=limit_imgs_per_class)
         
         # concat seen_test and unseen_test datasets
@@ -254,12 +251,12 @@ class DataLoader():
         self.dataset_lens = {x: len(self.datasets[x]) for x in ["seen_train", "seen_val", "seen_test", "unseen_test", "test"]}
         
         self.classes = {
-            "seen_train": seen_dataset.classes,
-            "seen_val": seen_dataset.classes,
-            "seen_test": seen_dataset.classes,
+            "seen_train": train_tf_dataset.classes,
+            "seen_val": train_tf_dataset.classes,
+            "seen_test": train_tf_dataset.classes,
             "unseen_test": self.datasets["unseen_test"].classes,
-            "test": np.concatenate((seen_dataset.classes, self.datasets["unseen_test"].classes)),
-            "all": np.concatenate((seen_dataset.classes, self.datasets["unseen_test"].classes))
+            "test": np.concatenate((train_tf_dataset.classes, self.datasets["unseen_test"].classes)),
+            "all": np.concatenate((train_tf_dataset.classes, self.datasets["unseen_test"].classes))
         }
         
         
@@ -304,7 +301,7 @@ class DataLoader():
         print("mean", mean)
         print("std", std)
     
-    def example_iterate(self, type_name="seen_train"):
+    def example_iterate(self, type_name):
         label_distribution = {}
         for a_class in self.classes[type_name]:
             label_distribution[a_class] = 0
@@ -315,20 +312,21 @@ class DataLoader():
             # print("labels", labels)
             # print("")
             # sample[0]
-            for item in [0, 1]:
-                print("item", item)
-                img = sample.detach().cpu().numpy()[item]
-                img = (img * 255).astype(dtype=np.uint8)
-                img = np.squeeze(img, axis=0)
-                print("img1.shape", img.shape)
-                cv2.imshow("img", img)
-                k = cv2.waitKey(0)
 
+            print(f"len(labels) {len(labels)}")
 
-            labels_name = [self.classes[type_name][label] for label in labels]
+            img_grid = make_grid(sample, nrow=4)
+            img_grid = transforms.ToPILImage()(img_grid)
+            # img_grid.show()
+            img_grid = np.array(img_grid)
+            img_grid = cv2.cvtColor(img_grid, cv2.COLOR_RGB2BGR)
+            cv2.imshow("img_grid", scale_img(img_grid))
+            k = cv2.waitKey(0)
 
-            for j in np.arange(len(labels)):
-                label_distribution[labels_name[j]] += 1
+            # labels_name = [self.classes[type_name][label] for label in labels]
+
+            # for j in np.arange(len(labels)):
+            #     label_distribution[labels_name[j]] += 1
 
         return label_distribution
 
@@ -352,13 +350,38 @@ if __name__ == '__main__':
     preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
     seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
     unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
+
+    transform_list = [
+        # A.SmallestMaxSize(max_size=160),
+        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.1),
+        # A.RandomCrop(height=128, width=128),
+        A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.1),
+        A.RandomBrightnessContrast(p=0.1),
+    ]
+
+    # computed transform using compute_mean_std() to give:
+    # transform_normalise = transforms.Normalize(mean=[0.5895, 0.5935, 0.6036],
+                                # std=[0.1180, 0.1220, 0.1092])
+    transform_normalise = A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
     
+
+    val_transform = A.Compose([
+        # transform_normalise,
+        ToTensorV2(),
+    ])
+
+    # add normalise
+    # transform_list.append(transform_normalise)
+    transform_list.append(ToTensorV2())
+    train_transform = A.Compose(transform_list)
+
     dataloader = DataLoader(img_path,
                             preprocessing_path=preprocessing_path,
                             seen_classes=seen_classes,
                             unseen_classes=unseen_classes,
+                            train_transform=train_transform,
+                            val_transform=val_transform,
                             cuda=False)
     
-    # dataloader.compute_mean_std()
-    # dataloader.example()
-    dataloader.example_iterate()
+    # dataloader.example_iterate(type_name="seen_train")
+    dataloader.example_iterate(type_name="test")

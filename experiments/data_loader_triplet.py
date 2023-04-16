@@ -97,9 +97,12 @@ class DataLoaderTriplet():
                  validation_split=.2,
                  seen_classes=[],
                  unseen_classes=[],
-                 transform=None,
+                 train_transform=None,
+                 val_transform=None,
                  cuda=True):
         
+        start = time.time()
+
         if img_path == "MNIST":
             raise NotImplementedError
 
@@ -112,12 +115,15 @@ class DataLoaderTriplet():
                                          seen_classes=seen_classes,
                                          unseen_classes=unseen_classes,
                                          limit_imgs_per_class=30, #! why limit?
-                                         transform=transform,
+                                         train_transform=train_transform,
+                                         val_transform=val_transform,
                                          cuda=cuda)
 
         self.classes = dataloader_imgs.classes
+        
+        
 
-        # ! a bit hacky to provide triplets only for seen_train
+        # ! to provide triplets only for seen_train, use:
         # ! train=x=="seen_train"
         self.dataloaders = {x: torch.utils.data.DataLoader(
                                     TripletDataset(dataloader_imgs.datasets[x], train=True),
@@ -127,6 +133,9 @@ class DataLoaderTriplet():
                                     # collate_fn=custom_collate
                                 )
                             for x in ["seen_train", "seen_val", "seen_test", "unseen_test", "test"]}
+        
+        end = time.time()
+        print(f"[blue]elapsed time: {end - start}")
         
     def example(self):
         positive_pairs = 0

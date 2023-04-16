@@ -19,6 +19,8 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
 from torchmetrics import Accuracy
 from torchmetrics.classification import BinaryAccuracy
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 import argparse
 
@@ -30,9 +32,12 @@ from data_loader_triplet import DataLoaderTriplet
 
 from model_pairwise_classifier import PairWiseClassifierModel
 from model_pairwise_classifier2 import PairWiseClassifier2Model
+from model_pairwise_classifier3 import PairWiseClassifier3Model
 from model_triplet import TripletModel
 from model_superglue import SuperGlueModel
 from model_sift import SIFTModel
+from model_clip import ClipModel
+from model_cosine import CosineModel
 
 # do as if we are in the parent directory
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
@@ -65,18 +70,22 @@ class Main():
         results_path = "experiments/results/2023-03-14__17-38-43"
         checkpoint_path = "lightning_logs/version_0/checkpoints/epoch=19-step=2000.ckpt"
 
+        eval_only_models = ["superglue", "sift", "cosine", "clip"]
+
         parser.add_argument('--mode', type=str, default="train") # train/eval
         parser.add_argument('--model', type=str, default='triplet') # superglue/sift/pairwise_classifier/pairwise_classifier2/triplet
         parser.add_argument('--visualise', type=str2bool, default=False)
         parser.add_argument('--cutoff', type=float, default=0.01) # SIFT=0.01, superglue=0.5
-        parser.add_argument('--batch_size', type=float, default=8)
-        parser.add_argument('--batches_per_epoch', type=float, default=100)
+        parser.add_argument('--batch_size', type=float, default=16)
+        parser.add_argument('--batches_per_epoch', type=float, default=300)
         parser.add_argument('--train_epochs', type=float, default=50)
         parser.add_argument('--eval_epochs', type=float, default=1)
         parser.add_argument('--early_stopping', type=str2bool, default=True)
         # , nargs='?', const=True,
         # for pairwise_classifier only (during training):
         parser.add_argument('--freeze_backbone', type=str2bool, default=True)
+        parser.add_argument('--learning_rate', type=float, default=1e-5)
+        parser.add_argument('--weight_decay', type=float, default=0.0)
 
         parser.add_argument('--img_path', type=str, default=img_path)
         parser.add_argument('--preprocessing_path', type=str, default=preprocessing_path)
@@ -91,7 +100,7 @@ class Main():
         self.args = parser.parse_args(raw_args)
         
         if self.args.mode == "train" or \
-        (self.args.mode == "eval" and (self.args.model == "superglue" or  self.args.model == "sift")):
+        (self.args.mode == "eval" and (self.args.model in eval_only_models)):
             # ignore checkpoint
             self.args.checkpoint_path = ""
 
@@ -117,8 +126,53 @@ class Main():
         opt.max_keypoints = -1
         
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.transform = None
 
+        self.model_rgb = True
+        if self.args.model in ["superglue", "sift"]:
+            self.model_rgb = False
+
+        val_tf_list = []
+        train_tf_list = [
+            A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.25, rotate_limit=45, p=0.5),
+            A.Blur(blur_limit=2),
+            A.OpticalDistortion(),
+            # A.GridDistortion(),
+            # A.HueSaturationValue(),
+            # A.RandomCrop(height=128, width=128),
+            A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.1),
+            A.RandomBrightnessContrast(p=0.1),
+        ]
+
+        # computed transform using compute_mean_std() to give:
+        transform_normalise = A.Normalize(mean=(0.5895, 0.5935, 0.6036), std=(0.1180, 0.1220, 0.1092))
+        # transform_normalise = A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)) # imagenet
+        transform_resize = A.augmentations.geometric.resize.LongestMaxSize(max_size=224, always_apply=True)
+
+        if self.model_rgb:
+            # validation transforms
+            val_tf_list.append(transform_normalise)
+            if self.args.model == "clip":
+                val_tf_list.append(transform_resize)
+            val_tf_list.append(ToTensorV2())
+        
+            # train transforms
+            train_tf_list.append(transform_normalise)    
+            if self.args.model == "clip":
+                train_tf_list.append(transform_resize)
+            train_tf_list.append(ToTensorV2())
+
+            self.val_transform = A.Compose(val_tf_list)
+            self.train_transform = A.Compose(train_tf_list)
+        else:
+            # don't normalise. We only evaluate these models
+            self.val_transform = A.Compose([
+                ToTensorV2()
+            ])
+
+            train_tf_list.append(ToTensorV2())
+            self.train_transform = A.Compose(train_tf_list)
+
+        # setup model
         if self.args.model == "superglue":
             print("using SuperGlueModel")
             if self.args.mode == "train":
@@ -134,55 +188,49 @@ class Main():
                 return
         elif self.args.model == "pairwise_classifier":
             print("using pairwise_classifier")
-            self.transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.RandomRotation(degrees=5),
-                # transforms.RandomAutocontrast(p=0.2),
-                transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
-                transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
-                transforms.ColorJitter(brightness=(0.1,0.6), hue=0.3),
-                # transforms.RandomPerspective(distortion_scale=0.3, p=0.2),
-                transforms.Grayscale()
-            ])
-            self.model = PairWiseClassifierModel(self.args.batch_size, opt=opt, 
-                                             freeze_backbone=self.args.freeze_backbone)
+            self.model = PairWiseClassifierModel(self.args.batch_size, 
+                                                 self.args.learning_rate, 
+                                                 self.args.weight_decay,
+                                                 opt=opt, 
+                                                 freeze_backbone=self.args.freeze_backbone)
             
         elif self.args.model == "pairwise_classifier2":
             print("using pairwise_classifier2")
-            self.transform = transforms.Compose([
-                # transforms.Resize((64, 64)),
-                transforms.ToTensor(),
-                transforms.RandomRotation(degrees=5),
-                # transforms.RandomAutocontrast(p=0.2),
-                # transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
-                transforms.ColorJitter(brightness=(0.1,0.6), hue=0.3),
-                # transforms.RandomPerspective(distortion_scale=0.3, p=0.2),
-                # computed transform using compute_mean_std() to give:
-                transforms.Normalize(mean=[0.5895, 0.5935, 0.6036],
-                                    std=[0.1180, 0.1220, 0.1092])
-            ])
-
             self.model = PairWiseClassifier2Model(self.args.batch_size,
-                                             freeze_backbone=self.args.freeze_backbone)
+                                                  self.args.learning_rate,
+                                                  self.args.weight_decay,
+                                                  freeze_backbone=self.args.freeze_backbone,
+                                                  visualise=self.args.visualise)
+        elif self.args.model == "pairwise_classifier3":
+            print("using pairwise_classifier3")
+            self.model = PairWiseClassifier3Model(self.args.batch_size,
+                                                  self.args.learning_rate,
+                                                  self.args.weight_decay,
+                                                  cutoff=self.args.cutoff, 
+                                                  freeze_backbone=self.args.freeze_backbone,
+                                                  visualise=self.args.visualise)
+        elif self.args.model == "cosine":
+            print("using cosine model")
+            self.model = CosineModel(self.args.batch_size, 
+                                   cutoff=self.args.cutoff, 
+                                   visualise=self.args.visualise)
             
+        elif self.args.model == "clip":
+            self.model = ClipModel(self.args.batch_size, 
+                                   cutoff=self.args.cutoff, 
+                                   visualise=self.args.visualise)
         elif self.args.model == "triplet":
             print("using triplet")
-            self.transform = transforms.Compose([
-                # transforms.Resize((64, 64)),
-                transforms.ToTensor(),
-                transforms.RandomRotation(degrees=5),
-                # transforms.RandomAutocontrast(p=0.2),
-                # transforms.RandomAffine(0, shear=10, scale=(0.8,1.2)),
-                transforms.ColorJitter(brightness=(0.1,0.6), hue=0.3),
-                # transforms.RandomPerspective(distortion_scale=0.3, p=0.2),
-                # computed transform using compute_mean_std() to give:
-                transforms.Normalize(mean=[0.5895, 0.5935, 0.6036],
-                                    std=[0.1180, 0.1220, 0.1092])
-            ])
             self.model = TripletModel(self.args.batch_size,
-                                             freeze_backbone=self.args.freeze_backbone)
-            
-        if self.args.model in ["superglue", "sift", "pairwise_classifier", "pairwise_classifier2"]:
+                                      learning_rate=self.args.learning_rate,
+                                      weight_decay=self.args.weight_decay,
+                                      cutoff=self.args.cutoff,
+                                      freeze_backbone=self.args.freeze_backbone,
+                                      visualise=self.args.visualise)
+
+        
+        # setup dataloader
+        if self.args.model in ["superglue", "sift", "pairwise_classifier", "pairwise_classifier2", "pairwise_classifier3", "cosine", "clip"]:
             self.dl = DataLoaderEvenPairwise(self.args.img_path,
                                         preprocessing_path=self.args.preprocessing_path,
                                         batch_size=self.args.batch_size,
@@ -190,7 +238,8 @@ class Main():
                                         shuffle=True,
                                         seen_classes=self.args.seen_classes,
                                         unseen_classes=self.args.unseen_classes,
-                                        transform=self.transform)
+                                        train_transform=self.train_transform,
+                                        val_transform=self.val_transform)
         elif self.args.model in ["triplet"]:
             self.dl = DataLoaderTriplet(self.args.img_path,
                                         preprocessing_path=self.args.preprocessing_path,
@@ -199,7 +248,8 @@ class Main():
                                         shuffle=True,
                                         seen_classes=self.args.seen_classes,
                                         unseen_classes=self.args.unseen_classes,
-                                        transform=self.transform)
+                                        train_transform=self.train_transform,
+                                        val_transform=self.val_transform)
 
         
         logging.basicConfig(filename=os.path.join(self.args.results_path, f'{self.args.mode}.log'), level=logging.DEBUG)
@@ -213,11 +263,17 @@ class Main():
     
     def log_args(self):
         for arg in vars(self.args):
-            print(str(arg) + ": " + str(getattr(self.args, arg)))
-            logging.info(str(arg) + ": " + str(getattr(self.args, arg)))
+            print(f"{arg}: {getattr(self.args, arg)}")
+            logging.info(f"{arg}: {getattr(self.args, arg)}")
 
-        print("device: " + str(self.device))
-        logging.info("device: " + str(self.device))
+        print(f"device: {self.device}")
+        logging.info(f"device: {self.device}")
+
+        print(f"traintransforms: {self.train_transform}")
+        logging.info(f"train transforms: {self.train_transform}")
+
+        print(f"val transforms: {self.val_transform}")
+        logging.info(f"val transforms: {self.val_transform}")
 
 
     def train(self):
@@ -251,13 +307,13 @@ class Main():
             print(f"best model path: {checkpoint_callback.best_model_path}")
             print(f"best model score: {checkpoint_callback.best_model_score}")
 
-            # TODO: immediately run eval
+            # immediately run eval
             self.eval(model_path=checkpoint_callback.best_model_path)
         
 
     def eval(self, model_path=None):
         # TODO: based on model, run the right one
-        if model_path is None:
+        if model_path is None and self.args.model in ["pairwise_classifier", "pairwise_classifier2", "pairwise_classifier3", "triplet"]:
             model_path = os.path.join(self.args.results_path, self.checkpoint)
         
         print(f"model_path {model_path}")
@@ -265,10 +321,16 @@ class Main():
 
         if self.args.model == "pairwise_classifier":
             self.model = PairWiseClassifierModel.load_from_checkpoint(model_path, strict=False)
+            print("loaded checkpoint!")
         elif self.args.model == "pairwise_classifier2":
             self.model = PairWiseClassifier2Model.load_from_checkpoint(model_path, strict=False)
+            print("loaded checkpoint!")
+        elif self.args.model == "pairwise_classifier3":
+            self.model = PairWiseClassifier3Model.load_from_checkpoint(model_path, strict=False)
+            print("loaded checkpoint!")
         elif self.args.model == "triplet":
             self.model = TripletModel.load_from_checkpoint(model_path, strict=False)
+            print("loaded checkpoint!")
 
         
         trainer = pl.Trainer(callbacks=[OverrideEpochStepCallback()],

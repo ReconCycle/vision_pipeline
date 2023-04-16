@@ -20,45 +20,85 @@ import exp_utils as exp_utils
 
 # define the LightningModule
 class TripletModel(pl.LightningModule):
-    def __init__(self, batch_size, freeze_backbone=True):
+    def __init__(self, batch_size, learning_rate, weight_decay, cutoff=1.0, freeze_backbone=True, visualise=False):
         super().__init__()
         self.save_hyperparameters() # save paramaters (matching_config) to checkpoint
         
         self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
         self.freeze_backbone = freeze_backbone
+        self.cutoff = cutoff
+        self.visualise = visualise
         self.acc_criterion = BinaryAccuracy().to(self.device)
         self.test_datasets = None
         self.val_datasets = None
 
-        self.resnet18_model = torchvision.models.resnet18(pretrained=True).to(self.device)
+        # self.backbone_model = torchvision.models.resnet18(pretrained=True).to(self.device)
+        self.backbone_model = torchvision.models.resnet50(pretrained=True).to(self.device)
+
+        self.backbone_model = torch.nn.Sequential(*(list(self.backbone_model.children())[:-2]))
+        
+        # todo: remove last two layers: 
+        #   (avgpool): AdaptiveAvgPool2d(output_size=(1, 1))
+        #   (fc): Linear(in_features=2048, out_features=1000, bias=True)
+
+        # we freeze the backbone like this:
+        # https://stackoverflow.com/questions/63785319/pytorch-torch-no-grad-versus-requires-grad-false
+        if self.freeze_backbone:
+            print("[red]Freezing backbone[/red]")
+            for param in self.backbone_model.parameters():
+                param.requires_grad = False
+
         # TODO: make model better
         self.model = nn.Sequential(
+                # nn.Linear(1000, 64),
                 nn.Linear(1000, 512),
                 nn.LeakyReLU(),
+                nn.Dropout(p=0.2),
+                # nn.BatchNorm2d(100), #! parameter not right
                 nn.Linear(512, 256),
                 nn.LeakyReLU(),
-                nn.Linear(256, 64),
+                nn.Dropout(p=0.2),
+                # nn.BatchNorm2d(100), #! parameter not right
+                nn.Linear(256, 128),
                 # nn.LeakyReLU(),
-                # nn.Linear(64, 1)
+                # nn.Linear(64, 8),
                 )
         
+        # we could try: GlobalAveragePooling2D, Dropout, and BatchNormalization
+        # https://pyimagesearch.com/2023/03/06/triplet-loss-with-keras-and-tensorflow/
+        # x = layers.GlobalAveragePooling2D()(extractedFeatures)
+        # x = layers.Dense(units=1024, activation="relu")(x)
+        # x = layers.Dropout(0.2)(x)
+        # x = layers.BatchNormalization()(x)
+        # x = layers.Dense(units=512, activation="relu")(x)
+        # x = layers.Dropout(0.2)(x)
+        # x = layers.BatchNormalization()(x)
+        # x = layers.Dense(units=256, activation="relu")(x)
+        # x = layers.Dropout(0.2)(x)
+        # outputs = layers.Dense(units=128)(x)
+        
+        self.triplet_criterion = nn.TripletMarginLoss(margin=1.0, p=2)
 
     def backbone(self, sample):
         # print("sample", sample.shape) # shape (batch, 3, 400, 400)
-        out = self.resnet18_model(sample) # shape (batch, 1000)
-        out = self.model(out)
+        out = self.backbone_model(sample) # shape (batch, 1000)
+
+        if self.visualise:
+            print(f"backbone out: {out.shape}")
+
         return out
 
     def forward(self, sample):
         
-        #! doesn't make sense to freeze when we are only using backbone with no additional layers
-        # if self.freeze_backbone:
-        #     with torch.no_grad():
-        #         x = self.backbone(sample)
-        # else:
         x = self.backbone(sample)
-        
-        # print("x1.requires_grad", x1.requires_grad)
+
+        # print("x.requires_grad", x.requires_grad)
+
+        x = self.model(x)
+
+        # print("x.requires_grad", x.requires_grad)
         
         # print("x.requires_grad", x.requires_grad)
         # print("x.shape", x.shape)
@@ -69,7 +109,7 @@ class TripletModel(pl.LightningModule):
         
         return x
 
-    def accuracy(self, a_out, p_out, n_out, a_label, p_label, n_label):
+    def accuracy(self, a_out, p_out, n_out, a_label, p_label, n_label, visualise=False):
         # determine accuracy
         dist_criterion = nn.PairwiseDistance(p=2)
         dist_p = dist_criterion(a_out, p_out)
@@ -81,16 +121,21 @@ class TripletModel(pl.LightningModule):
         dist = torch.vstack((torch.unsqueeze(dist_p, 1), 
                              torch.unsqueeze(dist_n, 1)))
 
-        cutoff = 1.0 # value below cutoff is positive, above is negative
-        result = dist < cutoff
-
-        ground_truth_n = (a_label == n_label).float()
-        ground_truth_n = torch.unsqueeze(ground_truth_n, 1)
+        # value BELOW cutoff is positive, above is negative
+        # cutoff = 1.0 is okay
+        result = torch.where(dist < self.cutoff, 1.0, 0.0) 
 
         ground_truth_p = (a_label == p_label).float()
         ground_truth_p = torch.unsqueeze(ground_truth_p, 1)
 
+        ground_truth_n = (a_label == n_label).float()
+        ground_truth_n = torch.unsqueeze(ground_truth_n, 1)
+
         ground_truth = torch.vstack((ground_truth_p, ground_truth_n))
+
+        if visualise:
+            print(f"dist: {torch.squeeze(dist)}")
+            print(f"ground_truth: {torch.squeeze(ground_truth)}")
 
         acc = self.acc_criterion(result, ground_truth)
 
@@ -105,11 +150,13 @@ class TripletModel(pl.LightningModule):
         p_out = self(p_sample)
         n_out = self(n_sample)
 
-        criterion = nn.TripletMarginLoss(margin=1.0, p=2)
+        loss = self.triplet_criterion(a_out, p_out, n_out)
 
-        loss = criterion(a_out, p_out, n_out)
+        visualise = False
+        if batch_idx == 0 and self.visualise:
+            visualise = True
 
-        acc = self.accuracy(a_out, p_out, n_out, a_label, p_label, n_label)
+        acc = self.accuracy(a_out, p_out, n_out, a_label, p_label, n_label, visualise)
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
         self.log('train/acc', acc, on_step=True, on_epoch=True, batch_size=self.batch_size)
@@ -135,7 +182,10 @@ class TripletModel(pl.LightningModule):
 
         loss = criterion(a_out, p_out, n_out)
 
-        acc = self.accuracy(a_out, p_out, n_out, a_label, p_label, n_label)
+        if self.visualise:
+            print(f"\neval: {stage}")
+
+        acc = self.accuracy(a_out, p_out, n_out, a_label, p_label, n_label, self.visualise)
 
         # TODO come up with a cutoff for when the distance is small enough to be called the same
         # for i in np.arange(len(ground_truth)):
@@ -163,5 +213,12 @@ class TripletModel(pl.LightningModule):
         self.evaluate(batch, name, "test")
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=1e-5) # was 1e-3
+        
+        # todo: use these parameters
+        # weight_decay=self.weight_decay
+        # lr=self.learning_rate
+        optimizer = optim.Adam(self.parameters(), 
+                               lr=1e-5,
+                               weight_decay=self.weight_decay
+                               )
         return optimizer

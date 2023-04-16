@@ -3,8 +3,10 @@ import os
 import numpy as np
 from rich import print
 import torch
+import cv2
 from torch import optim, nn
 from torchvision.datasets import MNIST
+from torchvision import datasets, transforms
 import pytorch_lightning as pl
 from torchmetrics.classification import BinaryAccuracy
 
@@ -33,16 +35,23 @@ class SuperGlueModel(pl.LightningModule):
         ground_truth = (label1 == label2).float()
         ground_truth = torch.unsqueeze(ground_truth, 1)
 
+        def torch_to_np_img(torch_img):
+            # convert to PIL
+            img_pil = transforms.ToPILImage()(torch_img)
+            img_np = np.array(img_pil)
+
+            # convert to grayscale
+            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+
+            # convert to float
+            img_np = img_np.astype(np.float32)
+            return img_np
+
         # iterate over batch
         batch_result = []
         for i in np.arange(len(sample1)):
-            img1 = sample1[i].detach().cpu().numpy()
-            img1 = (img1 * 255).astype(dtype=np.uint8)
-            img1 = np.squeeze(img1, axis=0)
-            
-            img2 = sample2[i].detach().cpu().numpy()
-            img2 = (img2 * 255).astype(dtype=np.uint8)
-            img2 = np.squeeze(img2, axis=0)
+            img1 = torch_to_np_img(sample1[i])
+            img2 = torch_to_np_img(sample2[i])
         
             result = self.object_reid.compare(img1, img2, visualise=self.visualise)
             if result is None:

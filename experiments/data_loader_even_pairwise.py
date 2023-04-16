@@ -1,9 +1,7 @@
 from torchvision import datasets
 import torch
-# from torch.utils.data import DataLoader
-from torch.utils.data.sampler import SubsetRandomSampler
-# import albumentations as A
-# import albumentations.pytorch
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 import time
 import numpy as np
 import cv2
@@ -211,7 +209,8 @@ class DataLoaderEvenPairwise():
                  validation_split=.2,
                  seen_classes=[],
                  unseen_classes=[],
-                 transform=None,
+                 train_transform=None,
+                 val_transform=None,
                  cuda=True):
         
         if img_path == "MNIST":
@@ -231,7 +230,8 @@ class DataLoaderEvenPairwise():
                                          seen_classes=seen_classes,
                                          unseen_classes=unseen_classes,
                                          limit_imgs_per_class=30, #! why limit?
-                                         transform=transform,
+                                         train_transform=train_transform,
+                                         val_transform=val_transform,
                                          cuda=cuda)
 
         def custom_collate(instances):
@@ -246,6 +246,7 @@ class DataLoaderEvenPairwise():
                 batch.append([instance[i] for instance in instances])
             
             # apply default collate for: sample1, label1, ..., sample2, label2
+            # print(f"batch[0] {np.array(batch[0]).shape}")
             batch[0] = torch.utils.data.default_collate(batch[0])
             batch[1] = torch.utils.data.default_collate(batch[1])
             
@@ -264,18 +265,18 @@ class DataLoaderEvenPairwise():
                                 )
                             for x in ["seen_train", "seen_val", "seen_test", "unseen_test", "test"]}
         
-    def example(self):
+    def example(self, type_name):
         positive_pairs = 0
         negative_pairs = 0
         label_distribution = {}
         
         # classes_seen_train = self.classes["seen_train"]
-        for a_class in self.classes["seen_train"]:
+        for a_class in self.classes[type_name]:
             label_distribution[a_class] = 0
 
-        print("classes seen_train", self.classes["seen_train"])
+        print("classes seen_train", self.classes[type_name])
 
-        for i, (sample1, label1, dets1, sample2, label2, dets2) in enumerate(self.dataloaders["seen_train"]):
+        for i, (sample1, label1, dets1, sample2, label2, dets2) in enumerate(self.dataloaders[type_name]):
             # print("\ni", i)
             # print("i % 100", i % 100)
             # print("sample1.shape", sample1.shape)
@@ -284,19 +285,28 @@ class DataLoaderEvenPairwise():
             # print("label2.shape", label2.shape)
             label1 = label1.detach().numpy()
             label2 = label2.detach().numpy()
-            label1 = [self.classes["seen_train"][label] for label in label1]
-            label2 = [self.classes["seen_train"][label] for label in label2]
+            label1 = [self.classes[type_name][label] for label in label1]
+            label2 = [self.classes[type_name][label] for label in label2]
 
-            def show_img(sample):
-                img = sample.detach().cpu().numpy()
-                img = (img * 255).astype(dtype=np.uint8)
-                img = np.squeeze(img, axis=0)
-                print("img1.shape", img.shape)
-                cv2.imshow("img", img)
-                k = cv2.waitKey(0)
+            def get_img(sample):
+                # opencv wants the channels to be first
+                # sample = torch.einsum('cwh->whc', sample)
+                # img = sample.detach().cpu().numpy()
+                # img = (img * 255).astype(dtype=np.uint8)
+                img = sample
+                print("img.shape", img.shape)
+                # img = np.squeeze(img, axis=0)
+                return img
 
-            show_img(sample1[0])
-            show_img(sample2[0])
+
+            img1 = get_img(sample1[0])
+            img2 = get_img(sample2[0])
+
+            vis_imgs = np.concatenate((img1, img2), axis=1)
+
+            print("img1.shape", img1.shape)
+            cv2.imshow("vis_imgs", vis_imgs)
+            k = cv2.waitKey(0)
 
             for j in np.arange(len(label1)):
                 if label1[j] == label2[j]:
@@ -334,19 +344,47 @@ class DataLoaderEvenPairwise():
         
 if __name__ == '__main__':
     print("Run this for testing the dataloader only.")
-    # img_path = "/home/sruiz/datasets2/reconcycle/simon_rgbd_dataset/hca_simon/sorted_in_folders"
-    # img_path = "/home/sruiz/datasets/labelme/hca_front_21-10-01/cropped"
-    # img_path = "MNIST"
+
     img_path = "experiments/datasets/2023-02-20_hca_backs"
     preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
     seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
     unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
     
     exp_utils.init_seeds(1, cuda_deterministic=False)
+
+    transform_list = [
+        # A.SmallestMaxSize(max_size=160),
+        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.1),
+        # A.RandomCrop(height=128, width=128),
+        A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.1),
+        A.RandomBrightnessContrast(p=0.1),
+    ]
+
+    # computed transform using compute_mean_std() to give:
+    # transform_normalise = transforms.Normalize(mean=[0.5895, 0.5935, 0.6036],
+                                # std=[0.1180, 0.1220, 0.1092])
+    transform_normalise = A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    
+
+    val_transform = A.Compose([
+        # transform_normalise,
+        # ToTensorV2(),
+    ])
+
+    # add normalise
+    # transform_list.append(transform_normalise)
+    transform_list.append(ToTensorV2())
+    train_transform = A.Compose(transform_list)
+
+
     dataloader = DataLoaderEvenPairwise(img_path,
                                         preprocessing_path=preprocessing_path,
                                         batch_size=32,
                                         shuffle=True,
                                         seen_classes=seen_classes,
-                                        unseen_classes=unseen_classes)
-    dataloader.example()
+                                        unseen_classes=unseen_classes,
+                                        train_transform=train_transform,
+                                        val_transform=val_transform)
+    
+    # dataloader.example(type_name="seen_train")
+    dataloader.example(type_name="test")

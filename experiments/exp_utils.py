@@ -4,6 +4,7 @@ import math
 import random
 import numpy as np
 import argparse
+import cv2
 
 # from loguru import logger
 
@@ -33,3 +34,12 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
+    
+def scale_img(img, scale_percent=50):
+    width = int(img.shape[1] * scale_percent / 100)
+    height = int(img.shape[0] * scale_percent / 100)
+    dim = (width, height)
+    
+    # resize image
+    resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
+    return resized

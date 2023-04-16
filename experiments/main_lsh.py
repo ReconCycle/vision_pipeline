@@ -28,8 +28,11 @@ import exp_utils as exp_utils
 from data_loader import DataLoader
 
 # https://github.com/guofei9987/pyLSHash
+
+# from pyLSHash.pyLSHash.lshash import LSHash
 from pyLSHash import LSHash
 from model_lsh import LSHModel
+from sklearn import preprocessing
 
 
 class Main():
@@ -98,6 +101,11 @@ class Main():
                                              freeze_backbone=self.args.freeze_backbone)
 
         self.lsh = LSHash(hash_size=6, input_dim=1000)
+        
+        print(f"self.lsh.num_hashtables {self.lsh.num_hashtables}") # 1
+        print(f"len(self.lsh.uniform_planes) {len(self.lsh.uniform_planes)}") # 1
+
+
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         if self.args.model == "lsh":
@@ -118,7 +126,8 @@ class Main():
                                     shuffle=False, #! we want all of the same classes
                                     seen_classes=self.args.seen_classes,
                                     unseen_classes=self.args.unseen_classes,
-                                    transform=self.transform,
+                                    train_transform=self.transform,
+                                    val_transform=self.transform,
                                     cuda=False)
         
         logging.basicConfig(filename=os.path.join(self.args.results_path, f'{self.args.mode}.log'), level=logging.DEBUG)
@@ -148,6 +157,8 @@ class Main():
         self.model.eval()
         
         print("fitting...")
+        results = []
+        unique_labels = set()
         for i, (sample, label, path, poly) in enumerate(tqdm(self.dl.dataloaders["seen_train"])):
             sample = sample.to(self.device)
             
@@ -161,9 +172,36 @@ class Main():
             # iterate over the batch
             # batch_result = []
             for i in np.arange(len(np_out)):
-                # ! attach extra_data
                 # lsh.index([2, 3, 4, 5, 6, 7, 8, 9], extra_data="some vector info")
-                self.lsh.index(np_out[i], extra_data=np_label[i])
+                unique_labels.add(np_label[i])
+                # hash = self.lsh.index(np_out[i], extra_data=np_label[i])
+
+                # hash = self.lsh._hash(self.lsh.uniform_planes[0], list(np_out[i]))
+                projections = np.dot(self.lsh.uniform_planes[0], np_out[i])
+                projections_bin = [1 if i > 0 else 0 for i in projections]
+
+                # print(f"projections_bin {projections_bin}")
+                results.append([projections_bin, np_label[i]])
+
+                # print(f"hash {hash} {type(hash)}")
+
+        # TODO: plot the distribution of the hash for each class
+        print(f"unique_labels {unique_labels}")
+        for label in unique_labels:
+            print(f"label: {label}")
+            results_for_label = [result[0] for result in results if result[1] == label]
+            results_for_label = np.array(results_for_label)
+            # print(f"results_for_label: {results_for_label}")
+            num_results = len(results_for_label)
+            hist = np.sum(results_for_label, axis=0) / num_results
+            hist = preprocessing.normalize(hist) # 
+
+            print(f"hist: {hist}")
+
+
+
+
+
 
 
     # https://github.com/aayushmnit/Deep_learning_explorations/blob/master/8_Image_similarity_search/Image%20similarity%20on%20Caltech101%20using%20FastAI%2C%20Pytorch%20and%20Locality%20Sensitive%20Hashing.ipynb
@@ -183,26 +221,46 @@ class Main():
             np_label = label.cpu().detach().numpy()
             np_out = out.cpu().detach().numpy()
         
-            print("")
+            # print("")
             for i in np.arange(len(np_out)):
-                print(f"label: {np_label[i]}")
+                # print(f"label: {np_label[i]}")
                 unique_labels.add(np_label[i])
 
-                res = self.lsh.query(np_out[i], num_results=2)
 
-                # print(f"len(res): {len(res)}")
-                for ((vec, extra_data), distance) in res:
-                    print(f"len(vec): {len(vec)}, vec[0]: {vec[0]}, extra_data: {extra_data}, distance: {distance}")
+                projections = np.dot(self.lsh.uniform_planes[0], np_out[i])
+                projections_bin = [1 if i > 0 else 0 for i in projections]
+
+                # hash = self.lsh._hash(self.lsh.uniform_planes[0], list(np_out[i]))
+                # print(f"hash eval: {projections_bin}")
+
+                results.append([projections_bin, np_label[i]])
+
+                # using query:
+                # res = self.lsh.query(np_out[i], num_results=2)
+
+                # # print(f"len(res): {len(res)}")
+                # for ((vec, extra_data), distance) in res:
+                #     print(f"len(vec): {len(vec)}, vec[0]: {vec[0]}, extra_data: {extra_data}, distance: {distance}")
                 
-                # print(f"res: {res}")
-                results.append([res, np_label[i]])
+                # # print(f"res: {res}")
+                # results.append([res, np_label[i]])
 
-        print(f"unique_labels {unique_labels}")
-
+        print(f"eval unique_labels {unique_labels}")
+        # TODO: plot the distribution of the hash for each class
         for label in unique_labels:
+            print(f"eval label: {label}")
             results_for_label = [result[0] for result in results if result[1] == label]
             results_for_label = np.array(results_for_label)
-            print(f"results_for_label: {results_for_label.shape}")
+            # print(f"results_for_label: {results_for_label}")
+            num_results = len(results_for_label)
+            hist = np.sum(results_for_label, axis=0) / num_results
+
+            print(f"eval hist: {hist}")
+
+        # for label in unique_labels:
+        #     results_for_label = [result[0] for result in results if result[1] == label]
+        #     results_for_label = np.array(results_for_label)
+        #     print(f"results_for_label: {results_for_label.shape}")
 
 
         # classes = self.dl.classes["unseen_test"]
