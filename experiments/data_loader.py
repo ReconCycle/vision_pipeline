@@ -14,7 +14,7 @@ from tqdm import tqdm
 from rich import print
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
-
+import seaborn_image as isns
 
 # do as if we are in the parent directory
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
@@ -243,7 +243,7 @@ class DataLoader():
         self.dataloaders = {x: torch.utils.data.DataLoader(self.datasets[x],
                                                            num_workers=num_workers,
                                                            batch_size=batch_size,
-                                                           generator=generator,
+                                                        #    generator=generator,
                                                            shuffle=shuffle,
                                                            collate_fn=custom_collate)
                             for x in ["seen_train", "seen_val", "seen_test", "unseen_test", "test"]}
@@ -259,7 +259,63 @@ class DataLoader():
             "all": np.concatenate((train_tf_dataset.classes, self.datasets["unseen_test"].classes))
         }
         
+    def visualise(self, type_name, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], save_path=None):
         
+        #! This seems broken when dataloader is on cuda!
+        for i, (sample, labels, path, detections) in enumerate(self.dataloaders[type_name]):
+
+            mean = np.array(mean)
+            std = np.array(std)
+
+            samples_denorm = []
+            for sample_img in sample:
+                # undo ToTensorV2
+                
+                # CHW -> HWC
+                # Images must be in HWC format, not in CHW
+                sample_np = sample_img.cpu().numpy()
+                sample_np = sample_np.transpose(1, 2, 0) # W and H might be wrong way around
+
+                # undo normalize
+                denorm = A.Normalize(
+                    mean=[-m / s for m, s in zip(mean, std)],
+                    std=[1.0 / s for s in std],
+                    always_apply=True,
+                    max_pixel_value=1.0
+                )
+                sample_denorm = denorm(image=sample_np)["image"]
+
+                # to view with opencv we convert to BGR
+                sample_denorm = cv2.cvtColor(sample_denorm, cv2.COLOR_RGB2BGR)
+
+                # cv2.imshow("sample_denorm", sample_denorm)
+                # k = cv2.waitKey(0)
+
+                # we convert back to python format to view in grid
+                # HWC -> CHW
+                sample_denorm = sample_denorm.transpose(2, 0, 1)
+                sample_denorm = torch.from_numpy(sample_denorm)
+
+                samples_denorm.append(sample_denorm)
+
+            # create grid
+            img_grid = make_grid(samples_denorm)
+            img_grid = transforms.ToPILImage()(img_grid)
+            img_grid = np.array(img_grid)
+
+            if save_path is not None:
+                cv2.imwrite(os.path.join(save_path, f"train_{i}.jpg"), img_grid)
+
+            else:
+                # show grid
+                cv2.imshow("img_grid", scale_img(img_grid))
+                k = cv2.waitKey(0)
+
+            if i > 2:
+                break
+
+
+
     def compute_mean_std(self):
         # compute mean and std for training dataset of images. From here the normalisation values can be set.
         # for example:
@@ -340,6 +396,8 @@ class DataLoader():
 
         print("label_dist_seen_train", label_dist_seen_train)
         print("label_dist_seen_val", label_dist_seen_val)
+
+
         
         
 if __name__ == '__main__':
@@ -352,26 +410,28 @@ if __name__ == '__main__':
     unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
 
     transform_list = [
-        # A.SmallestMaxSize(max_size=160),
-        A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=15, p=0.1),
-        # A.RandomCrop(height=128, width=128),
-        A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.1),
-        A.RandomBrightnessContrast(p=0.1),
+            A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.25, rotate_limit=45, p=0.5),
+            A.OpticalDistortion(p=0.5),
+            A.GridDistortion(p=0.5),
+            A.HueSaturationValue(p=0.5),
+            A.RandomResizedCrop(400, 400, p=0.3),
+            A.RGBShift(r_shift_limit=40, g_shift_limit=40, b_shift_limit=40, p=0.5),
+            A.RandomBrightnessContrast(p=0.3),
     ]
 
     # computed transform using compute_mean_std() to give:
     # transform_normalise = transforms.Normalize(mean=[0.5895, 0.5935, 0.6036],
                                 # std=[0.1180, 0.1220, 0.1092])
-    transform_normalise = A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+    transform_normalise = A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255, always_apply=True)
     
 
     val_transform = A.Compose([
-        # transform_normalise,
+        transform_normalise,
         ToTensorV2(),
     ])
 
     # add normalise
-    # transform_list.append(transform_normalise)
+    transform_list.append(transform_normalise)
     transform_list.append(ToTensorV2())
     train_transform = A.Compose(transform_list)
 
@@ -381,7 +441,8 @@ if __name__ == '__main__':
                             unseen_classes=unseen_classes,
                             train_transform=train_transform,
                             val_transform=val_transform,
-                            cuda=False)
+                            cuda=True)
     
     # dataloader.example_iterate(type_name="seen_train")
-    dataloader.example_iterate(type_name="test")
+    # dataloader.example_iterate(type_name="test")
+    dataloader.visualise(type_name="seen_train")

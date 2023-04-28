@@ -215,14 +215,14 @@ class DataLoaderEvenPairwise():
         
         if img_path == "MNIST":
             raise NotImplementedError
-            # dataloader_imgs = DataLoaderMNIST(batch_size=batch_size,
+            # self.dataloader_imgs = DataLoaderMNIST(batch_size=batch_size,
             #                                   shuffle=shuffle,
             #                                   validation_split=validation_split,
             #                                   seen_classes=seen_classes,
             #                                   unseen_classes=unseen_classes)
 
         else:
-            dataloader_imgs = DataLoader(img_path,
+            self.dataloader_imgs = DataLoader(img_path,
                                          preprocessing_path=preprocessing_path,
                                          batch_size=batch_size,
                                          shuffle=shuffle,
@@ -255,9 +255,9 @@ class DataLoaderEvenPairwise():
 
             return batch
 
-        self.classes = dataloader_imgs.classes
+        self.classes = self.dataloader_imgs.classes
         self.dataloaders = {x: torch.utils.data.DataLoader(
-                                    EvenPairwiseDataset(dataloader_imgs.datasets[x]),
+                                    EvenPairwiseDataset(self.dataloader_imgs.datasets[x]),
                                     batch_size=batch_size,
                                     shuffle=shuffle,
                                     num_workers=num_workers,

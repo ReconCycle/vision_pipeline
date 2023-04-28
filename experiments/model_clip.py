@@ -59,7 +59,7 @@ class ClipModel(pl.LightningModule):
 
         # compute accuracy
         acc = self.accuracy(output_thresh, ground_truth)
-        self.log(f"{stage}/{name}/acc", acc, on_epoch=True, prog_bar=True,batch_size=self.batch_size)
+        self.log(f"{stage}/{name}/acc", acc, on_epoch=True, prog_bar=True,batch_size=self.batch_size, add_dataloader_idx=False)
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         name = dataloader_idx + 1

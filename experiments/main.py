@@ -62,24 +62,27 @@ class Main():
         seen_classes = ["hca_0", "hca_1", "hca_2", "hca_2a", "hca_3", "hca_4", "hca_5", "hca_6"]
         unseen_classes = ["hca_7", "hca_8", "hca_9", "hca_10", "hca_11", "hca_11a", "hca_12"]
 
-        img_path = "experiments/datasets/2023-02-20_hca_backs"
-        preprocessing_path = "experiments/datasets/2023-02-20_hca_backs_preprocessing_opencv"
-        results_base_path = "experiments/results/"
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        print("base path:", base_path)
+
+        img_path = os.path.join(base_path, "datasets/2023-02-20_hca_backs")
+        preprocessing_path = os.path.join(base_path, "datasets/2023-02-20_hca_backs_preprocessing_opencv")
+        results_base_path = os.path.join(base_path, "results/")
 
         # for eval only with pairwise_classifier:
-        results_path = "experiments/results/2023-03-14__17-38-43"
+        results_path = os.path.join(base_path, "results/2023-03-14__17-38-43")
         checkpoint_path = "lightning_logs/version_0/checkpoints/epoch=19-step=2000.ckpt"
 
-        eval_only_models = ["superglue", "sift", "cosine", "clip"]
+        eval_only_models = ["superglue", "cosine", "clip"]
 
         parser.add_argument('--mode', type=str, default="train") # train/eval
         parser.add_argument('--model', type=str, default='triplet') # superglue/sift/pairwise_classifier/pairwise_classifier2/triplet
         parser.add_argument('--visualise', type=str2bool, default=False)
         parser.add_argument('--cutoff', type=float, default=0.01) # SIFT=0.01, superglue=0.5
-        parser.add_argument('--batch_size', type=float, default=16)
-        parser.add_argument('--batches_per_epoch', type=float, default=300)
-        parser.add_argument('--train_epochs', type=float, default=50)
-        parser.add_argument('--eval_epochs', type=float, default=1)
+        parser.add_argument('--batch_size', type=int, default=16)
+        parser.add_argument('--batches_per_epoch', type=int, default=300)
+        parser.add_argument('--train_epochs', type=int, default=50)
+        parser.add_argument('--eval_epochs', type=int, default=1)
         parser.add_argument('--early_stopping', type=str2bool, default=True)
         # , nargs='?', const=True,
         # for pairwise_classifier only (during training):
@@ -134,18 +137,20 @@ class Main():
         val_tf_list = []
         train_tf_list = [
             A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.25, rotate_limit=45, p=0.5),
-            A.Blur(blur_limit=2),
-            A.OpticalDistortion(),
-            # A.GridDistortion(),
-            # A.HueSaturationValue(),
-            # A.RandomCrop(height=128, width=128),
-            A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.1),
-            A.RandomBrightnessContrast(p=0.1),
+            A.OpticalDistortion(p=0.5),
+            A.GridDistortion(p=0.5),
+            A.HueSaturationValue(p=0.5),
+            A.RandomResizedCrop(400, 400, p=0.3),
+            A.RGBShift(r_shift_limit=40, g_shift_limit=40, b_shift_limit=40, p=0.5),
+            A.RandomBrightnessContrast(p=0.3),
         ]
 
         # computed transform using compute_mean_std() to give:
-        transform_normalise = A.Normalize(mean=(0.5895, 0.5935, 0.6036), std=(0.1180, 0.1220, 0.1092))
-        # transform_normalise = A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)) # imagenet
+        # transform_normalise = A.Normalize(mean=(0.5895, 0.5935, 0.6036), std=(0.1180, 0.1220, 0.1092))
+        # imagenet normalize
+        self.norm_mean = [0.485, 0.456, 0.406]
+        self.norm_std = [0.229, 0.224, 0.225]
+        transform_normalise = A.Normalize(mean=self.norm_mean, std=self.norm_std) # imagenet
         transform_resize = A.augmentations.geometric.resize.LongestMaxSize(max_size=224, always_apply=True)
 
         if self.model_rgb:
@@ -183,9 +188,6 @@ class Main():
             print("using SIFT")
             self.model = SIFTModel(self.args.batch_size, cutoff=self.args.cutoff, visualise=self.args.visualise)
 
-            if self.args.mode == "train":
-                print("[red]This model is eval only![/red]")
-                return
         elif self.args.model == "pairwise_classifier":
             print("using pairwise_classifier")
             self.model = PairWiseClassifierModel(self.args.batch_size, 
@@ -255,6 +257,8 @@ class Main():
         logging.basicConfig(filename=os.path.join(self.args.results_path, f'{self.args.mode}.log'), level=logging.DEBUG)
         self.log_args()
 
+        self.dl.dataloader_imgs.visualise("seen_train", mean=self.norm_mean, std=self.norm_std, save_path=self.args.results_path)
+
         if self.args.mode == "train":
             self.train()
         elif self.args.mode == "eval":
@@ -269,20 +273,26 @@ class Main():
         print(f"device: {self.device}")
         logging.info(f"device: {self.device}")
 
-        print(f"traintransforms: {self.train_transform}")
+        print(f"train transforms: {self.train_transform}")
         logging.info(f"train transforms: {self.train_transform}")
 
         print(f"val transforms: {self.val_transform}")
         logging.info(f"val transforms: {self.val_transform}")
 
+        print(f"model: {self.model}")
+        logging.info(f"model: {self.model}")
 
     def train(self):
+        
+        logging.info(f"starting training...")
+
         callbacks = [OverrideEpochStepCallback()]
+        checkpoint_callback = ModelCheckpoint(monitor="val/seen_val/loss_epoch", mode="max", save_top_k=1)
+        callbacks.append(checkpoint_callback)
         if self.args.early_stopping:
-            early_stop_callback = EarlyStopping(monitor="val/seen_val/acc_epoch", mode="max", patience=10, verbose=False, strict=True)
-            checkpoint_callback = ModelCheckpoint(monitor="val/seen_val/acc_epoch", mode="max", save_top_k=1)
+            early_stop_callback = EarlyStopping(monitor="val/seen_val/loss_epoch", mode="max", patience=10, verbose=False, strict=True)
             callbacks.append(early_stop_callback)
-            callbacks.append(checkpoint_callback)
+            
 
         trainer = pl.Trainer(
             callbacks=callbacks,
@@ -294,27 +304,27 @@ class Main():
             max_epochs=self.args.train_epochs,
             accelerator="gpu",
             devices=1)
-        
-        print(self.model)
+
         self.model.val_datasets = ["seen_val"]
         trainer.fit(model=self.model, 
                     train_dataloaders=self.dl.dataloaders["seen_train"],
                     val_dataloaders=self.dl.dataloaders["seen_val"])
         
-        if self.args.early_stopping:
-            logging.info(f"best model path: {checkpoint_callback.best_model_path}")
-            logging.info(f"best model score: {checkpoint_callback.best_model_score}")
-            print(f"best model path: {checkpoint_callback.best_model_path}")
-            print(f"best model score: {checkpoint_callback.best_model_score}")
 
-            # immediately run eval
-            self.eval(model_path=checkpoint_callback.best_model_path)
+        logging.info(f"best model path: {checkpoint_callback.best_model_path}")
+        logging.info(f"best model score: {checkpoint_callback.best_model_score}")
+        print(f"best model path: {checkpoint_callback.best_model_path}")
+        print(f"best model score: {checkpoint_callback.best_model_score}")
+
+        # immediately run eval
+        self.eval(model_path=checkpoint_callback.best_model_path)
         
 
     def eval(self, model_path=None):
-        # TODO: based on model, run the right one
+        logging.info(f"running eval...")
+
         if model_path is None and self.args.model in ["pairwise_classifier", "pairwise_classifier2", "pairwise_classifier3", "triplet"]:
-            model_path = os.path.join(self.args.results_path, self.checkpoint)
+            model_path = os.path.join(self.args.results_path, self.args.checkpoint_path)
         
         print(f"model_path {model_path}")
         logging.info(f"model_path {model_path}")
@@ -367,17 +377,58 @@ class Main():
     #         print("out", out)
 
 # https://github.com/Lightning-AI/lightning/issues/2110#issuecomment-1114097730
+# logging: https://github.com/Lightning-AI/lightning/discussions/6182
 class OverrideEpochStepCallback(Callback):
     def __init__(self) -> None:
         super().__init__()
 
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        metrics = trainer.callback_metrics
+        
+        # print("on_train_epoch_end metrics", metrics)
+        train_info = "train (epoch " + str(trainer.current_epoch) + "): "
+        if 'train/loss_epoch' in metrics:
+            train_info += str(metrics["train/loss_epoch"].cpu().numpy()) + ", "
+        
+        if 'train/acc_epoch' in metrics:
+            train_info += str(metrics["train/acc_epoch"].cpu().numpy())
+
+        logging.info(train_info)
+        print(train_info)
+
         self._log_step_as_current_epoch(trainer, pl_module)
 
     def on_test_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+        metrics = trainer.callback_metrics
+        # print("on_test_epoch_end metrics", metrics)
+
+        test_info = "test (epoch " + str(trainer.current_epoch) + "): "
+        if 'test/test/loss_epoch' in metrics:
+            test_info += str(metrics["test/test/loss_epoch"].cpu().numpy()) + ", "
+        
+        if "test/test/acc_epoch" in metrics:
+            test_info += str(metrics["test/test/acc_epoch"].cpu().numpy())
+
+        logging.info(test_info)
+        print(test_info)
+
         self._log_step_as_current_epoch(trainer, pl_module)
 
     def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
+
+        metrics = trainer.callback_metrics
+        # print("on_validation_epoch_end metrics", metrics)
+
+        valid_info = "valid (epoch " + str(trainer.current_epoch) + "): "
+        if 'val/seen_val/loss_epoch' in metrics:
+            valid_info += str(metrics["val/seen_val/loss_epoch"].cpu().numpy()) + ", "
+        
+        if "val/seen_val/acc_epoch" in metrics:
+            valid_info += str(metrics["val/seen_val/acc_epoch"].cpu().numpy())
+
+        logging.info(valid_info)
+        print(valid_info)
+    
         self._log_step_as_current_epoch(trainer, pl_module)
 
     def _log_step_as_current_epoch(self, trainer: pl.Trainer, pl_module: pl.LightningModule):

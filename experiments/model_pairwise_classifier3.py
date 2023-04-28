@@ -130,9 +130,9 @@ class PairWiseClassifier3Model(pl.LightningModule):
 
         print(f"{stage}/{name} acc:", acc)
 
-        self.log(f"{stage}/{name}/loss_epoch", loss, on_step=False, on_epoch=True, batch_size=self.batch_size)
+        self.log(f"{stage}/{name}/loss_epoch", loss, on_step=False, on_epoch=True, batch_size=self.batch_size, add_dataloader_idx=False)
 
-        self.log(f"{stage}/{name}/acc_epoch", acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
+        self.log(f"{stage}/{name}/acc_epoch", acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.batch_size, add_dataloader_idx=False)
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         name = dataloader_idx + 1

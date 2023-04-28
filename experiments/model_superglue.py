@@ -35,23 +35,11 @@ class SuperGlueModel(pl.LightningModule):
         ground_truth = (label1 == label2).float()
         ground_truth = torch.unsqueeze(ground_truth, 1)
 
-        def torch_to_np_img(torch_img):
-            # convert to PIL
-            img_pil = transforms.ToPILImage()(torch_img)
-            img_np = np.array(img_pil)
-
-            # convert to grayscale
-            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-
-            # convert to float
-            img_np = img_np.astype(np.float32)
-            return img_np
-
         # iterate over batch
         batch_result = []
         for i in np.arange(len(sample1)):
-            img1 = torch_to_np_img(sample1[i])
-            img2 = torch_to_np_img(sample2[i])
+            img1 = exp_utils.torch_to_np_img(sample1[i]).astype(np.float32)
+            img2 = exp_utils.torch_to_np_img(sample2[i]).astype(np.float32)
         
             result = self.object_reid.compare(img1, img2, visualise=self.visualise)
             if result is None:
@@ -76,10 +64,10 @@ class SuperGlueModel(pl.LightningModule):
 
         criterion = nn.BCEWithLogitsLoss() # This loss combines a Sigmoid layer and BCELoss in one class
         loss = criterion(batch_result, ground_truth)
-        self.log(f"{stage}_{name}/loss", loss, batch_size=self.batch_size)
+        self.log(f"{stage}_{name}/loss", loss, batch_size=self.batch_size, add_dataloader_idx=False)
 
         acc = self.accuracy(batch_result, ground_truth)
-        self.log(f"{stage}/{name}/acc", acc, on_epoch=True, prog_bar=True,batch_size=self.batch_size)
+        self.log(f"{stage}/{name}/acc", acc, on_epoch=True, prog_bar=True,batch_size=self.batch_size, add_dataloader_idx=False)
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         name = dataloader_idx + 1

@@ -34,12 +34,17 @@ class TripletModel(pl.LightningModule):
         self.test_datasets = None
         self.val_datasets = None
 
+        self.moving_avg_len = 20
+        self.cutoffs = [cutoff] * self.moving_avg_len
+
+        print(f"self.cutoffs {self.cutoffs}")
+
         # self.backbone_model = torchvision.models.resnet18(pretrained=True).to(self.device)
         self.backbone_model = torchvision.models.resnet50(pretrained=True).to(self.device)
 
-        self.backbone_model = torch.nn.Sequential(*(list(self.backbone_model.children())[:-2]))
+        self.backbone_model = torch.nn.Sequential(*(list(self.backbone_model.children())[:-1]))
         
-        # todo: remove last two layers: 
+        # todo: remove last two layers:
         #   (avgpool): AdaptiveAvgPool2d(output_size=(1, 1))
         #   (fc): Linear(in_features=2048, out_features=1000, bias=True)
 
@@ -52,16 +57,16 @@ class TripletModel(pl.LightningModule):
 
         # TODO: make model better
         self.model = nn.Sequential(
-                # nn.Linear(1000, 64),
-                nn.Linear(1000, 512),
-                nn.LeakyReLU(),
-                nn.Dropout(p=0.2),
-                # nn.BatchNorm2d(100), #! parameter not right
-                nn.Linear(512, 256),
-                nn.LeakyReLU(),
-                nn.Dropout(p=0.2),
-                # nn.BatchNorm2d(100), #! parameter not right
-                nn.Linear(256, 128),
+                nn.Linear(2048, 128),
+                # nn.Linear(2048, 512),
+                # nn.LeakyReLU(),
+                # nn.Dropout(p=0.2),
+                # # nn.BatchNorm2d(100), #! parameter not right
+                # nn.Linear(512, 256),
+                # nn.LeakyReLU(),
+                # nn.Dropout(p=0.2),
+                # # nn.BatchNorm2d(100), #! parameter not right
+                # nn.Linear(256, 128),
                 # nn.LeakyReLU(),
                 # nn.Linear(64, 8),
                 )
@@ -84,9 +89,7 @@ class TripletModel(pl.LightningModule):
     def backbone(self, sample):
         # print("sample", sample.shape) # shape (batch, 3, 400, 400)
         out = self.backbone_model(sample) # shape (batch, 1000)
-
-        if self.visualise:
-            print(f"backbone out: {out.shape}")
+        out = torch.squeeze(out) # shape(batch, 2048)
 
         return out
 
@@ -109,7 +112,7 @@ class TripletModel(pl.LightningModule):
         
         return x
 
-    def accuracy(self, a_out, p_out, n_out, a_label, p_label, n_label, visualise=False):
+    def accuracy(self, a_out, p_out, n_out, a_label, p_label, n_label, visualise=False, train=True):
         # determine accuracy
         dist_criterion = nn.PairwiseDistance(p=2)
         dist_p = dist_criterion(a_out, p_out)
@@ -120,6 +123,21 @@ class TripletModel(pl.LightningModule):
 
         dist = torch.vstack((torch.unsqueeze(dist_p, 1), 
                              torch.unsqueeze(dist_n, 1)))
+        
+        if train:
+            # find cutoff parameter
+            median_p = torch.median(dist_p).detach().cpu()
+            median_n = torch.median(dist_n).detach().cpu()
+
+            # we want median_p < median_n
+            if median_p < median_n:
+                new_cutoff = ((median_n - median_p)/2) + median_p
+                self.cutoffs.append(new_cutoff)
+
+                # moving average for updating cutoff value
+                last_cut_offs = self.cutoffs[-self.moving_avg_len:]
+                self.cutoff = np.mean(last_cut_offs)
+                print(f"self.cutoff {self.cutoff}")
 
         # value BELOW cutoff is positive, above is negative
         # cutoff = 1.0 is okay
@@ -141,6 +159,7 @@ class TripletModel(pl.LightningModule):
 
         return acc
 
+
     def training_step(self, batch, batch_idx):
         a_sample, a_label, a_dets, \
             p_sample, p_label, p_dets, \
@@ -156,16 +175,15 @@ class TripletModel(pl.LightningModule):
         if batch_idx == 0 and self.visualise:
             visualise = True
 
-        acc = self.accuracy(a_out, p_out, n_out, a_label, p_label, n_label, visualise)
+        acc = self.accuracy(a_out, p_out, n_out, a_label, p_label, n_label, visualise, train=True)
 
+        self.log("train/cutoff", self.cutoff, on_step=True, on_epoch=True, batch_size=self.batch_size)
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
         self.log('train/acc', acc, on_step=True, on_epoch=True, batch_size=self.batch_size)
 
-        # if batch_idx == 99:
-        #     print("x_out", x_out)
-        #     print("ground truth", ground_truth)
-        #     print("loss:", loss)
-        #     print("acc:", acc)
+        if batch_idx == 99:
+            print("train loss:", loss)
+            print("train acc:", acc)
 
         return loss
 
@@ -178,14 +196,9 @@ class TripletModel(pl.LightningModule):
         p_out = self(p_sample)
         n_out = self(n_sample)
 
-        criterion = nn.TripletMarginLoss(margin=1.0, p=2)
+        loss = self.triplet_criterion(a_out, p_out, n_out)
 
-        loss = criterion(a_out, p_out, n_out)
-
-        if self.visualise:
-            print(f"\neval: {stage}")
-
-        acc = self.accuracy(a_out, p_out, n_out, a_label, p_label, n_label, self.visualise)
+        acc = self.accuracy(a_out, p_out, n_out, a_label, p_label, n_label, self.visualise, train=False)
 
         # TODO come up with a cutoff for when the distance is small enough to be called the same
         # for i in np.arange(len(ground_truth)):
@@ -193,9 +206,10 @@ class TripletModel(pl.LightningModule):
         #         print(f"positive: {dist[i]}")
         #     else:
         #         print(f"negative: {dist[i]}")
+        print(f"{stage}/{name} loss:", loss.detach().cpu().numpy())
+        print(f"{stage}/{name} acc:", acc.detach().cpu().numpy())
 
         self.log(f"{stage}/{name}/loss_epoch", loss, on_step=False, on_epoch=True, batch_size=self.batch_size, add_dataloader_idx=False)
-
         self.log(f"{stage}/{name}/acc_epoch", acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.batch_size, add_dataloader_idx=False)
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
@@ -213,12 +227,18 @@ class TripletModel(pl.LightningModule):
         self.evaluate(batch, name, "test")
 
     def configure_optimizers(self):
-        
-        # todo: use these parameters
-        # weight_decay=self.weight_decay
-        # lr=self.learning_rate
         optimizer = optim.Adam(self.parameters(), 
-                               lr=1e-5,
-                               weight_decay=self.weight_decay
-                               )
+                               lr=self.learning_rate,
+                               weight_decay=self.weight_decay)
+        
         return optimizer
+
+    def on_save_checkpoint(self, checkpoint):
+        # we update the cutoff parameter during training and want to save this new value
+        checkpoint["learned_cutoff"] = self.cutoff
+
+    def on_load_checkpoint(self, checkpoint):
+        # load the learned cutoff parameter
+        if "learned_cutoff" in checkpoint:
+            self.cutoff = checkpoint["learned_cutoff"]
+            self.cutoffs = [self.cutoff] * self.moving_avg_len

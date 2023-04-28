@@ -107,7 +107,7 @@ class DataLoaderTriplet():
             raise NotImplementedError
 
         else:
-            dataloader_imgs = DataLoader(img_path,
+            self.dataloader_imgs = DataLoader(img_path,
                                          preprocessing_path=preprocessing_path,
                                          batch_size=batch_size,
                                          shuffle=shuffle,
@@ -119,14 +119,14 @@ class DataLoaderTriplet():
                                          val_transform=val_transform,
                                          cuda=cuda)
 
-        self.classes = dataloader_imgs.classes
+        self.classes = self.dataloader_imgs.classes
         
         
 
         # ! to provide triplets only for seen_train, use:
         # ! train=x=="seen_train"
         self.dataloaders = {x: torch.utils.data.DataLoader(
-                                    TripletDataset(dataloader_imgs.datasets[x], train=True),
+                                    TripletDataset(self.dataloader_imgs.datasets[x], train=True),
                                     batch_size=batch_size,
                                     shuffle=shuffle,
                                     num_workers=num_workers,

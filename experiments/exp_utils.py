@@ -10,6 +10,7 @@ import cv2
 
 import torch
 from torch.backends import cudnn
+from torchvision import transforms
 
 def init_seeds(seed=0, cuda_deterministic=True):
     random.seed(seed)
@@ -43,3 +44,14 @@ def scale_img(img, scale_percent=50):
     # resize image
     resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
     return resized
+
+
+def torch_to_np_img(torch_img):
+    # convert to PIL
+    img_pil = transforms.ToPILImage()(torch_img)
+    img_np = np.array(img_pil)
+
+    # convert to grayscale
+    img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+
+    return img_np

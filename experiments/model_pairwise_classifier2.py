@@ -3,13 +3,13 @@ import os
 import numpy as np
 # import json
 from rich import print
+import logging
 import torch
 from torch import optim, nn, utils, Tensor
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 import torchvision
 import pytorch_lightning as pl
-from torchmetrics import Accuracy
 from torchmetrics.classification import BinaryAccuracy
 
 import exp_utils as exp_utils
@@ -56,11 +56,11 @@ class PairWiseClassifier2Model(pl.LightningModule):
                 nn.LeakyReLU(),
                 nn.Dropout(p=0.1),
                 # nn.BatchNorm2d(100), #! parameter not right
-                nn.Linear(256, 64),
-                nn.LeakyReLU(),
-                nn.Dropout(p=0.1),
+                # nn.Linear(256, 64),
+                # nn.LeakyReLU(),
+                # nn.Dropout(p=0.1),
                 # nn.BatchNorm2d(100), #! parameter not right
-                nn.Linear(64, 1)
+                nn.Linear(256, 1)
                 )
         
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -104,7 +104,6 @@ class PairWiseClassifier2Model(pl.LightningModule):
         # run the forward step
         x_out = self(sample1, sample2)
         
-        
         loss = self.criterion(x_out, ground_truth)
         acc = self.accuracy(x_out, ground_truth)
 
@@ -126,7 +125,6 @@ class PairWiseClassifier2Model(pl.LightningModule):
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
         self.log('train/acc', acc, on_step=True, on_epoch=True, batch_size=self.batch_size)
 
-
         if batch_idx == 99:
             print("train loss:", loss)
             print("train acc:", acc)
@@ -138,9 +136,8 @@ class PairWiseClassifier2Model(pl.LightningModule):
         
         loss, acc = self.run(label1, label2, sample1, sample2)
 
-        self.log(f"{stage}/{name}/loss_epoch", loss, on_step=False, on_epoch=True, batch_size=self.batch_size)
-
-        self.log(f"{stage}/{name}/acc_epoch", acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.batch_size)
+        self.log(f"{stage}/{name}/loss_epoch", loss, on_step=False, on_epoch=True, batch_size=self.batch_size, add_dataloader_idx=False)
+        self.log(f"{stage}/{name}/acc_epoch", acc, on_step=False, on_epoch=True, prog_bar=True, batch_size=self.batch_size, add_dataloader_idx=False)
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         name = dataloader_idx + 1
