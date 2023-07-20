@@ -19,5 +19,7 @@ def load_config(filepath="./config.yaml"):
                 return Struct(yaml_parsed)
             except yaml.YAMLError as exc:
                 print("yaml error", exc)
+    else:
+        print(f"{filepath} is not a file!")
     return None
 

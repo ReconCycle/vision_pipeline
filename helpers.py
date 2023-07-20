@@ -127,13 +127,25 @@ def img_to_camera_coords(x_y, depth, camera_info):
         return np.asarray(pixels_to_meters(x_y))
 
 
-def scale_img(img, scale_percent=50):
-    width = int(img.shape[1] * scale_percent / 100)
-    height = int(img.shape[0] * scale_percent / 100)
-    dim = (width, height)
+def scale_img(img):
+    img_width = img.shape[1]
+    img_height = img.shape[0]
+    max_wh = np.max([img_width, img_height])
+
+    scaled_max = 800
+
+    if max_wh > scaled_max:
+        scale_factor = scaled_max/max_wh
+        new_width = int(img.shape[1] * scale_factor)
+        new_height = int(img.shape[0] * scale_factor)
+        dim = (new_width, new_height)
     
-    # resize image
-    resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
+        # resize image
+        resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
+    
+    else:
+        resized = img
+    
     return resized
 
 

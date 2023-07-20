@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from scipy import spatial
 import cv2
@@ -188,6 +189,10 @@ class WorkSurfaceDetection:
         
         self.img_width = img.shape[1]
         self.img_height = img.shape[0]
+
+        if self.img_width != 1450 or self.img_height != 1450:
+            print("[red]Work surface detection has been tuned for imgs 1450x1450!")
+            sys.exit("Work surface detection has been tuned for imgs 1450x1450!")
         
         self.corners_px_dict = {}
         self.bolts_px_dict = {}
@@ -477,6 +482,9 @@ class WorkSurfaceDetection:
                 dist.append(np.linalg.norm(target_flipped[matching_idxs[i]] - result[i]))
         dist = np.array(dist)
         
+        if len(dist) == 0:
+            print("[red]Something has gone wrong!")
+
         max_error = dist.max()
         mean_error = dist.mean()
         
@@ -510,6 +518,8 @@ class WorkSurfaceDetection:
         # param1: detects strong edges, as pixels which have gradient value higher than param1
         # param 2: it is the accumulator threshold for the circle centers at the detection stage
         #          The smaller it is, the more false circles may be detected.
+
+        #! the parameters for hough circles depends on the image input size
         circles = cv2.HoughCircles(self.blur, cv2.HOUGH_GRADIENT, dp=1, minDist=50,
                                     param1=50, param2=20, minRadius=10, maxRadius=20)
         circles_ignoring = []

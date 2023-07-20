@@ -11,6 +11,7 @@ import copy
 import asyncio
 from threading import Event
 from scipy.spatial.transform import Rotation
+import cv2
 
 
 from helpers import path, rotate_img
@@ -58,6 +59,9 @@ class PipelineCamera:
         # don't automatically start
         self.continuous_mode = False
         self.single_mode = False
+
+        if hasattr(self.camera_config, 'run_continuous'):
+            self.continuous_mode = self.camera_config.run_continuous
         
         # is gaps requested?
         self.single_mode_request_gaps = False
@@ -434,6 +438,13 @@ class PipelineCamera:
         self.colour_img = rotate_img(colour_img, self.camera_config.rotate_img)
         
         if hasattr(self.camera_config, "use_worksurface_detection") and self.camera_config.use_worksurface_detection:
+
+            # resize to 1450x1450. This resolution is required for work surface detection
+            img_height, img_width = self.colour_img.shape[0], self.colour_img.shape[1]
+            dim = (1450, 1450)
+            if img_height != dim[0] or img_width != dim[0]:
+                self.colour_img = cv2.resize(self.colour_img, dim, interpolation = cv2.INTER_AREA)
+
             if self.worksurface_detection is None:
                 print(self.camera_name +": detecting work surface...")
                 self.worksurface_detection = WorkSurfaceDetection(self.colour_img, self.camera_config.work_surface_ignore_border_width, debug=self.camera_config.debug_work_surface_detection)
