@@ -119,7 +119,8 @@ class App(tk.Tk):
                 fill = tuple(list(c[-1]) + [alpha])
                 # Polygonal masks work fine
                 if isinstance(m, list):
-                    draw.polygon(m[0], outline=fill, fill=fill)
+                    for instance_m in m:
+                        draw.polygon(instance_m, outline=fill, fill=fill)
                 # TODO: Fix problem with RLE
                 # elif isinstance(m, dict):
                 #     draw.polygon(m['counts'][1:-2], outline=c[-1], fill=fill)
