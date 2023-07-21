@@ -31,7 +31,7 @@ class ROSGetServiceTest():
         rospy.init_node('vision_pipeliine_test')
         self.rate = rospy.Rate(1)
         
-        self.vision_topic = "vision"
+        self.vision_topic = "vision/basler"
         
         self.create_service_clients()
         self.run_test()

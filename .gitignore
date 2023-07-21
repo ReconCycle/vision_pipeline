@@ -5,6 +5,7 @@ config.yaml
 output/
 data_full/
 data_limited/
+datasets/
 datasets_symlink
 camera_images/
 labelled_images/

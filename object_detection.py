@@ -121,7 +121,10 @@ class ObjectDetection:
                     
                 detection = Detection()
                 detection.id = int(i)
-                detection.label = Label(classes[i]) # self.dataset.class_names[classes[i]]
+
+                # the self.dataset.class_names dict may not correlate with Label Enum,
+                # therefore we have to convert:
+                detection.label = Label[self.dataset.class_names[classes[i]]]
                 detection.score = float(scores[i])
                 
                 box_px = boxes[i].reshape((-1,2)) # convert tlbr
