@@ -7,26 +7,33 @@ from io import BytesIO
 import os
 import sys
 import cv2
+import obb
 import imagesize
 # from scipy import ndimage
 import natsort
 from PIL import Image, ImageDraw, ImageFilter
 import numpy as np
 from tqdm import tqdm
-from context_action_framework.types import Detection
+from shapely.geometry import Polygon
+from context_action_framework.types import Detection, Label
+from helpers import Struct, make_valid_poly, img_to_camera_coords
 
 
 class LabelMeImporter():
-    def __init__(self, ignore_labels, foregrounds_dict, labelme_imgs_merge) -> None:
-        pass
+    def __init__(self, ignore_labels=[]) -> None:
+        self.ignore_labels = ignore_labels
 
     
     def process_labelme_dir(self, labelme_dir, images_dir=None):
         # load in the labelme data
+        labelme_dir = Path(labelme_dir)
 
         if images_dir is None:
             images_dir = labelme_dir
-
+        
+        labelme_dir = Path(labelme_dir)
+        images_dir = Path(images_dir)
+        
         json_paths = list(labelme_dir.glob('*.json'))
         json_paths = natsort.os_sorted(json_paths)
         
@@ -34,6 +41,12 @@ class LabelMeImporter():
         image_paths = natsort.os_sorted(image_paths)
 
         tqdm_json_paths = tqdm(json_paths)
+
+        if len(json_paths) == 0:
+            print("[red]Folder doesn't contain .json files")
+
+        img_paths = []
+        all_detections = []
 
         for idx, json_path in enumerate(tqdm_json_paths):
             tqdm_json_paths.set_description(f"Converting {Path(json_path).stem}")
@@ -49,44 +62,66 @@ class LabelMeImporter():
                 # exists .png or .jpg file
                 img_path = img_matches[0]
 
-                labelme_img_groups = self._process_labelme_img(json_data, img_path)
+                detections = self._process_labelme_img(json_data, img_path)
+
+                img_paths.append(img_path)
+                all_detections.append(detections)
                
             else:
                 print(f"[red]No image matched for {base_path}")
 
+        return img_paths, all_detections
+
 
     def _process_labelme_img(self, json_data, img_path):
-        labelme_point_list = []
-        labelme_obj_list = []
+        detections = []
 
-        # img_h, img_w, _ = cv2.imread(img_path).shape # SLOW
         # img = Image.open(img_path).convert('RGB') # SLOW
         # img_w, img_h = img.size
         img_w, img_h = imagesize.get(img_path) # fast
 
+        idx = 0
         for shape in json_data['shapes']:
             # only add items that are in the allowed
             if shape['label'] not in self.ignore_labels:
 
-                if shape['shape_type'] == 'point':
-                    point = shape['points'][0]
-                    labelme_point_list.append(point)
-                elif shape['shape_type'] == "polygon":
-                    yolo_obj = self._get_labelme_object(shape, img_h, img_w)
-                    labelme_obj_list.append(list(yolo_obj))
+                if shape['shape_type'] == "polygon":
 
-        # add the point to the object list
-        # ! what does this do?
-        # if len(labelme_obj_list) == 1 and len(labelme_point_list) == 1:
-        #     labelme_obj_list[0][2] = labelme_point_list[0]
+                    detection = Detection()
+                    detection.id = idx
+                    detection.tracking_id = idx
 
-        return img_path, labelme_obj_list
+                    detection.label = Label[shape['label']]
+                    detection.score = float(1.0)
+
+                    
+                    # detection.tf_px = # TODO
+
+                    detection.mask_contour = self.points_to_contour(shape['points'])
+
+                    corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour)
+                    detection.obb_px = corners_px
+                    detection.center_px = center_px
+                    detection.angle_px = angle
+                    
+                    poly = None
+                    if len(detection.mask_contour) > 2:
+                        poly = Polygon(detection.mask_contour)
+                        poly = make_valid_poly(poly)
+
+                    detection.polygon_px = poly
+                    
+                    detections.append(detection)
+
+                    idx += 1
+
+        return detections
     
 
-    def _get_labelme_object(self, shape, img_h, img_w):
-        obj_point_list = shape['points'] # [(x1,y1),(x2,y2),...]
+    def points_to_contour(self, points):
+        obj_point_list =  points # [(x1,y1),(x2,y2),...]
         obj_point_list = np.array(obj_point_list).astype(int) # convert to int
         obj_point_list = [tuple(point) for point in obj_point_list] # convert back to list of tuples
 
-        # return format: label, obj_point_list, point/None
-        return shape['label'], obj_point_list, None
+        # contour
+        return obj_point_list
