@@ -67,7 +67,7 @@ def quaternion_multiply(quaternion1, quaternion0):
                      x1 * y0 - y1 * x0 + z1 * w0 + w1 * z0], dtype=np.float64)
 
 
-def get_obb_using_cv(contour, img=None):
+def get_obb_using_cv(contour, img_shape=None):
 
     if contour is None or len(contour) < 4:
         return None, None, None
@@ -98,9 +98,9 @@ def get_obb_using_cv(contour, img=None):
         return None, None, None
 
     # clip so that the box is still in the bounds of the img
-    if img is not None:
+    if img_shape is not None:
         # invert img.shape because points are x, y
-        box = clip_box_to_img_shape(box, img.shape)
+        box = clip_box_to_img_shape(box, img_shape)
         # box = np.clip(box, a_min=np.asarray([0, 0]), a_max=np.asarray(img.shape[:2])[::-1] - 1) 
     
     return box, center, correct_rot

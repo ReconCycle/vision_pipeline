@@ -33,7 +33,7 @@ import ros_numpy
 
 
 class ObjectDetection:
-    def __init__(self, config, camera_config, yolact, dataset, object_reid, camera, frame_id="", use_ros=True):
+    def __init__(self, config=None, camera_config=None, yolact=None, dataset=None, object_reid=None, camera=None, frame_id="", use_ros=True):
         
         self.config = config
         self.camera_config = camera_config
@@ -166,6 +166,26 @@ class ObjectDetection:
         else:
             fps_tracker = 0
         
+        # TODO: GET WORKING!
+        detections, markers, poses, graph_img, graph_relations, fps_obb = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info)
+
+
+        graphics_start = time.time()
+        if extra_text is not None:
+            extra_text + ", "
+        else:
+            extra_text = ""
+        fps_str = extra_text + "objdet: " + str(round(self.fps_objdet, 1)) + ", nn: " + str(round(fps_nn, 1)) + ", tracker: " + str(np.int(round(fps_tracker, 0))) + ", obb: " + str(np.int(round(fps_obb, 0))) + ", graphics: " + str(np.int(round(self.fps_graphics, 0)))
+        labelled_img = graphics.get_labelled_img(frame, masks, detections, fps=fps_str, worksurface_detection=worksurface_detection)
+        
+        self.fps_graphics = 1.0 / (time.time() - graphics_start)
+        self.fps_objdet = 1.0 / (time.time() - t_start)
+
+
+        return labelled_img, detections, markers, poses, graph_img, graph_relations
+
+
+    def get_detections(self, detections, colour_img=None, depth_img=None, worksurface_detection=None, camera_info=None):
         
         obb_start = time.time()
         
@@ -179,10 +199,10 @@ class ObjectDetection:
             poses = PoseArray()
             poses.header.frame_id = self.frame_id
             poses.header.stamp = rospy.Time.now()
-        
+
         # calculate the oriented bounding boxes
         for detection in detections:
-            corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, colour_img)
+            corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, colour_img.shape)
             detection.obb_px = corners_px
             detection.center_px = center_px
             detection.angle_px = angle
@@ -341,7 +361,7 @@ class ObjectDetection:
         # if device contains battery:
             # possibly flip orientation
         
-        if self.config.reid:
+        if self.config.reid and colour_img is not None:
             # object re-id
             self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
         
@@ -384,19 +404,8 @@ class ObjectDetection:
         fps_obb = -1
         if time.time() - obb_start > 0:
             fps_obb = 1.0 / (time.time() - obb_start)
-                
-        graphics_start = time.time()
-        if extra_text is not None:
-            extra_text + ", "
-        else:
-            extra_text = ""
-        fps_str = extra_text + "objdet: " + str(round(self.fps_objdet, 1)) + ", nn: " + str(round(fps_nn, 1)) + ", tracker: " + str(np.int(round(fps_tracker, 0))) + ", obb: " + str(np.int(round(fps_obb, 0))) + ", graphics: " + str(np.int(round(self.fps_graphics, 0)))
-        labelled_img = graphics.get_labelled_img(frame, masks, detections, fps=fps_str, worksurface_detection=worksurface_detection)
         
-        self.fps_graphics = 1.0 / (time.time() - graphics_start)
-        self.fps_objdet = 1.0 / (time.time() - t_start)
-        
-        return labelled_img, detections, markers, poses, graph_img, graph_relations
+        return detections, markers, poses, graph_img, graph_relations, fps_obb
 
     def make_marker(self, tf, x, y, z, id, label):
         # make a visualization marker array for the occupancy grid
