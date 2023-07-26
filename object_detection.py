@@ -122,10 +122,13 @@ class ObjectDetection:
                 
                 box_px = boxes[i].reshape((-1,2)) # convert tlbr
                 detection.box_px = obb.clip_box_to_img_shape(box_px, colour_img.shape)
-                detection.mask = masks[i]
+                
                 
                 # compute contour. Required for obb and graph_relations
                 mask = masks[i].cpu().numpy().astype("uint8")
+                # detection.mask = masks[i]
+                detection.mask = mask # TODO: does this break stuff changing this?
+                
                 # print("mask.shape", mask.shape)
                 cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 if len(cnts) > 0:
@@ -239,9 +242,13 @@ class ObjectDetection:
                     
                 elif camera_info is not None and depth_img is not None and center_px is not None and corners_px is not None:
                     # mask depth image
-                    depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
+                    # depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
+                    depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask)
                     depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
                     depth_mean = depth_masked_np.mean()
+                    
+                    if not np.count_nonzero(depth_img):
+                        print("[red]depth image is all 0")
                     
                     if isinstance(depth_mean, np.float):
                         
@@ -257,8 +264,11 @@ class ObjectDetection:
                         corners_low = img_to_camera_coords(corners_px, depth_mean - self.object_depth, camera_info)
                         detection.obb = corners
                         detection.obb_3d = np.concatenate((corners, corners_low))
+                        
+                        print("detection.obb", detection.obb)
                     
                 else:
+                    print("[red]detection real-world info couldn't be determined!")
                     detection.obb = None
                     detection.tf = None
         
