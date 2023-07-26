@@ -102,13 +102,6 @@ class ObjectDetection:
                 detection.box_px = boxes[i].reshape((-1,2))
                 detection.mask_contour = np.squeeze(cnts[i])
                 
-                poly = None
-                if len(detection.mask_contour) > 2:
-                    poly = Polygon(detection.mask_contour)
-                    poly = make_valid_poly(poly)
-
-                detection.polygon_px = poly
-                
                 detections.append(detection)
                 
         else:
@@ -139,13 +132,8 @@ class ObjectDetection:
                     # get the contour with the largest area. Assume this is the one containing our object
                     cnt = max(cnts, key = cv2.contourArea)
                     detection.mask_contour = np.squeeze(cnt)
-
-                    poly = None
-                    if len(detection.mask_contour) > 2:
-                        poly = Polygon(detection.mask_contour)
-                        poly = make_valid_poly(poly)
-
-                    detection.polygon_px = poly
+                else:
+                    detection.mask_contour = None
                 
                 detections.append(detection)
         
@@ -202,10 +190,20 @@ class ObjectDetection:
 
         # calculate the oriented bounding boxes
         for detection in detections:
-            corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, colour_img.shape)
+            if colour_img is not None:
+                corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, colour_img.shape)
+            else:
+                corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, None)
             detection.obb_px = corners_px
             detection.center_px = center_px
             detection.angle_px = angle
+
+            poly = None
+            if detection.mask_contour is not None and len(detection.mask_contour) > 2:
+                poly = Polygon(detection.mask_contour)
+                poly = make_valid_poly(poly)
+
+            detection.polygon_px = poly
             
             if angle is not None:
                 if worksurface_detection is not None:
@@ -361,7 +359,7 @@ class ObjectDetection:
         # if device contains battery:
             # possibly flip orientation
         
-        if self.config.reid and colour_img is not None:
+        if self.config is not None and self.config.reid and colour_img is not None:
             # object re-id
             self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
         

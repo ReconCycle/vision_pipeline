@@ -17,13 +17,14 @@ from tqdm import tqdm
 from shapely.geometry import Polygon
 
 # ros package
-from context_action_framework.types import Detection, Label
+from context_action_framework.types import Detection, Label, Module
 
 # local imports
 from helpers import Struct, make_valid_poly, img_to_camera_coords
 from graph_relations import GraphRelations, exists_detection, compute_iou
 from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
+from types import SimpleNamespace
 
 
 class LabelMeImporter():
@@ -35,7 +36,10 @@ class LabelMeImporter():
         self.work_surface_ignore_border_width = 100
         self.debug_work_surface_detection = False
 
-        self.object_detection = ObjectDetection(use_ros=False) #! probably we need to add more stuff
+        self.camera_config = SimpleNamespace()
+        self.camera_config.publish_graph_img = False
+
+        self.object_detection = ObjectDetection(camera_config=self.camera_config, use_ros=False) #! probably we need to add more stuff
 
     
     def process_labelme_dir(self, labelme_dir, images_dir=None):
@@ -62,6 +66,7 @@ class LabelMeImporter():
         img_paths = []
         all_detections = []
         all_graph_relations = []
+        modules = []
 
         for idx, json_path in enumerate(tqdm_json_paths):
             tqdm_json_paths.set_description(f"Converting {Path(json_path).stem}")
@@ -81,11 +86,12 @@ class LabelMeImporter():
                     colour_img = cv2.imread(str(img_path))
                     self._process_work_surface_detection(colour_img)
 
-                detections, graph_relations = self._process_labelme_img(json_data, img_path)
+                detections, graph_relations, module = self._process_labelme_img(json_data, img_path)
 
                 img_paths.append(img_path)
                 all_detections.append(detections)
                 all_graph_relations.append(graph_relations)
+                modules.append(module)
                
             else:
                 print(f"[red]No image matched for {base_path}")
@@ -93,7 +99,7 @@ class LabelMeImporter():
             if idx > 20:
                 break # ! debug
 
-        return img_paths, all_detections, all_graph_relations
+        return img_paths, all_detections, all_graph_relations, modules
 
     def _process_work_surface_detection(self, img):
         self.worksurface_detection = WorkSurfaceDetection(img, self.work_surface_ignore_border_width, debug=self.debug_work_surface_detection)
@@ -108,7 +114,13 @@ class LabelMeImporter():
         # TODO: we need to get the real world sizes of objects
         # TODO: for basler, we can use work_surface_detection
         # TODO: for realsense, we can use depth
-
+        
+        module = None
+        if 'module' in json_data:
+            module_str = json_data['module']
+            if module_str in Module.__members__:
+                module = Module[module_str]
+        
         idx = 0
         for shape in json_data['shapes']:
             # only add items that are in the allowed
@@ -122,36 +134,16 @@ class LabelMeImporter():
 
                     detection.label = Label[shape['label']]
                     detection.score = float(1.0)
-                    
-                    # detection.tf_px = # TODO
 
                     detection.mask_contour = self.points_to_contour(shape['points'])
-
-                    # corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour)
-                    # detection.obb_px = corners_px
-                    # detection.center_px = center_px
-                    # detection.angle_px = angle
-
-                    detection.box_px
+                    detection.box_px = self.contour_to_box(detection.mask_contour)
                     
-                    #! DUPLICATE NOW ALL CODE FROM OBJECT_DETECTION.py
-
-                    
-                    
-                    # poly = None
-                    # if len(detection.mask_contour) > 2:
-                    #     poly = Polygon(detection.mask_contour)
-                    #     poly = make_valid_poly(poly)
-
-                    # detection.polygon_px = poly
-                    
-                    # detections.append(detection)
-
+                    detections.append(detection)
                     idx += 1
 
-        detections, markers, poses, graph_img, graph_relations, fps_obb = self.object_detection.get_detections(detections, worksurface_detectio=self.worksurface_detection)
+        detections, markers, poses, graph_img, graph_relations, fps_obb = self.object_detection.get_detections(detections, worksurface_detection=self.worksurface_detection)
 
-        return detections, graph_relations    
+        return detections, graph_relations, module
     
 
     def points_to_contour(self, points):
@@ -161,3 +153,9 @@ class LabelMeImporter():
 
         # contour
         return obj_point_list
+
+    def contour_to_box(self, contour):
+        x,y,w,h = cv2.boundingRect(contour)
+        # (x,y) is the top-left coordinate of the rectangle and (w,h) its width and height
+        box = np.array([x, y, x + w, y + h]).reshape((-1,2)) # convert tlbr (top left bottom right)
+        return box
