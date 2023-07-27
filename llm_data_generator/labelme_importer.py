@@ -128,7 +128,7 @@ class LabelMeImporter():
         
         depth_img = None
         if img_depth_path is not None:
-            depth_img = cv2.imread(str(img_depth_path))
+            depth_img = cv2.imread(str(img_depth_path), cv2.IMREAD_UNCHANGED)
             
         # TODO: we might need to multiply depth by 1/1000 like in pipeline.realsense.py
         

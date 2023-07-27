@@ -18,6 +18,7 @@ import message_filters
 from rospy_message_converter import message_converter
 from types import SimpleNamespace
 
+
 from context_action_framework.types import detections_to_py, gaps_to_py, ros_to_str, str_to_ros
 from context_action_framework.types import Action, Detection, Gap, Label, Module, Robot, EndEffector, Camera, Locations
 from context_action_framework.srv import NextAction, NextActionResponse
@@ -25,6 +26,7 @@ from context_action_framework.msg import CutBlock, LeverBlock, MoveBlock, PushBl
 from geometry_msgs.msg import Transform
 
 from graph_relations import GraphRelations
+from gap_detection.gap_detector_clustering import GapDetectorClustering
 
 # from helpers import get_action_description
 
@@ -34,7 +36,11 @@ from graph_relations import GraphRelations
 
 class ActionPredictorDecisionTree():
     def __init__(self) -> None:
-        pass
+        config = SimpleNamespace()
+        config.realsense = SimpleNamespace()
+        config.realsense.debug_clustering = False
+            
+        self.gap_detector = GapDetectorClustering(config) 
     
 
     def decision_tree(self, image, detections, graph_relations, module):
@@ -99,6 +105,21 @@ class ActionPredictorDecisionTree():
                         gap.obb_3d = None
                         gaps = [gap] 
                         # ! DEBUG ONLY
+                        
+                        # TODO: really the gap detection should be only computed when necessary, but maybe not here...
+                        
+                        # gaps, cluster_img, depth_scaled, device_mask \
+                        #     = self.gap_detector.lever_detector(
+                        #         self.colour_img,
+                        #         self.depth_img,
+                        #         detections,
+                        #         graph_relations,
+                        #         self.camera_info,
+                        #         aruco_pose=self.aruco_pose,
+                        #         aruco_point=self.aruco_point
+                        #     )
+                        
+                        
                         # TODO: get the actual gaps
                         if gaps is not None and len(gaps) > 0:
                             gap = gaps[0]
@@ -165,17 +186,31 @@ class ActionPredictorDecisionTree():
                 # and if battery is on its own...
                 # DONE!
                 
-                # TODO: check if battery connected to anything
-                reason = "battery is free"
-                return Action.move, \
-                    MoveBlock(Module.vision,
-                              battery.tf,
-                              Locations.battery_finish.module,
-                              Locations.battery_finish.tf,
-                              battery.obb_3d,
-                              Robot.panda1,
-                              EndEffector.soft_hand), reason
+                # 
+                all_next_to = graph_relations.get_all_next_to(battery)
+                all_inside = graph_relations.get_all_inside(battery)
+                if len(all_next_to) == 0 and len(all_inside) == 0:
+                    # battery is not next to and not inside anything
+                    reason = "battery is free"
+                    return Action.move, \
+                        MoveBlock(Module.vision,
+                                battery.tf,
+                                Locations.battery_finish.module,
+                                Locations.battery_finish.tf,
+                                battery.obb_3d,
+                                Robot.panda1,
+                                EndEffector.soft_hand), reason
 
+                elif len(all_next_to) > 0:
+                    # TODO
+                    print("[orange]battery is still next to something")
+                    pass
+                
+                elif len(all_inside) > 0:
+                    # TODO
+                    print("[orange]battery is still inside something")
+                    pass
+                    
 
 
         elif module == Module.cnc:

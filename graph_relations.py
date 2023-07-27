@@ -104,6 +104,7 @@ class GraphRelations:
         self.edge_labels_dict = None
         self.inside_edges = None
         self.next_to_edges = None
+        self.relations_groups = []
         
         self.list_wc_components = None
         self.list_wc_components_t = None
@@ -111,6 +112,7 @@ class GraphRelations:
         
         self.get_relations()
         self.generate_network_x()
+        self.make_groups()
         
     def get_relations(self):
         
@@ -237,6 +239,20 @@ class GraphRelations:
             
             self.groups.append(group)
         
+        
+        # relations_groups = edge_labels_dict grouped by weakly connected components
+        self.relations_groups = []
+        for wc_component in self.list_wc_components:
+            group = {}
+            for id in wc_component: 
+                # add all dict key:value pairs that contain this id
+                for key, val in self.edge_labels_dict.items():
+                    if id in key:
+                        group[key] = val
+                         
+
+            self.relations_groups.append(group)
+        
             
     def get_detection_by_id(self, id):
         for det in self.valid_detections:
@@ -304,6 +320,9 @@ class GraphRelations:
         inside_dets = [detection for detection in self.valid_detections if detection.id in inside_dets_ids]
         
         return inside_dets
+    
+    def get_detection_by_id(self, id):
+        return self.valid_detections[id]
     
     @staticmethod
     def get(detections, label):
