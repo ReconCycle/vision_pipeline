@@ -243,16 +243,19 @@ class ObjectDetection:
                 elif camera_info is not None and depth_img is not None and center_px is not None and corners_px is not None:
                     # mask depth image
                     # depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
+                    
+                    depth_img = depth_img / 10
                     depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask)
                     depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
                     depth_mean = depth_masked_np.mean()
                     
                     if not np.count_nonzero(depth_img):
-                        print("[red]depth image is all 0")
+                        print("[red]detection: depth image is all 0")
                     
                     if isinstance(depth_mean, np.float):
                         
                         # tf translation comes from img_to_camera_coords(...)
+                        print(f"depth mean {depth_mean}")
                         
                         detection.center = img_to_camera_coords(center_px, depth_mean, camera_info)
                         detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
@@ -265,10 +268,10 @@ class ObjectDetection:
                         detection.obb = corners
                         detection.obb_3d = np.concatenate((corners, corners_low))
                         
-                        print("detection.obb", detection.obb)
+                        print("detection: detection.obb", detection.obb)
                     
                 else:
-                    print("[red]detection real-world info couldn't be determined!")
+                    print("[red]detection: detection real-world info couldn't be determined!")
                     detection.obb = None
                     detection.tf = None
         
@@ -276,12 +279,12 @@ class ObjectDetection:
         # remove objects that don't fit certain constraints, eg. too small, too thin, too big
         def is_valid_detection(detection):
             if detection.angle_px is None:
-                print("[red]angle is None![/red]")
+                print(f"[red]detection: {detection.label.name} angle is None![/red]")
                 return False
 
             # area should be larger than 1cm^2 = 0.0001 m^2
             if detection.polygon is not None and detection.polygon.area < 0.0001:
-                print("[red]invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
+                print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
                 return False
             
             # check ratio of obb sides
@@ -293,21 +296,21 @@ class ObjectDetection:
                 
             ratio = edge_large / edge_small
             
-            # edge_small should be longer than 1mm
+            # edge_small should be longer than 0.1cm
             if edge_small < 0.001:
-                print("[red]invalid: edge too small[/red]")
+                print(f"[red]detection: {detection.label.name} invalid: edge too small: {edge_small} meters[/red]")
                 return False
             
-            # edge_large should be shorter than 20cm
-            if edge_large > 0.2:
-                print("[red]invalid: edge too large[/red]")
+            # edge_large should be shorter than 25cm
+            if edge_large > 0.25:
+                print(f"[red]detection: {detection.label.name} invalid: edge too large: {edge_large} meters[/red]")
                 return False
             
             # ratio of longest HCA: 3.4
             # ratio of Kalo 1.5 battery: 1.7
             # a really big ratio corresponds to a really long device. Ratio of 5 is probably false positive.
             if ratio > 5:
-                print("[red]invalid: obb ratio of sides too large[/red]")
+                print("[red]detection: invalid: obb ratio of sides too large[/red]")
                 return False
             
             return True
@@ -319,14 +322,7 @@ class ObjectDetection:
             detection.valid = is_valid
         
         # graph relations only uses valid detections
-        graph_relations = GraphRelations(detections)
-        
-        # form groups, adds group_id property to detections
-        graph_relations.make_groups()
-        
-        # print("groups:", graph_relations.list_wc_components)
-        # print("groups by tracking id:", graph_relations.list_wc_components_t)
-            
+        graph_relations = GraphRelations(detections)    
         
         # TODO: filter out duplicate detections in a group
         for group in graph_relations.groups:

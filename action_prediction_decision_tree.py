@@ -26,21 +26,12 @@ from context_action_framework.msg import CutBlock, LeverBlock, MoveBlock, PushBl
 from geometry_msgs.msg import Transform
 
 from graph_relations import GraphRelations
-from gap_detection.gap_detector_clustering import GapDetectorClustering
-
 # from helpers import get_action_description
-
-# TODO: implement this
-# TODO: taken from action_predictor project. Here we make it much simpler. Given image, predict the action.
 
 
 class ActionPredictorDecisionTree():
     def __init__(self) -> None:
-        config = SimpleNamespace()
-        config.realsense = SimpleNamespace()
-        config.realsense.debug_clustering = False
-            
-        self.gap_detector = GapDetectorClustering(config) 
+        pass
     
 
     def decision_tree(self, image, detections, graph_relations, module):
@@ -108,16 +99,7 @@ class ActionPredictorDecisionTree():
                         
                         # TODO: really the gap detection should be only computed when necessary, but maybe not here...
                         
-                        # gaps, cluster_img, depth_scaled, device_mask \
-                        #     = self.gap_detector.lever_detector(
-                        #         self.colour_img,
-                        #         self.depth_img,
-                        #         detections,
-                        #         graph_relations,
-                        #         self.camera_info,
-                        #         aruco_pose=self.aruco_pose,
-                        #         aruco_point=self.aruco_point
-                        #     )
+
                         
                         
                         # TODO: get the actual gaps

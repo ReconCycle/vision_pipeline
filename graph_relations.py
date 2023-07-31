@@ -340,3 +340,39 @@ class GraphRelations:
                 return detection
 
         return None
+    
+    
+    def to_text(self):
+        """
+        converts graph_relations to natural language
+        """
+        
+        text_groups = ""
+        text_single_items = ""
+        single_items_list = []
+        
+        for idx, relations_group in enumerate(self.relations_groups):
+            
+            if relations_group: # check if there are relations
+                text_groups += f"Group:\n"
+                for relation_ids, relation_type in relations_group.items():
+                    relation_id_1, relation_id_2 = relation_ids
+                    relation1 = self.get_detection_by_id(relation_id_1)
+                    relation2 = self.get_detection_by_id(relation_id_2)
+                    text_groups += f"{relation1.label.name} [blue]{relation_type}[/blue] {relation2.label.name}\n"
+        
+            else:
+                # group with 1 element, so no relations
+                group = self.groups[idx]
+                if len(group) == 1:
+                    detection = group[0]
+                    single_items_list.append(detection.label.name)
+        
+        # list also all the items that don't have relations
+        if len(single_items_list) == 1:
+            text_single_items = "Single component: " + ', '.join(single_items_list)
+        elif len(single_items_list) > 1:
+            text_single_items = "Single components: " + ', '.join(single_items_list)
+        
+        return text_groups + text_single_items
+    

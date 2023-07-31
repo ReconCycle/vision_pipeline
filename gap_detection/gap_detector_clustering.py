@@ -3,6 +3,7 @@ import numpy as np
 from skimage.filters import threshold_otsu, threshold_minimum, threshold_li
 from skimage.filters import threshold_yen
 import skimage.exposure
+from rich import print
 
 import rospy
 from geometry_msgs.msg import PoseStamped, PointStamped, Pose, Transform, Vector3, Quaternion
@@ -156,6 +157,7 @@ class GapDetectorClustering:
         device_mask = None
         
         # https://github.com/Vuuuuk/Intel-Realsense-L515-3D-Scanner/blob/master/L515_3D_Scanner.py
+        print(f"min {np.min(depth_img)}, max {np.max(depth_img)}")
         
         # merge colour_img and depth_img
         colour2 = o3d.geometry.Image(cv2.cvtColor(colour_img, cv2.COLOR_RGB2BGR))
@@ -216,7 +218,7 @@ class GapDetectorClustering:
                 return gaps, img, depth_scaled, device_mask
 
         else:
-            print("detection_hca_back is None!")
+            print("[red]gap detector: detection_hca_back is None!")
             return gaps, img, depth_scaled, device_mask
 
         height, width = depth_masked.shape[:2]
@@ -236,11 +238,11 @@ class GapDetectorClustering:
         # print("depth_mean", depth_mean)
 
         if depth_min == depth_max:
-            print("depth_min == depth_max!")
+            print("[red]gap detector: depth_min == depth_max!")
             return gaps, img, depth_masked, device_mask
 
         if depth_min_nonzero is np.NaN or depth_min_nonzero is None:
-            print("depth_min_nonzero is None!")
+            print("[red]gap detector: depth_min_nonzero is None!")
             return gaps, img, depth_masked, device_mask 
 
         # print("depth_min_nonzero", depth_min_nonzero)
@@ -295,7 +297,7 @@ class GapDetectorClustering:
                             
                             # todo: make valid like for the whole device
                         except AssertionError as E:
-                            print("[red]error converting contour to polygon![/red]")
+                            print("[red]gap detector: error converting contour to polygon![/red]")
                         else:
                             area = cv2.contourArea(contour)
                             center = self.cnt_center(contour)
@@ -309,7 +311,7 @@ class GapDetectorClustering:
 
 
 
-        print("num clusters found:", len(cluster_objs))
+        print("gap detector: num clusters found:", len(cluster_objs))
 
         # good_points = []
         lines = []

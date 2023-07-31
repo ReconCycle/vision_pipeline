@@ -1,13 +1,15 @@
-# rospy for the subscriber
-import rospy
-# ROS Image message
-from sensor_msgs.msg import Image
-# ROS Image message -> OpenCV2 image converter
-from cv_bridge import CvBridge, CvBridgeError
-# OpenCV2 for saving an image
-import cv2
 import termios, fcntl, sys, os
+import cv2
 from rich import print
+import numpy as np
+import ros_numpy
+import pickle
+
+# ROS
+import rospy
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge, CvBridgeError
+import message_filters
 
 
 # implementation found here:
@@ -55,7 +57,7 @@ class Main():
         self.counter = 1
         self.save = False
         
-        self.save_path = "experiments/datasets/new_dataset/untitled"
+        self.save_path = "experiments/new_dataset2"
         
         # check if file path is empty
         if not os.path.exists(self.save_path):
@@ -65,13 +67,40 @@ class Main():
             print("[red]directory not empty! exiting...[/red]")
             return
         
-        # Define your image topic
-        image_topic = "/basler/image_rect_color"
+        
+        camera_node = "realsensed405"
+        
         # Set up your subscriber and define its callback
-        rospy.Subscriber(image_topic, Image, self.image_callback)
+        if camera_node == "realsense":
+            camera_info_topic = f"/{camera_node}/color/camera_info"
+            img_topic = f"/{camera_node}/color/image_raw"
+            depth_topic = f"/{camera_node}/aligned_depth_to_color/image_raw"
+            camera_info_sub = message_filters.Subscriber(camera_info_topic, CameraInfo)
+            img_sub = message_filters.Subscriber(img_topic, Image)
+            depth_sub = message_filters.Subscriber(depth_topic, Image)
+
+            ts = message_filters.ApproximateTimeSynchronizer([img_sub, depth_sub, camera_info_sub], 10, slop=0.05, allow_headerless=False)
+            ts.registerCallback(self.img_from_realsense_cb)
+        elif camera_node == "realsensed405":
+            camera_info_topic = f"/{camera_node}/color/camera_info"
+            img_topic = f"/{camera_node}/color/image_raw"
+            depth_topic = f"/{camera_node}/depth/image_rect_raw"
+            camera_info_sub = message_filters.Subscriber(camera_info_topic, CameraInfo)
+            img_sub = message_filters.Subscriber(img_topic, Image)
+            depth_sub = message_filters.Subscriber(depth_topic, Image)
+
+            ts = message_filters.ApproximateTimeSynchronizer([img_sub, depth_sub, camera_info_sub], 10, slop=0.05, allow_headerless=False)
+            ts.registerCallback(self.img_from_realsense_cb)
+        elif camera_node == "basler":
+            image_topic = f"/{camera_node}/image_rect_color"
+            rospy.Subscriber(image_topic, Image, self.img_from_basler_cb)
+        
+        
         # Spin until ctrl + c
         # rospy.spin()
         self.keypress_listener = KeypressListener()
+        
+        print("\n[green]press any key to save image:")
         
         # register what to do on shutdown
         rospy.on_shutdown(self.close)
@@ -92,22 +121,61 @@ class Main():
         # tidy up
         self.close()
 
+    def img_from_realsense_cb(self, img_msg, depth_msg, camera_info):
+        self.img_saver(img_msg, depth_msg, camera_info)
 
-    def image_callback(self, msg):
+    def img_from_basler_cb(self, img_msg):
+        self.img_saver(img_msg)
+    
+    
+    def img_saver(self, img_msg, depth_msg=None, camera_info=None):
+        
         if self.save:
             try:
                 # Convert your ROS Image message to OpenCV2
-                cv2_img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+                cv2_img = self.bridge.imgmsg_to_cv2(img_msg, "bgr8")
+                
+                cv2_depth_img = None
+                if depth_msg is not None:
+                    cv2_depth_img = self.bridge.imgmsg_to_cv2(depth_msg, "16UC1")
+                    cv2_depth_img = np.array(cv2_depth_img)
+                    min = np.min(cv2_depth_img)
+                    max = np.max(cv2_depth_img)
+                    print(f"min depth: {min}, max depth: {max}")
+                
             except CvBridgeError as e:
                 print(e)
             else:
                 # Save your OpenCV2 image as a jpeg
-                filename = str(self.counter).zfill(4) + ".jpg"
-                file_path = os.path.join(self.save_path, filename)
+                filename_colour = str(self.counter).zfill(4) + ".jpg"                
+                file_path = os.path.join(self.save_path, filename_colour)
                 print("saving image:", file_path)
                 cv2.imwrite(file_path, cv2_img)
+                
+                if cv2_depth_img is not None:
+                    filename_depth = str(self.counter).zfill(4) + "_depth.npy"
+                    file_path = os.path.join(self.save_path, filename_depth)
+                    np.save(file_path, cv2_depth_img)
+                    
+                    # TODO: improve visualisation image, see earlier work
+                    filename_depth_viz = str(self.counter).zfill(4) + "_depth_viz.jpg"
+                    depth_viz = cv2_depth_img.copy() * 255 / np.max(cv2_depth_img)
+                    file_path = os.path.join(self.save_path, filename_depth_viz)
+                    cv2.imwrite(file_path, depth_viz)
+                    
+                if camera_info is not None:            
+                    filename_info = str(self.counter).zfill(4) + "_camera_info.pickle"
+                    file_path = os.path.join(self.save_path, filename_info)
+                    # camera_info_np = ros_numpy.numpify(camera_info)
+                    # np.save(camera_info_np, file_path)/
+                    filehandler = open(file_path, "wb")
+                    pickle.dump(camera_info,filehandler)
+                    filehandler.close()
+                
                 self.counter += 1
                 self.save = False
+        
+        
 
     def except_hook(self, type, value, tb):
         self.close()
