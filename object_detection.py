@@ -287,6 +287,9 @@ class ObjectDetection:
                 print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
                 return False
             
+            if detection.obb is None:
+                print(f"[red]detection: {detection.label.name} obb is None![/red]")
+            
             # check ratio of obb sides
             edge_small = np.linalg.norm(detection.obb[0] - detection.obb[1])
             edge_large = np.linalg.norm(detection.obb[1] - detection.obb[2])
