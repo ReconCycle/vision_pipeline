@@ -34,7 +34,7 @@ import ros_numpy
 
 class ObjectDetection:
     def __init__(self, config=None, camera_config=None, yolact=None, dataset=None, object_reid=None, camera=None, frame_id="", use_ros=True):
-        
+
         self.config = config
         self.camera_config = camera_config
         
@@ -243,11 +243,11 @@ class ObjectDetection:
                 elif camera_info is not None and depth_img is not None and center_px is not None and corners_px is not None:
                     # mask depth image
                     # depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
-                    
-                    depth_img = depth_img / 10
+
                     depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask)
                     depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
                     depth_mean = depth_masked_np.mean()
+                    depth_median = np.ma.median(depth_masked_np)
                     
                     if not np.count_nonzero(depth_img):
                         print("[red]detection: depth image is all 0")
@@ -255,7 +255,8 @@ class ObjectDetection:
                     if isinstance(depth_mean, np.float):
                         
                         # tf translation comes from img_to_camera_coords(...)
-                        print(f"depth mean {depth_mean}")
+                        if self.config.obj_detection.debug:
+                            print(f"depth mean {round(depth_mean, 5)}, median {round(depth_median, 5)}")
                         
                         detection.center = img_to_camera_coords(center_px, depth_mean, camera_info)
                         detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
@@ -268,7 +269,8 @@ class ObjectDetection:
                         detection.obb = corners
                         detection.obb_3d = np.concatenate((corners, corners_low))
                         
-                        print("detection: detection.obb", detection.obb)
+                        
+                        # print("detection: detection.obb", detection.obb)
                     
                 else:
                     print("[red]detection: detection real-world info couldn't be determined!")
@@ -282,13 +284,11 @@ class ObjectDetection:
                 print(f"[red]detection: {detection.label.name} angle is None![/red]")
                 return False
 
-            # area should be larger than 1cm^2 = 0.0001 m^2
-            if detection.polygon is not None and detection.polygon.area < 0.0001:
-                print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
-                return False
+
             
             if detection.obb is None:
                 print(f"[red]detection: {detection.label.name} obb is None![/red]")
+                return False
             
             # check ratio of obb sides
             edge_small = np.linalg.norm(detection.obb[0] - detection.obb[1])
@@ -301,19 +301,27 @@ class ObjectDetection:
             
             # edge_small should be longer than 0.1cm
             if edge_small < 0.001:
-                print(f"[red]detection: {detection.label.name} invalid: edge too small: {edge_small} meters[/red]")
+                print(f"[red]detection: {detection.label.name} invalid: edge too small: {round(edge_small, 3)}m")
                 return False
             
             # edge_large should be shorter than 25cm
             if edge_large > 0.25:
-                print(f"[red]detection: {detection.label.name} invalid: edge too large: {edge_large} meters[/red]")
+                print(f"[red]detection: {detection.label.name} invalid: edge too large: {round(edge_large, 3)}m")
                 return False
+            
+            if self.config.obj_detection.debug:
+                print(f"{detection.label.name}, edge large: {round(edge_large, 3)}m, edge small: {round(edge_small, 3)}m")
             
             # ratio of longest HCA: 3.4
             # ratio of Kalo 1.5 battery: 1.7
             # a really big ratio corresponds to a really long device. Ratio of 5 is probably false positive.
             if ratio > 5:
                 print("[red]detection: invalid: obb ratio of sides too large[/red]")
+                return False
+
+            # area should be larger than 1cm^2 = 0.0001 m^2
+            if detection.polygon is not None and detection.polygon.area < 0.0001:
+                print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
                 return False
             
             return True

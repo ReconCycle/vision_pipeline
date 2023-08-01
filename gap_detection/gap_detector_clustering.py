@@ -157,11 +157,12 @@ class GapDetectorClustering:
         device_mask = None
         
         # https://github.com/Vuuuuk/Intel-Realsense-L515-3D-Scanner/blob/master/L515_3D_Scanner.py
-        print(f"min {np.min(depth_img)}, max {np.max(depth_img)}")
+        if self.config.obj_detection.debug:
+            print(f"median depth: {round(np.median(depth_img), 4)}")
         
         # merge colour_img and depth_img
         colour2 = o3d.geometry.Image(cv2.cvtColor(colour_img, cv2.COLOR_RGB2BGR))
-        depth2 = o3d.geometry.Image((depth_img*1000).astype(np.uint8)) #! we undo a preprocessing step by *1000, m -> mm to correspond with camera_info?
+        depth2 = o3d.geometry.Image((depth_img).astype(np.uint8))
         
         rgbd_img = o3d.geometry.RGBDImage.create_from_color_and_depth(colour2, depth2, convert_rgb_to_intensity=False)
         # rgbd_img = np.dstack((colour_img, depth_img))
