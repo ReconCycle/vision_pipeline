@@ -150,6 +150,7 @@ class GraphRelations:
         self.G.add_nodes_from([detection.id for detection in self.valid_detections])
         self.G.add_edges_from(self.inside_edges + self.next_to_edges)
         
+        # ! do we use these tracking ids?
         self.tracking_ids = {}
         for detection in self.valid_detections:
             self.tracking_ids[detection.id] = detection.tracking_id
@@ -320,9 +321,7 @@ class GraphRelations:
         inside_dets = [detection for detection in self.valid_detections if detection.id in inside_dets_ids]
         
         return inside_dets
-    
-    def get_detection_by_id(self, id):
-        return self.valid_detections[id]
+
     
     @staticmethod
     def get(detections, label):
