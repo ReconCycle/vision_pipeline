@@ -96,6 +96,10 @@ class GraphRelations:
     def __init__(self, detections: List[Detection]):
         self.detections = detections
         self.valid_detections = [detection for detection in self.detections if detection.valid]
+
+        self.dict_valid_dets = {}
+        for valid_det in self.valid_detections:
+            self.dict_valid_dets[valid_det.id] = valid_det
         
         self.tracking_ids = {}
         
@@ -188,7 +192,7 @@ class GraphRelations:
         nx.draw(
             self.G, pos, ax=ax1, edge_color='black', width=1, linewidths=1,
             node_size=500, node_color=node_colors,
-            labels={id: self.valid_detections[id].label.name for id in self.G.nodes()},
+            labels={id: self.dict_valid_dets[id].label.name for id in self.G.nodes()},
             font_size=32
         )
 
@@ -256,11 +260,7 @@ class GraphRelations:
         
             
     def get_detection_by_id(self, id):
-        for det in self.valid_detections:
-            if det.id == id:
-                return det
-        
-        return None
+        return self.dict_valid_dets[id]
         
     
     def is_inside(self, det_or_label1, det_or_label2):
@@ -268,9 +268,9 @@ class GraphRelations:
             label1, label2 = det_or_label1, det_or_label2
             for key, val in self.edge_labels_dict.items():
                 a, b = key
-                detection_pair = (self.valid_detections[a].label.value, self.valid_detections[b].label.value)
+                detection_pair = (self.dict_valid_dets[a].label.value, self.dict_valid_dets[b].label.value)
                 if detection_pair == (label1.value, label2.value) and val == "in":
-                    return True, self.valid_detections[a], self.valid_detections[b]
+                    return True, self.dict_valid_dets[a], self.dict_valid_dets[b]
 
             return False, None, None
         else:
@@ -278,7 +278,7 @@ class GraphRelations:
             det1, det2 = det_or_label1, det_or_label2
             for key, val in self.edge_labels_dict.items():
                 a, b = key
-                detection_pair = (self.valid_detections[a], self.valid_detections[b])
+                detection_pair = (self.dict_valid_dets[a], self.dict_valid_dets[b])
                 if detection_pair == (det1, det2) and val == "in":
                     return True
 
@@ -291,9 +291,9 @@ class GraphRelations:
             label2 = det_or_label2
             for key, val in self.edge_labels_dict.items():
                 a, b = key
-                detection_pair = (self.valid_detections[a].label.value, self.valid_detections[b].label.value)
+                detection_pair = (self.dict_valid_dets[a].label.value, self.dict_valid_dets[b].label.value)
                 if detection_pair == (label1.value, label2.value) and val == "next to":
-                    return True, self.valid_detections[a], self.valid_detections[b]
+                    return True, self.dict_valid_dets[a], self.dict_valid_dets[b]
 
             return False, None, None
         else:
@@ -301,7 +301,7 @@ class GraphRelations:
             det2 = det_or_label2
             for key, val in self.edge_labels_dict.items():
                 a, b = key
-                detection_pair = (self.valid_detections[a], self.valid_detections[b])
+                detection_pair = (self.dict_valid_dets[a], self.dict_valid_dets[b])
                 if detection_pair == (det1, det2) and val == "next to":
                     return True
 
