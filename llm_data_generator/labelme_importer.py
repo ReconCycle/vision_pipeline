@@ -40,15 +40,19 @@ class LabelMeImporter():
         self.work_surface_ignore_border_width = 100
         self.debug_work_surface_detection = False
 
+        config = SimpleNamespace()
+        config.reid = False
+        config.realsense = SimpleNamespace()
+        config.realsense.debug_clustering = False
+
+        config.obj_detection = SimpleNamespace()
+        config.obj_detection.debug = False
+
         self.camera_config = SimpleNamespace()
         self.camera_config.publish_graph_img = False
 
-        self.object_detection = ObjectDetection(camera_config=self.camera_config, use_ros=False) #! probably we need to add more stuff
+        self.object_detection = ObjectDetection(config=config, camera_config=self.camera_config, use_ros=False) #! probably we need to add more stuff
         
-        config = SimpleNamespace()
-        config.realsense = SimpleNamespace()
-        config.realsense.debug_clustering = False
-            
         self.gap_detector = GapDetectorClustering(config) 
 
     

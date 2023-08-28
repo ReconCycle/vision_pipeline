@@ -4,6 +4,7 @@ from rich import print
 import numpy as np
 import ros_numpy
 import pickle
+import datetime
 
 # ROS
 import rospy
@@ -56,9 +57,11 @@ class Main():
 
         self.counter = 1
         self.save = False
+
+        camera_node = "realsense" #! options: realsense/realsensed405/basler
         
-        self.save_path = "experiments/new_dataset2"
-        
+        self.save_path = "experiments/{date:%Y-%m-%d_%H:%M:%S}_{camera_node}".format(date=datetime.datetime.now(), camera_node=camera_node)
+ 
         # check if file path is empty
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
@@ -66,9 +69,6 @@ class Main():
         if os.listdir(self.save_path):
             print("[red]directory not empty! exiting...[/red]")
             return
-        
-        
-        camera_node = "realsensed405"
         
         # Set up your subscriber and define its callback
         if camera_node == "realsense":

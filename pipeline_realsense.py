@@ -60,10 +60,7 @@ class PipelineRealsense(PipelineCamera):
         
     
     def create_subscribers(self):
-        # camera_info_topic = path(self.camera_config.camera_node, "color/camera_info")
-        camera_info_topic = path(self.camera_config.camera_node, "aligned_depth_to_color/camera_info")
-        #! DEBUG - > does this fix the size issue?
-
+        camera_info_topic = path(self.camera_config.camera_node, "color/camera_info")
         img_topic = path(self.camera_config.camera_node, "color/image_raw")
         depth_topic = path(self.camera_config.camera_node, "aligned_depth_to_color/image_raw")
         camera_info_sub = message_filters.Subscriber(camera_info_topic, CameraInfo)

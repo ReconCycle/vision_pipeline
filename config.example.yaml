@@ -47,6 +47,6 @@ realsense:
 
 # yolact config
 obj_detection:
-  yolact_dataset_file: data_limited/yolact/2022-05-02_kalo_qundis/dataset.json
+  yolact_dataset_file: data_limited/yolact/2023-07-18_firealarms_hcas/dataset.json
   yolact_score_threshold: 0.55
   debug: False

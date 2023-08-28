@@ -7,14 +7,14 @@ Project to track heat cost allocators and the individual parts of the heat cost 
 
 ## Installation
 
-1. `git clone git@github.com:ReconCycle/vision-pipeline.git`
+1. `git clone git@github.com:ReconCycle/vision_pipeline.git`
 2. `git submodule update --init --recursive`
-3. Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision-pipeline/data_limited` folder.
+3. Copy the directory from the Nextcloud Reconcycle repository [git-data/vision-pipeline/data](https://cloud.reconcycle.eu/f/21297) to the `vision_pipeline/data_limited` folder.
 4. `cp config.example.yaml config.yaml`
 
 Additionally:
 
-- Setup [ros-vision-pipeline](https://github.com/ReconCycle/ros-vision-pipeline).
+- Setup [ros_vision_pipeline](https://github.com/ReconCycle/ros-vision-pipeline).
 - Setup [ros-basler](https://github.com/ReconCycle/ros-basler) camera.
 - Setup [ros-realsense](https://github.com/ReconCycle/ros-realsense) camera.
 
