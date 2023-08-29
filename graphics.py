@@ -57,6 +57,9 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
     if undo_transform:
         img_numpy = undo_image_transformation(img, w, h)
         img_gpu = torch.Tensor(img_numpy).cuda()
+    elif isinstance(img, np.ndarray):
+        #! moving to GPU. It might be better to do everything on cpu instead.
+        img_gpu = torch.Tensor(img).cuda() / 255.0 
     else:
         img_gpu = img / 255.0
         h, w, _ = img.shape

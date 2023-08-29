@@ -23,17 +23,22 @@ from context_action_framework.types import Detection, Action, Label
 
 def compute_is_inside(poly1, poly2):
     """ is box1 inside box2? """
-    
-    intersect = poly1.intersection(poly2).area
-    
-    # stop division by 0
-    if poly1.area < 0.001:
-        return False
-    
-    ratio_p1_inside_p2 = intersect / poly1.area
+    if poly1.intersects(poly2): 
+        intersect = poly1.intersection(poly2).area
 
-    # if more than 90% of p1 is inside p2, then it is inside
-    return ratio_p1_inside_p2 > 0.9
+        # stop division by 0
+        if poly1.area < 0.001:
+            return False
+        
+        ratio_p1_inside_p2 = intersect / poly1.area
+
+        # if more than 90% of p1 is inside p2, then it is inside
+        return ratio_p1_inside_p2 > 0.9
+
+    else:
+        return 0
+    
+
 
 def compute_iou(poly1, poly2):
     p1 = poly1

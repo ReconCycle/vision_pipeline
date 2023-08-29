@@ -33,19 +33,18 @@ import ros_numpy
 
 
 class ObjectDetection:
-    def __init__(self, config=None, camera_config=None, yolact=None, dataset=None, object_reid=None, camera=None, frame_id="", use_ros=True):
+    def __init__(self, config=None, camera_config=None, model=None, object_reid=None, camera=None, frame_id="", use_ros=True):
 
         self.config = config
         self.camera_config = camera_config
         
-        self.yolact = yolact
-        self.dataset = dataset
+        self.model = model
         self.camera = camera
         self.frame_id = frame_id
         self.object_depth = 0.025 # in meters, the depth of the objects
         
         self.simple_detector = None
-        if yolact is None:
+        if model is None:
             self.simple_detector = SimpleDetector()
         
         self.object_reid = object_reid
@@ -106,7 +105,7 @@ class ObjectDetection:
                 
         else:
         
-            frame, classes, scores, boxes, masks = self.yolact.infer(colour_img)
+            frame, classes, scores, boxes, masks = self.model.infer(colour_img)
             fps_nn = 1.0 / (time.time() - t_start)
 
             detections = []
@@ -117,7 +116,7 @@ class ObjectDetection:
 
                 # the self.dataset.class_names dict may not correlate with Label Enum,
                 # therefore we have to convert:
-                detection.label = Label[self.dataset.class_names[classes[i]]]
+                detection.label = Label[self.model.dataset.class_names[classes[i]]]
                 detection.score = float(scores[i])
                 
                 box_px = boxes[i].reshape((-1,2)) # convert tlbr

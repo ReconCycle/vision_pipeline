@@ -21,9 +21,7 @@ import message_filters
 import tf2_ros
 import tf
 
-from yolact_pkg.data.config import Config
-from yolact_pkg.yolact import Yolact
-
+from object_detection_model import ObjectDetectionModel
 from object_reid_sift import ObjectReIdSift
 from config import load_config
 from pipeline_basler import PipelineBasler
@@ -49,16 +47,16 @@ class ROSPipeline():
         
         self.static_tf_manager = StaticTransformManager()
         
-        # load yolact
-        yolact, dataset = self.load_yolact(self.config.obj_detection)
+        # load object detection model
+        model = ObjectDetectionModel(self.config.obj_detection)
         
         # load object reid
         object_reid = None
         if self.config.reid:
             object_reid = ObjectReIdSift()
 
-        self.pipeline_basler = PipelineBasler(yolact, dataset, object_reid, self.config, self.static_tf_manager)
-        self.pipeline_realsense = PipelineRealsense(yolact, dataset, object_reid, self.config, self.static_tf_manager)
+        self.pipeline_basler = PipelineBasler(model, object_reid, self.config, self.static_tf_manager)
+        self.pipeline_realsense = PipelineRealsense(model, object_reid, self.config, self.static_tf_manager)
         
         def exit_handler():
             time.sleep(2) # sleep such that on restart, the cameras are not immediately re-enabled
@@ -69,52 +67,6 @@ class ROSPipeline():
         print("running camera pipelines...\n")
         self.run_loop()
         
-    
-    def load_yolact(self, yolact_config):
-        yolact_dataset = None
-        
-        if os.path.isfile(yolact_config.yolact_dataset_file):
-            print("loading", yolact_config.yolact_dataset_file)
-            with open(yolact_config.yolact_dataset_file, "r") as read_file:
-                yolact_dataset = commentjson.load(read_file)
-                print("yolact_dataset", yolact_dataset)
-        else:
-            raise Exception("config.yolact_dataset_file is incorrect: " +  str(yolact_config.yolact_dataset_file))
-                
-        dataset = Config(yolact_dataset)
-        
-        config_override = {
-            'name': 'yolact_base',
-
-            # Dataset stuff
-            'dataset': dataset,
-            'num_classes': len(dataset.class_names) + 1,
-
-            # Image Size
-            'max_size': 1100,
-
-            # These are in BGR and are for ImageNet
-            'MEANS': (103.94, 116.78, 123.68),
-            'STD': (57.38, 57.12, 58.40),
-            
-            # the save path should contain resnet101_reducedfc.pth
-            'save_path': './data_limited/yolact/',
-            'score_threshold': yolact_config.yolact_score_threshold,
-            'top_k': len(dataset.class_names)
-        }
-        
-        model_path = None
-        if "model" in yolact_dataset:
-            model_path = os.path.join(os.path.dirname(yolact_config.yolact_dataset_file), yolact_dataset["model"])
-            
-        print("model_path", model_path)
-        
-        yolact = Yolact(config_override)
-        yolact.cfg.print()
-        yolact.eval()
-        yolact.load_weights(model_path)
-        
-        return yolact, dataset
 
     def run_loop(self):
         while not rospy.is_shutdown():

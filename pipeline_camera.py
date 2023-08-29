@@ -35,7 +35,7 @@ from context_action_framework.types import detections_to_ros, gaps_to_ros, Label
 
 
 class PipelineCamera:
-    def __init__(self, yolact, dataset, object_reid, config, camera_config, camera_type, static_tf_manager):
+    def __init__(self, model, object_reid, config, camera_config, camera_type, static_tf_manager):
         self.config = config
         self.camera_config = camera_config
         
@@ -114,7 +114,7 @@ class PipelineCamera:
         print(self.camera_name +": creating service client...")
         self.create_service_client()
         print(self.camera_name +": creating pipeline...")
-        self.init_pipeline(yolact, dataset, object_reid)
+        self.init_pipeline(model, object_reid)
 
         print(self.camera_name +": enabling camera ...")
         self.enable_camera(True)
@@ -122,8 +122,8 @@ class PipelineCamera:
         # register what to do on shutdown
         rospy.on_shutdown(self.exit)
     
-    def init_pipeline(self, yolact, dataset, object_reid):
-        self.object_detection = ObjectDetection(self.config, self.camera_config, yolact, dataset, object_reid, self.camera_type, self.parent_frame)
+    def init_pipeline(self, model, object_reid):
+        self.object_detection = ObjectDetection(self.config, self.camera_config, model, object_reid, self.camera_type, self.parent_frame)
         self.worksurface_detection = None
 
     def create_subscribers(self):

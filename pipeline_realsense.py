@@ -38,7 +38,7 @@ from context_action_framework.msg import Gaps as ROSGaps
 
 
 class PipelineRealsense(PipelineCamera):    
-    def __init__(self, yolact, dataset, object_reid, config, static_broadcaster):
+    def __init__(self, model, object_reid, config, static_broadcaster):
         self.camera_config = config.realsense
         self.camera_config.enable_topic = "enable" # realsense specific
         
@@ -52,10 +52,10 @@ class PipelineRealsense(PipelineCamera):
         # scale depth from mm to meters
         self.depth_rescaling_factor = 1/1000
         
-        super().__init__(yolact, dataset, object_reid, config, self.camera_config, Camera.realsense, static_broadcaster)
+        super().__init__(model, object_reid, config, self.camera_config, Camera.realsense, static_broadcaster)
     
-    def init_pipeline(self, yolact, dataset, object_reid):
-        super().init_pipeline(yolact, dataset, object_reid)
+    def init_pipeline(self, model, object_reid):
+        super().init_pipeline(model, object_reid)
         self.gap_detector = GapDetectorClustering(self.config)
         
     
