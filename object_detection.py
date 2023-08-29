@@ -27,7 +27,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 import rospy
 import tf
 import tf2_ros
-from tf.transformations import quaternion_from_euler, quaternion_multiply
+from tf.transformations import quaternion_from_euler, quaternion_multiply, euler_from_quaternion
 
 import ros_numpy
 
@@ -369,7 +369,67 @@ class ObjectDetection:
                         # write new tf
                         hca_back.angle_px = (hca_back.angle_px + 180) % 360
                         hca_back.tf = Transform(Vector3(*hca_back.center), Quaternion(*quat_new))
-                        hca_back.tf_px = Transform(Vector3(*center_px, 0), Quaternion(*quat_new))
+                        hca_back.tf_px = Transform(Vector3(*hca_back.center_px, 0), Quaternion(*quat_new))
+
+
+        # based on groups, orientate hca_back to always orientate based on battery_covered (if it exists).
+        for group in graph_relations.groups:
+            firealarm_back = graph_relations.get_first(group, Label.firealarm_back)
+            battery_covered = graph_relations.get_first(group, Label.battery_covered)
+            # battery = graph_relations.get_first(group, Label.battery)
+            # battery = graph_relations.get_first(group, Label.pcb)
+
+            if firealarm_back is not None and battery_covered is not None:
+
+                # TODO: debug why it is not always inside!
+                if graph_relations.is_inside(battery_covered, firealarm_back):
+                    print("[green]battery_covered is inside firealarm_back")
+                else:
+                    print("[red]battery_covered NOT inside firealarm_back")
+
+                # set the rotation of firealarm_back equal to battery_covered
+                firealarm_back.angle_px = battery_covered.angle_px
+                firealarm_back.tf = Transform(firealarm_back.tf.translation, battery_covered.tf.rotation)
+                firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, battery_covered.tf_px.rotation)
+
+                # compute relative TF of battery_covered w.r.t. firealarm_back
+                firealarm_back_np_tf = ros_numpy.numpify(firealarm_back.tf)
+                battery_covered_np_tf = ros_numpy.numpify(battery_covered.tf)
+                
+                inv_firealarm = np.linalg.inv(firealarm_back_np_tf)
+                prod_np_tf = np.dot(inv_firealarm, battery_covered_np_tf)
+                battery_covered_rel_tf = ros_numpy.msgify(Transform, prod_np_tf)
+
+                
+                if battery_covered_rel_tf.translation.x < 0:
+                    print("[red]battery_covered_rel_tf", battery_covered_rel_tf.translation.x)
+                else:
+                    print("[blue]battery_covered_rel_tf", battery_covered_rel_tf.translation.x)
+
+
+                # rotate by 180 degrees based on relative positions
+                if battery_covered_rel_tf.translation.x < 0:
+                    quat = ros_numpy.numpify(battery_covered.tf.rotation)
+                    quat_180 = quaternion_from_euler(0, 0, np.pi)
+                    quat_new = quaternion_multiply(quat_180, quat)
+
+                    # TODO: get angle in degrees from quat_new
+                    # euler_new = euler_from_quaternion(quat_new)
+                    # angle_px = np.rad2deg(euler_new[2])
+                    # print("angle_px", angle_px) 
+                    #! THIS IS NOT CORRECT!!!
+                    #! for basler, we need to take inv() of quaternion, like we did at the beginning.
+                    #! WHY?????
+                    
+                    # firealarm_back.angle_px = angle_px
+                    firealarm_back.angle_px = (battery_covered.angle_px + 180) % 360
+                    firealarm_back.tf = Transform(firealarm_back.tf.translation, Quaternion(*quat_new))
+                    firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, Quaternion(*quat_new))
+
+                    # battery_covered.angle_px = angle_px
+                    battery_covered.angle_px = (battery_covered.angle_px + 180) % 360
+                    battery_covered.tf = Transform(battery_covered.tf.translation, Quaternion(*quat_new))
+                    battery_covered.tf_px = Transform(battery_covered.tf_px.translation, Quaternion(*quat_new))
                         
             
         # if device contains battery:

@@ -148,18 +148,22 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
                 cv2.putText(img_numpy, "(" + str(xc_m) + ", " + str(yc_m) + ")",
                             (xc - 50, yc+30), font_face, font_scale, [255, 255, 255], font_thickness, cv2.LINE_AA)
 
-    for detection in detections:
+    for j, detection in enumerate(detections):
+        mask_colour = get_color(j).cpu().detach().numpy() *255
+        mask_colour = [int(i) for i in mask_colour]
+
         outline_colour = (0, 255, 0)
         if not detection.valid:
             outline_colour = (0, 0, 255)
+            mask_colour = (0, 0, 255)
 
         if detection.center_px is not None:
-            cv2.circle(img_numpy, tuple(detection.center_px), 5, outline_colour, -1)
+            cv2.circle(img_numpy, tuple(detection.center_px), 5, mask_colour, -1)
             cv2.drawContours(img_numpy, [detection.obb_px], 0, outline_colour, 2)
             
             # draw the arrow
             point2 = rotated_line(tuple(detection.center_px), detection.angle_px, 60)
-            cv2.arrowedLine(img_numpy, tuple(detection.center_px), point2, outline_colour, 3, tipLength = 0.5)
+            cv2.arrowedLine(img_numpy, tuple(detection.center_px), point2, mask_colour, 3, tipLength = 0.5)
             
             # cv2.drawContours(img_numpy, [detection.mask_contour], 0, outline_colour, 2)
 
