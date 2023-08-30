@@ -24,7 +24,8 @@ from context_action_framework.types import Detection, Action, Label
 def compute_is_inside(poly1, poly2):
     """ is box1 inside box2? """
     if poly1.intersects(poly2): 
-        intersect = poly1.intersection(poly2).area
+        # we use convex_hull because the inside shape may occlude the poly that is on top of it.
+        intersect = poly1.convex_hull.intersection(poly2.convex_hull).area
 
         # stop division by 0
         if poly1.area < 0.001:
