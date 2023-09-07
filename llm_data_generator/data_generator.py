@@ -6,8 +6,8 @@ import natsort
 # ROS
 from context_action_framework.types import Module
 
-from labelme_importer import LabelMeImporter
-from action_prediction_decision_tree import ActionPredictorDecisionTree
+from .labelme_importer import LabelMeImporter
+from action_predictor.action_prediction_decision_tree import ActionPredictorDecisionTree
 
 
 class LLMDataGenerator():

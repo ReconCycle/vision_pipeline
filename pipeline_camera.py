@@ -246,15 +246,19 @@ class PipelineCamera:
         if self.gaps is not None and request_gap_detection:
             ros_gaps = gaps_to_ros(self.gaps)
             will_return_gaps = True
+        else:
+            gaps_to_ros([])
+
+        img = CvBridge().cv2_to_imgmsg(self.labelled_img, encoding="bgr8")
         
         if self.detections is not None:
             header = rospy.Header()
             header.stamp = rospy.Time.now()
             vision_details = VisionDetails(header, self.processed_acquisition_stamp, self.camera_type, will_return_gaps, detections_to_ros(self.detections), ros_gaps)
-            return VisionDetectionResponse(True, vision_details) # CvBridge().cv2_to_imgmsg(self.labelled_img, encoding="bgr8")
+            return VisionDetectionResponse(True, vision_details, img)
         else:
             print(self.camera_name +": returning empty response!")
-            return VisionDetectionResponse(False, VisionDetails()) # CvBridge().cv2_to_imgmsg(self.labelled_img, encoding="bgr8")
+            return VisionDetectionResponse(False, VisionDetails(), img)
     
     def enable_continuous_cb(self, req):
         state = req.data
