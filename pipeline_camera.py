@@ -46,7 +46,6 @@ class PipelineCamera:
         
         # time stuff
         self.target_fps = self.camera_config.target_fps
-        # self.rate_limit_continuous = rospy.Rate(self.camera_config.target_fps)
         self.rate_limit_fast = rospy.Rate(1000)
         self.max_allowed_acquisition_delay = self.camera_config.max_allowed_acquisition_delay
         self.last_run_time = rospy.get_rostime().to_sec()
@@ -182,7 +181,9 @@ class PipelineCamera:
         img_age = np.round(t - self.acquisition_stamp.to_sec(), 2)
         
         if img_age < -0.1:
-            print("[red]"+self.camera_name +": img arrived with timestamp in the future by 100ms!")
+            print(f"[red]{self.camera_name}: img arrived with timestamp in the future by {img_age}")
+        elif img_age > self.max_allowed_acquisition_delay:
+            print(f"[red]{self.camera_name}: img arrived with timestamp in the past by {img_age}")
 
       
     def enable_camera_cb(self, req):
