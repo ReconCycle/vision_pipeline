@@ -45,8 +45,9 @@ class PipelineCamera:
         self.camera_enabled = False
         
         # time stuff
-        self.rate_limit_continuous = rospy.Rate(self.camera_config.target_fps)
-        self.rate_limit_single = rospy.Rate(1000)
+        self.target_fps = self.camera_config.target_fps
+        # self.rate_limit_continuous = rospy.Rate(self.camera_config.target_fps)
+        self.rate_limit_fast = rospy.Rate(1000)
         self.max_allowed_acquisition_delay = self.camera_config.max_allowed_acquisition_delay
         self.last_run_time = rospy.get_rostime().to_sec()
 
@@ -333,8 +334,8 @@ class PipelineCamera:
 
     def run(self):
         single_mode_frame_accepted = False
+        t = rospy.get_rostime().to_sec()
         if self.single_mode:
-            t = rospy.get_rostime().to_sec()
             img_age = np.round(t - self.acquisition_stamp.to_sec(), 2)
             
             time_leaway = 0.05 # if the frame arrived very slightly before single_mode_time, then still process it
@@ -342,9 +343,12 @@ class PipelineCamera:
                 print("[blue]"+self.camera_name +" (single_mode): about to process, img_id:" + str(self.img_id) + ", img_age: "+ str(img_age) + "[/blue]")
                 single_mode_frame_accepted = True
 
-        
+        time_elapsed = t - self.last_run_time
         # process frame if in continuous mode or if single mode frame is accepted
-        if self.continuous_mode or single_mode_frame_accepted or self.is_first_frame:
+        # in continuous_mode, we run such that we meet the target_fps
+        if (self.continuous_mode and time_elapsed > 1/self.target_fps) or \
+            single_mode_frame_accepted or \
+            self.is_first_frame:
             
             compute_gaps = True # TODO: we could make this a parameter
             if single_mode_frame_accepted:
@@ -365,12 +369,8 @@ class PipelineCamera:
                     
                     self.processed_single_event.set()
 
-        # if in continuous mode, run at slower speed
-        if self.continuous_mode:
-            self.rate_limit_continuous.sleep()
-        else:
-            # runs much faster, but only processes one frame
-            self.rate_limit_single.sleep()
+        # rate limit set very fast
+        self.rate_limit_fast.sleep()
             
     # this has to be run on the main thread
     def run_frame(self, compute_gaps=False):
