@@ -218,7 +218,7 @@ class WorkSurfaceDetection:
             'bolt2': [0.095, 0.045],
             'bolt3': [0.160, 0.030],
             'bolt4': [0.230, 0.030],
-            'calibrationmount': [0.03, 0.3],
+            # 'calibrationmount': [0.03, 0.3], #! only one is on the table. This affects the results
             'bolt5': [0.60 - 0.230, 0.030],
             'bolt6': [0.60 - 0.160, 0.030],
             'bolt7': [0.60 - 0.095, 0.045],
@@ -233,10 +233,10 @@ class WorkSurfaceDetection:
         print("corners_m_dict", self.corners_m_dict)
 
         # 1. mask everything but the work surface
-        img = self.mask_worksurface(img)
+        # img = self.mask_worksurface(img) #! BROKEN in some cases
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        self.blur = cv2.GaussianBlur(gray, (5, 5), 0)
+        self.blur = cv2.GaussianBlur(gray, (5, 5), 0) # remove artefacts in image
         
         # 1st estimate for affine transform using only bolts
         found_bolts = self.find_bolts()
@@ -377,21 +377,24 @@ class WorkSurfaceDetection:
         
         
         # put labels on image
-        if self.debug:
-            for text, line in [("left_line", left_line), ("right_line", right_line), ("bottom_line", bottom_line), ("top_line", top_line)]:
-                if line is not None:
-                    center = center_point(line)
-                    print(text, center)
-                    cv2.putText(edges_rgb3, text, center, self.font_face, self.font_scale, (0,0,255), self.font_thickness, cv2.LINE_AA)
-        
-            for line in [left_line, right_line]:
-                if line is not None:
-                    cv2.line(edges_rgb3, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,0,255), 6)
+        for text, line in [("left_line", left_line), ("right_line", right_line), ("bottom_line", bottom_line), ("top_line", top_line)]:
+            if line is not None:
+                center = center_point(line)
+                print(text, center)
+                cv2.putText(edges_rgb3, text, center, self.font_face, self.font_scale, (0,0,255), self.font_thickness, cv2.LINE_AA)
+                cv2.putText(img, text, center, self.font_face, self.font_scale, (0,0,255), self.font_thickness, cv2.LINE_AA)
+    
+        for line in [left_line, right_line]:
+            if line is not None:
+                cv2.line(edges_rgb3, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,0,255), 6)
+                cv2.line(img, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,0,255), 6)
 
-            for line in [bottom_line, top_line]:
-                if line is not None:
-                    cv2.line(edges_rgb3, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,255,0), 6)
+        for line in [bottom_line, top_line]:
+            if line is not None:
+                cv2.line(edges_rgb3, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,255,0), 6)
+                cv2.line(img, (line[0][0], line[0][1]), (line[1][0],line[1][1]), (0,255,0), 6)
         
+        if self.debug:
             cv2.imshow("canny", scale_img(edges))
             cv2.imshow("houghlines", scale_img(edges_rgb1))
             cv2.imshow("bundled lines", scale_img(edges_rgb2))
@@ -520,8 +523,9 @@ class WorkSurfaceDetection:
         #          The smaller it is, the more false circles may be detected.
 
         #! the parameters for hough circles depends on the image input size
-        circles = cv2.HoughCircles(self.blur, cv2.HOUGH_GRADIENT, dp=1, minDist=50,
-                                    param1=50, param2=20, minRadius=10, maxRadius=20)
+        circles = cv2.HoughCircles(self.blur, cv2.HOUGH_GRADIENT, dp=1, minDist=30,
+                                    param1=50, param2=20, minRadius=15, maxRadius=20)
+        # param1=50, param2=20, minRadius=15, maxRadius=20
         circles_ignoring = []
 
         if circles is not None:
@@ -724,9 +728,9 @@ class WorkSurfaceDetection:
                 
             for (x, y, r) in self.circles_ignoring:
                 # Draw the circle in the output image
-                cv2.circle(img, (int(x), int(y)), int(r), (0,0,255), 3)
+                cv2.circle(img, (int(x), int(y)), int(r), (74, 74, 115), 3)
                 # Draw a cross in the output image
-                cv2.drawMarker(img, (int(x), int(y)), color=[0,0,255],
+                cv2.drawMarker(img, (int(x), int(y)), color=[74, 74, 115],
                     markerType=cv2.MARKER_CROSS,
                     markerSize=20,
                     thickness=2,
@@ -750,7 +754,7 @@ class WorkSurfaceDetection:
                         line_type=8)
                     
                     cv2.putText(img, key, (int(x)-100, int(y)-20), self.font_face, self.font_scale, [0,255,0], self.font_thickness, cv2.LINE_AA)
-                    
+        
         if show:
             cv2.imshow("1", scale_img(img))
             cv2.waitKey(0)
