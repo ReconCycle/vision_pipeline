@@ -15,7 +15,7 @@ from yolact_pkg.data.config import Config, COLORS
 from yolact_pkg.yolact import Yolact
 
 from tracker.byte_tracker import BYTETracker
-from graph_relations import GraphRelations, exists_detection, compute_iou
+from action_predictor.graph_relations import GraphRelations, exists_detection, compute_iou
 import obb
 import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords
@@ -338,6 +338,26 @@ class ObjectDetection:
         for group in graph_relations.groups:
             for detection in group:
                 pass
+
+        # TODO: for a group with multiple objects, add an enclosing object
+        # for group in graph_relations.groups:
+        #     print("group:", len(group))
+        #     if len(group) > 1:
+        #         # TODO: add enclosing object
+        #         for detection in group:
+        #             print(f"detection: {detection.label.name}")
+
+        #         # TODO: create enclosing detection:
+        #         detection = Detection()
+        #         detection.id = ????
+                
+        #         # hardcode all detections as hca_back
+        #         detection.label = ????
+        #         detection.score = float(1.0)
+        #         detection.box_px = ????
+        #         detection.mask_contour = ????
+                
+        #         detections.append(detection)
                     
         
         # TODO: track groups
