@@ -440,7 +440,7 @@ class ObjectDetection:
         # if device contains battery:
             # possibly flip orientation
         
-        if self.config is not None and self.config.reid and colour_img is not None:
+        if self.object_reid is not None and self.config is not None and self.config.reid and colour_img is not None:
             # object re-id
             self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
         

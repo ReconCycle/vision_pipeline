@@ -23,6 +23,7 @@ import tf
 
 from object_detection_model import ObjectDetectionModel
 from object_reid_sift import ObjectReIdSift
+from object_reid_superglue import ObjectReIdSuperGlue
 from config import load_config
 from pipeline_basler import PipelineBasler
 from pipeline_realsense import PipelineRealsense
@@ -53,7 +54,7 @@ class ROSPipeline():
         # load object reid
         object_reid = None
         if self.config.reid:
-            object_reid = ObjectReIdSift()
+            object_reid = ObjectReIdSuperGlue(self.config, model)
 
         self.pipeline_basler = PipelineBasler(model, object_reid, self.config, self.static_tf_manager)
         self.pipeline_realsense = PipelineRealsense(model, object_reid, self.config, self.static_tf_manager)

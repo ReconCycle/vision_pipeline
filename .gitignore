@@ -7,6 +7,7 @@ data_full/
 data_limited/
 datasets/
 datasets_symlink
+datasets_reid/
 camera_images/
 labelled_images/
 object_templates/

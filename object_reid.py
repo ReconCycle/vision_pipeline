@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import sys
 import numpy as np
 import time
 import cv2
@@ -13,17 +14,150 @@ from shapely.geometry import Polygon, Point
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
 from types import SimpleNamespace
+from object_detection import ObjectDetection
 
 from action_predictor.graph_relations import GraphRelations, exists_detection, compute_iou
+from work_surface_detection_opencv import WorkSurfaceDetection
 
-from context_action_framework.types import Action, Detection, Gap, Label
-
+from context_action_framework.types import Action, Detection, Gap, Label, Camera
+from tqdm import tqdm
 from helpers import scale_img
 
 
 class ObjectReId:
-    def __init__(self) -> None:
-        pass
+    def __init__(self, config, det_model) -> None:
+        self.det_model = det_model
+        self.config = config
+
+        self.reid_dataset = {}
+
+        # ! we can use opencv detector if we set det_model = None
+
+        # pretend to use Basler camera
+        self.camera_type = Camera.basler
+        self.camera_name = self.camera_type.name
+        
+        self.camera_config = self.config.basler
+        
+        self.camera_config.enable_topic = "set_sleeping" # basler camera specific
+        self.camera_config.enable_camera_invert = True # enable = True, but the topic is called set_sleeping, so the inverse
+        self.camera_config.use_worksurface_detection = True
+        
+        self.parent_frame = None
+
+        self.worksurface_detection = None
+
+        self.object_detection = ObjectDetection(self.config, self.camera_config, self.det_model, None, self.camera_type, self.parent_frame, use_ros=False)
+
+        self.root_dir = "./datasets_reid/2023-02-20_hca_backs"
+        self.processed_dir = "./datasets_reid/2023-02-20_hca_backs_processed"
+
+        self.process_dataset()
+        self.load_dataset()
+
+
+    def process_dataset(self):
+        print("[blue]processing dataset for reid...")
+
+        # make the processed directory if it doesn't already exist
+        if not os.path.isdir(self.processed_dir):
+            os.makedirs(self.processed_dir)
+
+        # iterate over folders and process images
+        for subdir, dirs, files in tqdm(list(os.walk(self.root_dir))):
+            for file in files:
+                filepath = os.path.join(subdir, file)
+                subfolder = os.path.basename(subdir)
+
+                if filepath.endswith(".jpg") or filepath.endswith(".png"):
+                    processed_filepath = os.path.join(self.processed_dir, subfolder, file)
+
+                    # check if file exists in processed_dir
+                    if not os.path.isfile(processed_filepath):
+                        self.process_img(filepath, self.processed_dir, subfolder, file)
+
+
+    def process_img(self, filepath, processed_dir, subfolder, file):
+        processed_filepath = os.path.join(processed_dir, subfolder, file)
+        processed_dirpath = os.path.dirname(processed_filepath)
+
+        print(f"process {processed_filepath}")
+
+        # make the processed directory if it doesn't already exist
+        if not os.path.isdir(processed_dirpath):
+            os.makedirs(processed_dirpath)
+        
+        img = cv2.imread(filepath)
+
+        # TODO: do worksurface_detection for each image do it for each image
+        if self.worksurface_detection is None:
+                print(self.camera_name +": detecting work surface...")
+                self.worksurface_detection = WorkSurfaceDetection(img, self.camera_config.work_surface_ignore_border_width, debug=self.camera_config.debug_work_surface_detection)
+
+        labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(img, depth_img=None, worksurface_detection=self.worksurface_detection, extra_text=None, camera_info=None)
+
+        img0_cropped, obb_poly1 = self.find_and_crop_det(img, graph_relations)
+
+        # write image to file
+        cv2.imwrite(processed_filepath, img0_cropped)
+
+        # remove properties we don't need to save
+        for detection in detections:
+            detection.mask = None
+            detection.mask_contour = None
+        
+        # pickle detections
+        obj_templates_json_str = jsonpickle.encode(detections, keys=True, warn=True, indent=2)
+
+        filename = os.path.splitext(file)[0]
+
+        # write detections to file
+        with open(os.path.join(processed_dirpath, filename + ".json"), 'w', encoding='utf-8') as f:
+            f.write(obj_templates_json_str)
+
+
+    def load_dataset(self):
+        print("[blue]loading dataset...")
+        
+        # iterate over folders load images and detections
+        for subdir, dirs, files in tqdm(list(os.walk(self.processed_dir))):
+            for file in files:
+                filepath = os.path.join(subdir, file)
+                subfolder = os.path.basename(subdir)
+                filename = os.path.splitext(file)[0]
+
+                filepath_json = os.path.join(subdir, filename + ".json")
+
+                if filepath.endswith(".jpg") or filepath.endswith(".png"):
+
+                    # print("filepath", filepath)
+                    # print("filepath_json", filepath_json)
+
+                    # check if file json exists
+                    if os.path.isfile(filepath_json):
+                        # load image and json
+                        img = cv2.imread(filepath)
+                        try:
+                            with open(filepath_json, 'r') as json_file:
+                                detections = jsonpickle.decode(json_file.read(), keys=True)
+                                
+                        except ValueError as e:
+                            print("couldn't read json file properly: ", e)
+
+                        # TODO: put img, detections in list or something
+
+                        if subfolder not in self.reid_dataset:
+                            self.reid_dataset[subfolder] = []
+
+                        reid_item = SimpleNamespace()
+                        reid_item.img = img
+                        reid_item.detections = detections
+                        reid_item.name = subfolder
+
+                        self.reid_dataset[subfolder].append(reid_item)
+        
+        print("[green]reid dataset loaded.")
+
 
 
     @staticmethod

@@ -66,11 +66,12 @@ class ObjectReIdSift(ObjectReId):
 
         jsonpickle_numpy.register_handlers()
         
-        if not os.path.exists(self.folder):
-            os.mkdir(self.folder)
+        # if not os.path.exists(self.folder):
+        #     os.mkdir(self.folder)
         
-        self.load_templates()
+        # self.load_templates()
     
+    #! unused for now
     def load_templates(self):
         # load json from file
         if os.path.isdir(self.folder):
@@ -120,6 +121,7 @@ class ObjectReIdSift(ObjectReId):
             print("[red]" + os.path.join(self.folder, self.filename) + " doesn't exist![/red]")
     
     
+    #! unused for now
     def save_templates(self, new_object_template=None, object_img=None):
         if new_object_template is not None:
             self.object_templates.append(new_object_template)
@@ -188,6 +190,8 @@ class ObjectReIdSift(ObjectReId):
 
 
     def process_detection(self, img, detections, graph_relations, visualise=False):
+
+        # TODO: implement!
         
         print("\nobject re-id, processing detections..." + str(len(detections)))
         print("img.shape", img.shape)
@@ -213,6 +217,7 @@ class ObjectReIdSift(ObjectReId):
             unknown_imgs.append(img_cropped)
             
             # todo: I need the OBB here, to ignore keypoints outside of OBB
+            # calculate_sift takes parameters: calculate_sift(img_cropped, obb_poly, visualise=False, vis_id=1)
             keypoints, descriptors = self.calculate_sift(img_cropped, center_cropped, detection_hca_back, visualise)
             
             # add this property
@@ -436,7 +441,7 @@ class ObjectReIdSift(ObjectReId):
     def add_template(self):
         pass
         
-    
+
     def calculate_sift(self, img_cropped, obb_poly, visualise=False, vis_id=1):
 
         keypoints, descriptors = self.sift.detectAndCompute(img_cropped, None)
@@ -453,6 +458,8 @@ class ObjectReIdSift(ObjectReId):
         
         # only include keypoints that are inside the obb
         for keypoint, descriptor in zip(keypoints, descriptors):
+            print("obb_poly", obb_poly)
+            print("keypoint, descriptor", keypoint, descriptor)
             if obb_poly.contains(Point(*keypoint.pt)):
                 keypoints_in_poly.append(keypoint)
                 descriptors_in_poly.append(descriptor)

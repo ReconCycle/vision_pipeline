@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import sys
 import numpy as np
 import time
 import cv2
@@ -13,7 +14,8 @@ import matplotlib.cm as cm
 
 from types import SimpleNamespace
 
-from graph_relations import GraphRelations, exists_detection, compute_iou
+from action_predictor.graph_relations import GraphRelations, exists_detection, compute_iou
+from context_action_framework.types import Action, Detection, Gap, Label
 
 from helpers import scale_img
 from object_reid import ObjectReId
@@ -26,8 +28,8 @@ from superglue.models.utils import (AverageTimer, VideoStreamer,
 
 
 class ObjectReIdSuperGlue(ObjectReId):
-    def __init__(self, opt=None) -> None:
-        super().__init__()
+    def __init__(self, config, model, opt=None) -> None:
+        super().__init__(config, model)
     
         torch.set_grad_enabled(False)
         
@@ -42,7 +44,7 @@ class ObjectReIdSuperGlue(ObjectReId):
             opt.max_keypoints = -1
         
         self.opt = opt
-        config = {
+        superglue_config = {
             'superpoint': {
                 'nms_radius': opt.nms_radius,
                 'keypoint_threshold': opt.keypoint_threshold,
@@ -57,10 +59,43 @@ class ObjectReIdSuperGlue(ObjectReId):
 
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.matching = Matching(config).eval().to(self.device)
+        self.matching = Matching(superglue_config).eval().to(self.device)
         self.keys = ['keypoints', 'scores', 'descriptors']
         
         # self.timer = AverageTimer()
+
+    def process_detection(self, img, detections, graph_relations, visualise=False):
+        # ! THIS IS STILL WIP
+        
+        print("\nobject re-id, processing detections..." + str(len(detections)))
+        print("img.shape", img.shape)
+        
+        # graph_relations.exists provides a list
+        detections_hca_back = graph_relations.exists(Label.hca_back)
+        print("Num hca_backs: " + str(len(detections_hca_back)))
+
+        if len(detections_hca_back) >= 1:
+            # get the first one only for now
+            detection_hca_back = detections_hca_back[0]
+
+            img0_cropped, obb_poly1 = self.find_and_crop_det(img, graph_relations)
+
+            print("obb_poly1", obb_poly1)
+            print("img0_cropped", img0_cropped.shape)
+
+            cv2.imwrite("debug_img0_cropped.png", img0_cropped)
+
+            # TODO: compare with all objects in our library and find which one it is.
+
+            for name, device_list in self.reid_dataset.items():
+                print("device name", name)
+                device = device_list[0]
+
+                score = self.compare(img0_cropped, device.img, visualise=True)
+                print("score", score)
+
+            sys.exit() # !DEBUG
+
 
     def compare_full_img(self, img0, graph0, img1, graph1, visualise=False):
         img0_cropped, obb_poly1 = self.find_and_crop_det(img0, graph0)
@@ -77,7 +112,11 @@ class ObjectReIdSuperGlue(ObjectReId):
             print("[blue]starting compare...[/blue]")
         # self.timer.update('data')
         item = 0
-        
+                
+        # convert to greyscale
+        img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
+        img2 = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
+
         img1_tensor = frame2tensor(img1, self.device)
         last_data = self.matching.superpoint({'image': img1_tensor})
         last_data = {k+'0': last_data[k] for k in self.keys}
