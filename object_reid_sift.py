@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import sys
 import numpy as np
 import time
 import cv2
@@ -50,7 +51,8 @@ font_thickness = 1
 
 # object reidentification - reidentify object based on features
 class ObjectReIdSift(ObjectReId):
-    def __init__(self) -> None:
+    def __init__(self, config, model) -> None:
+        super().__init__(config, model)
         
         self.object_templates = []
         self.template_imgs = []
@@ -163,24 +165,23 @@ class ObjectReIdSift(ObjectReId):
     # comparison function for experiments
     def compare(self, img1, poly1, img2, poly2, visualise=False):
         
-        # img1_cropped, obb_poly1 = self.find_and_crop_det(img1, graph1)
-        # img2_cropped, obb_poly2 = self.find_and_crop_det(img2, graph2)
-        
-        keypoints1, descriptors1 = self.calculate_sift(img1, poly1, visualise, vis_id=1)
+        # keypoints1, descriptors1 = self.calculate_sift(img1, poly1)
+        keypoints1, descriptors1 = self.calculate_sift(img1, None) #! DEBUG
         
         template1 = SimpleNamespace()
         template1.id = 1
         template1.sift_keypoints = keypoints1
         template1.sift_descriptors = descriptors1
         
-        keypoints2, descriptors2 = self.calculate_sift(img2, poly2, visualise, vis_id=2)
+        # keypoints2, descriptors2 = self.calculate_sift(img2, poly2)
+        keypoints2, descriptors2 = self.calculate_sift(img2, None) #! DEBUG
         
         template2 = SimpleNamespace()
         template2.id = 2
         template2.sift_keypoints = keypoints2
         template2.sift_descriptors = descriptors2
     
-        sift_score = self.calculate_sift_results(img1, template1, img2, template2, False, visualise)
+        sift_score = self.calculate_sift_results(img1, template1, img2, template2, poly1, poly2, visualise)
 
         if visualise:
             cv2.waitKey()
@@ -190,6 +191,44 @@ class ObjectReIdSift(ObjectReId):
 
 
     def process_detection(self, img, detections, graph_relations, visualise=False):
+        # ! THIS IS STILL WIP
+        
+        print("\nobject re-id, processing detections..." + str(len(detections)))
+        print("img.shape", img.shape)
+        
+        # graph_relations.exists provides a list
+        detections_hca_back = graph_relations.exists(Label.hca_back)
+        print("Num hca_backs: " + str(len(detections_hca_back)))
+
+        if len(detections_hca_back) >= 1:
+            # get the first one only for now
+            detection_hca_back = detections_hca_back[0]
+
+            img1_cropped, obb_poly1 = self.find_and_crop_det(img, graph_relations)
+            obb_poly1 = Polygon(obb_poly1)
+
+            print("obb_poly1", obb_poly1)
+            print("img1_cropped", img1_cropped.shape)
+
+            cv2.imwrite("debug_img1_cropped.png", img1_cropped)
+
+            # TODO: compare with all objects in our library and find which one it is.
+
+            for name, device_list in self.reid_dataset.items():
+                print("device name", name)
+                device = device_list[0]
+
+                score = self.compare(img1_cropped, obb_poly1, device.img, device.obb_poly, visualise=True)
+                # score = self.compare(img1_cropped, None, device.img, None, visualise=True)
+                print("score", score)
+
+            # TODO: compute the one with the largest score
+            # TODO: maybe I already did this in process_detection_old
+
+            sys.exit() # !DEBUG
+
+    #! unused for now
+    def process_detection_old(self, img, detections, graph_relations, visualise=False):
 
         # TODO: implement!
         
@@ -218,6 +257,7 @@ class ObjectReIdSift(ObjectReId):
             
             # todo: I need the OBB here, to ignore keypoints outside of OBB
             # calculate_sift takes parameters: calculate_sift(img_cropped, obb_poly, visualise=False, vis_id=1)
+            print("center_cropped", center_cropped)
             keypoints, descriptors = self.calculate_sift(img_cropped, center_cropped, detection_hca_back, visualise)
             
             # add this property
@@ -353,7 +393,7 @@ class ObjectReIdSift(ObjectReId):
         if visualise:
             self.visualise(img, new_id_pairs, unknown_templates, best_iou_scores, best_sift_scores, best_overall_scores)
         
-    
+    #! unused for now
     def visualise(self, img, new_id_pairs, unknown_templates, best_iou_scores, best_sift_scores, best_overall_scores):
         ###################################
         # VISUALISE!
@@ -437,48 +477,56 @@ class ObjectReIdSift(ObjectReId):
         cv2.waitKey()
         cv2.destroyAllWindows()
         self.counter += 1
-                            
+
+    #! unused for now             
     def add_template(self):
         pass
         
-
-    def calculate_sift(self, img_cropped, obb_poly, visualise=False, vis_id=1):
+    def calculate_sift(self, img_cropped, obb_poly=None, visualise=False, vis_id=1):
 
         keypoints, descriptors = self.sift.detectAndCompute(img_cropped, None)
-        keypoints_in_poly = []
-        descriptors_in_poly = []
 
-        if keypoints is None:
-            print("keypoints is None!")
-            return [], []
-        
-        if descriptors is None:
-            print("descriptors is None!")
-            return [], []
-        
-        # only include keypoints that are inside the obb
-        for keypoint, descriptor in zip(keypoints, descriptors):
-            print("obb_poly", obb_poly)
-            print("keypoint, descriptor", keypoint, descriptor)
-            if obb_poly.contains(Point(*keypoint.pt)):
-                keypoints_in_poly.append(keypoint)
-                descriptors_in_poly.append(descriptor)
+        if obb_poly is not None:
+            keypoints_in_poly = []
+            descriptors_in_poly = []
+
+            if keypoints is None:
+                print("keypoints is None!")
+                return [], []
+            
+            if descriptors is None:
+                print("descriptors is None!")
+                return [], []
+            
+            # only include keypoints that are inside the obb
+            for keypoint, descriptor in zip(keypoints, descriptors):
+                if obb_poly.contains(Point(*keypoint.pt)):
+                    keypoints_in_poly.append(keypoint)
+                    descriptors_in_poly.append(descriptor)
+        else:
+            keypoints_in_poly = keypoints
+            descriptors_in_poly = descriptors
         
         # descriptors is an array, keypoints is a list
         descriptors_in_poly = np.array(descriptors_in_poly)
 
+        return keypoints_in_poly, descriptors_in_poly
+    
+
+    def draw_sift_features(self, img, keypoints, obb_poly=None, vis_id=1, visualise=False):
+        img_draw = img.copy()
+        if obb_poly is not None:
+            cv2.drawContours(img_draw, [np.array(obb_poly.exterior.coords).astype(int)], 0, (0, 255, 0), 2)
+        # cv2.drawContours(img_cropped_copy, [obb2_arr], 0, (0, 255, 0), 2)
+        im_with_keypoints = cv2.drawKeypoints(img_draw,
+                                                keypoints,
+                                                np.array([]),
+                                                (0, 0, 255),
+                                                cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
         if visualise:
-            img_cropped_copy = img_cropped.copy()
-            cv2.drawContours(img_cropped_copy, [np.array(obb_poly.exterior.coords).astype(int)], 0, (0, 255, 0), 2)
-            # cv2.drawContours(img_cropped_copy, [obb2_arr], 0, (0, 255, 0), 2)
-            im_with_keypoints = cv2.drawKeypoints(img_cropped_copy,
-                                                    keypoints_in_poly,
-                                                    np.array([]),
-                                                    (0, 0, 255),
-                                                    cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
             cv2.imshow("keypoints_" + str(vis_id), im_with_keypoints)
 
-        return keypoints_in_poly, descriptors_in_poly
+        return im_with_keypoints
     
     @staticmethod
     def calculate_sift_matches(des1, des2):
@@ -527,7 +575,7 @@ class ObjectReIdSift(ObjectReId):
         )
         return matchPlot
     
-    def calculate_sift_results(self, uk_img, unknown_template, tp_img, object_template, rotated, visualise=False):
+    def calculate_sift_results(self, img1, unknown_template, img2, object_template, poly1=None, poly2=None, visualise=False):
         keypoints1 = unknown_template.sift_keypoints
         descriptors1 = unknown_template.sift_descriptors
         keypoints2 = object_template.sift_keypoints
@@ -555,7 +603,7 @@ class ObjectReIdSift(ObjectReId):
         pts1_matches = np.array([keypoints1[match[0].queryIdx].pt for match in matches])
         pts2_matches = np.array([keypoints2[match[0].trainIdx].pt for match in matches])
         
-        mean_error, median_error, max_error = self.calculate_matching_error(pts1_matches, pts2_matches)
+        mean_error, median_error, max_error, angle = self.calculate_matching_error(pts1_matches, pts2_matches)
         
         min_num_kpts = min(len(keypoints1), len(keypoints2))
 
@@ -573,7 +621,9 @@ class ObjectReIdSift(ObjectReId):
             score = np.clip(score - 0.1, 0, 1) #! do we want this?
         
         if len(matches) > 0 and visualise:
-            plot = self.get_sift_plot(uk_img, tp_img, keypoints1, keypoints2, matches)
+            img1_draw = self.draw_sift_features(img1, keypoints1, poly1)
+            img2_draw = self.draw_sift_features(img2, keypoints2, poly2)
+            plot = self.get_sift_plot(img1_draw, img2_draw, keypoints1, keypoints2, matches)
             
             cv2.putText(plot, "unknown: " + str(unknown_template.id), [10, 20], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             
@@ -587,6 +637,9 @@ class ObjectReIdSift(ObjectReId):
             cv2.putText(plot, "mean_error: " + str(np.round(mean_error, 2)), [10, 120], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             cv2.putText(plot, "median_error: " + str(np.round(median_error, 2)), [10, 140], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             cv2.putText(plot, "max_error: " + str(np.round(max_error, 2)), [10, 160], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
+
+            if angle is not None:
+                cv2.putText(plot, "angle: " + str(np.round(np.degrees(angle))), [10, 180], font_face, font_scale, [0, 255, 0], font_thickness, cv2.LINE_AA)
             
             # cv2.imshow("sift_result_" + str(unknown_template.id) + "_" + str(object_template.id) + "_" + str(int(rotated)), plot)
             cv2.imshow("sift_result", plot)

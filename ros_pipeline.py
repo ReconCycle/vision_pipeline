@@ -54,7 +54,7 @@ class ROSPipeline():
         # load object reid
         object_reid = None
         if self.config.reid:
-            object_reid = ObjectReIdSuperGlue(self.config, model)
+            object_reid = ObjectReIdSift(self.config, model)
 
         self.pipeline_basler = PipelineBasler(model, object_reid, self.config, self.static_tf_manager)
         self.pipeline_realsense = PipelineRealsense(model, object_reid, self.config, self.static_tf_manager)

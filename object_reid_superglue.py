@@ -78,12 +78,12 @@ class ObjectReIdSuperGlue(ObjectReId):
             # get the first one only for now
             detection_hca_back = detections_hca_back[0]
 
-            img0_cropped, obb_poly1 = self.find_and_crop_det(img, graph_relations)
+            img1_cropped, obb_poly1 = self.find_and_crop_det(img, graph_relations)
 
             print("obb_poly1", obb_poly1)
-            print("img0_cropped", img0_cropped.shape)
+            print("img1_cropped", img1_cropped.shape)
 
-            cv2.imwrite("debug_img0_cropped.png", img0_cropped)
+            cv2.imwrite("debug_img1_cropped.png", img1_cropped)
 
             # TODO: compare with all objects in our library and find which one it is.
 
@@ -91,7 +91,7 @@ class ObjectReIdSuperGlue(ObjectReId):
                 print("device name", name)
                 device = device_list[0]
 
-                score = self.compare(img0_cropped, device.img, visualise=True)
+                score = self.compare(img1_cropped, device.img, visualise=True)
                 print("score", score)
 
             sys.exit() # !DEBUG

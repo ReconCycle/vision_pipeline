@@ -107,7 +107,7 @@ class ObjectReId:
             detection.mask_contour = None
         
         # pickle detections
-        obj_templates_json_str = jsonpickle.encode(detections, keys=True, warn=True, indent=2)
+        obj_templates_json_str = jsonpickle.encode((obb_poly1, detections), keys=True, warn=True, indent=2)
 
         filename = os.path.splitext(file)[0]
 
@@ -139,7 +139,7 @@ class ObjectReId:
                         img = cv2.imread(filepath)
                         try:
                             with open(filepath_json, 'r') as json_file:
-                                detections = jsonpickle.decode(json_file.read(), keys=True)
+                                obb_poly, detections = jsonpickle.decode(json_file.read(), keys=True)
                                 
                         except ValueError as e:
                             print("couldn't read json file properly: ", e)
@@ -151,6 +151,7 @@ class ObjectReId:
 
                         reid_item = SimpleNamespace()
                         reid_item.img = img
+                        reid_item.obb_poly = Polygon(obb_poly)
                         reid_item.detections = detections
                         reid_item.name = subfolder
 
@@ -179,6 +180,25 @@ class ObjectReId:
         Y = pad(pts2_matches)
         # print("Y.shape", X.shape)
         A, res, rank, s = np.linalg.lstsq(X, Y, rcond=None)
+
+        # extract rotation
+        # https://math.stackexchange.com/questions/13150/extracting-rotation-scale-values-from-2d-transformation-matrix
+        a = A[0, 0]
+        b = A[0, 1]
+        c = A[1, 0]
+        d = A[1, 1]
+
+        angle1 = np.arctan2(-b, a)
+        angle2 = np.arctan2(c, d)
+        
+        angle = np.mean([angle1, angle2])
+        if np.abs(np.degrees(angle1) - np.degrees(angle2)) > 5: # 5 degree limit
+            print(f"[red] two possible angles differ! {np.round(np.degrees(angle1))}, {np.round(np.degrees(angle2))}")
+            angle = None
+        
+        else:
+            print("angle", np.round(np.degrees(angle)))
+
         affine_transform = lambda x: unpad(np.dot(pad(x), A))
         
         # print("affine_transform(pts1_matches).shape", affine_transform(pts1_matches).shape)
@@ -193,7 +213,7 @@ class ObjectReId:
         # print("median_error", median_error)
         # print("max_error", max_error)
         
-        return mean_error, median_error, max_error
+        return mean_error, median_error, max_error, angle
 
 
     @classmethod
