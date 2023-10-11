@@ -13,6 +13,7 @@ from scipy.spatial.transform import Rotation
 from shapely.geometry import Polygon, Point
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
+import pickle
 from types import SimpleNamespace
 from object_detection import ObjectDetection
 
@@ -22,6 +23,7 @@ from work_surface_detection_opencv import WorkSurfaceDetection
 from context_action_framework.types import Action, Detection, Gap, Label, Camera
 from tqdm import tqdm
 from helpers import scale_img
+from object_sift import ObjectSift
 
 
 class ObjectReId:
@@ -51,6 +53,8 @@ class ObjectReId:
 
         self.root_dir = "./datasets_reid/2023-02-20_hca_backs"
         self.processed_dir = "./datasets_reid/2023-02-20_hca_backs_processed"
+
+        self.object_sift = ObjectSift()
 
         self.process_dataset()
         self.load_dataset()
@@ -96,18 +100,28 @@ class ObjectReId:
 
         labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(img, depth_img=None, worksurface_detection=self.worksurface_detection, extra_text=None, camera_info=None)
 
-        img0_cropped, obb_poly1 = self.find_and_crop_det(img, graph_relations)
-
+        img_cropped, obb = self.find_and_crop_det(img, graph_relations, rotate=True)
+        
         # write image to file
-        cv2.imwrite(processed_filepath, img0_cropped)
+        cv2.imwrite(processed_filepath, img_cropped)
 
         # remove properties we don't need to save
         for detection in detections:
             detection.mask = None
             detection.mask_contour = None
-        
+
+        # precompute all the sift features
+        sift_keypoints, sift_descriptors = self.object_sift.calculate_sift(img_cropped, obb)
+
+        serialised_keypoints = []
+        for point in sift_keypoints:
+                temp = (point.pt, point.size, point.angle, point.response, point.octave, point.class_id)
+                serialised_keypoints.append(temp)
+
+        # todo: also save visualisation of keypoints, descriptors
+
         # pickle detections
-        obj_templates_json_str = jsonpickle.encode((obb_poly1, detections), keys=True, warn=True, indent=2)
+        obj_templates_json_str = jsonpickle.encode((obb, detections, serialised_keypoints, sift_descriptors), keys=True, warn=True, indent=2)
 
         filename = os.path.splitext(file)[0]
 
@@ -138,21 +152,35 @@ class ObjectReId:
                         # load image and json
                         img = cv2.imread(filepath)
                         try:
-                            with open(filepath_json, 'r') as json_file:
-                                obb_poly, detections = jsonpickle.decode(json_file.read(), keys=True)
+                            with open(filepath_json, 'rb') as json_file:
+                                obb, detections, serialised_keypoints, sift_descriptors = jsonpickle.decode(json_file.read(), keys=True)
                                 
                         except ValueError as e:
                             print("couldn't read json file properly: ", e)
 
-                        # TODO: put img, detections in list or something
+                        sift_keypoints = []
+                        for point in serialised_keypoints:
+                            temp = cv2.KeyPoint(
+                                x=point[0][0],
+                                y=point[0][1],
+                                size=point[1],
+                                angle=point[2],
+                                response=point[3],
+                                octave=point[4],
+                                class_id=point[5]
+                            )
+                            sift_keypoints.append(temp)
+
 
                         if subfolder not in self.reid_dataset:
                             self.reid_dataset[subfolder] = []
 
                         reid_item = SimpleNamespace()
                         reid_item.img = img
-                        reid_item.obb_poly = Polygon(obb_poly)
+                        reid_item.obb = obb
                         reid_item.detections = detections
+                        reid_item.sift_keypoints = sift_keypoints
+                        reid_item.sift_descriptors = sift_descriptors
                         reid_item.name = subfolder
 
                         self.reid_dataset[subfolder].append(reid_item)
@@ -217,7 +245,7 @@ class ObjectReId:
 
 
     @classmethod
-    def find_and_crop_det(cls, img, graph, rotate_180=False):
+    def find_and_crop_det(cls, img, graph, rotate=False):
         # some kind of derivative of: process_detection
         detections_hca_back = graph.exists(Label.hca_back)
         # print("dets1, num. of hca_back: " + str(len(detections_hca_back1)))
@@ -227,7 +255,7 @@ class ObjectReId:
         
         det_hca_back = detections_hca_back[0]
         
-        img_cropped, center_cropped = cls.get_det_img(img, det_hca_back)
+        img_cropped, center_cropped = cls.get_det_img(img, det_hca_back, rotate=rotate)
         
         # unrotated obb:
         # obb = hca_back.obb_px - hca_back.center_px + center_cropped
@@ -235,8 +263,8 @@ class ObjectReId:
         # cv2.drawContours(img_cropped, [obb_arr], 0, (0, 255, 255), 2)
         
         # rotated obb:
-        obb2 = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.tf.rotation, center_cropped)
-        obb2_arr = np.array(obb2).astype(int)
+        obb = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.tf.rotation, center_cropped, rotate=rotate)
+        
         # obb2_list = list(obb2_arr)
 
         # print("obb2_arr", obb2_arr.shape)
@@ -249,10 +277,10 @@ class ObjectReId:
         # poly_arr = np.array(poly.exterior.coords).astype(int)
         # print("poly_arr", poly_arr)
         
-        return img_cropped, obb2_arr
+        return img_cropped, obb
 
     @classmethod
-    def rotated_and_centered_obb(cls, obb_or_poly, center, quat, new_center=None, world_coords=False):
+    def rotated_and_centered_obb(cls, obb_or_poly, center, quat, new_center=None, rotate=False, world_coords=False):
         if isinstance(obb_or_poly, Polygon):
             points = np.array(obb_or_poly.exterior.coords)
             points = points[:, :2] # ignore the z value
@@ -262,29 +290,33 @@ class ObjectReId:
         
         # print("points", points.shape)
         # print("center", center.shape)
-
+        
         # move obb to (0, 0)
         points_centered = points - center
 
-        # sometimes the angle is in the z axis (basler) and for realsense it is different.
-        # this is a hack for that
-        angle = cls.ros_quat_to_rad(quat)
+        if rotate:
 
-        # correction to make longer side along y-axis
-        angle = ((0.5 * np.pi) - angle) % np.pi
+            # sometimes the angle is in the z axis (basler) and for realsense it is different.
+            # this is a hack for that
+            angle = cls.ros_quat_to_rad(quat)
 
-        # for pixel coords we use the same rotation matrix as in getRotationMatrix2D
-        # that we use to rotate the image
-        # I don't know why OPENCV uses a different rotation matrix in getRotationMatrix2D
-        rot_mat = np.array([[np.cos(angle), np.sin(angle)],
-                            [-np.sin(angle),  np.cos(angle)]])
+            # correction to make longer side along y-axis
+            angle = ((0.5 * np.pi) - angle) % np.pi
 
-        # for world coordinates, use standard rotation matrix
-        if world_coords:
-            rot_mat = np.array([[np.cos(angle), -np.sin(angle)],
-                                [np.sin(angle),  np.cos(angle)]])
+            # for pixel coords we use the same rotation matrix as in getRotationMatrix2D
+            # that we use to rotate the image
+            # I don't know why OPENCV uses a different rotation matrix in getRotationMatrix2D
+            rot_mat = np.array([[np.cos(angle), np.sin(angle)],
+                                [-np.sin(angle),  np.cos(angle)]])
 
-        points_rotated = np.dot(points_centered, rot_mat.T)
+            # for world coordinates, use standard rotation matrix
+            if world_coords:
+                rot_mat = np.array([[np.cos(angle), -np.sin(angle)],
+                                    [np.sin(angle),  np.cos(angle)]])
+
+            points_rotated = np.dot(points_centered, rot_mat.T)
+        else:
+            points_rotated = points_centered
 
         # print("points_rotated", points_rotated.shape)
         if new_center is not None:
@@ -316,19 +348,22 @@ class ObjectReId:
 
 
     @classmethod
-    def get_det_img(cls, img, det):
+    def get_det_img(cls, img, det, rotate=False):
         center = det.center_px
         center = (int(center[0]), int(center[1]))
         
         height, width = img.shape[:2]
         
-        # rotate image around center
-        angle_rad = cls.ros_quat_to_rad(det.tf.rotation)
-        angle_rad = ((0.5 * np.pi) - angle_rad) % np.pi
-        
-        # note: getRotationMatrix2D rotation matrix is different from standard rotation matrix
-        rot_mat = cv2.getRotationMatrix2D(center, np.rad2deg(angle_rad), 1.0)
-        img_rot = cv2.warpAffine(img, rot_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+        if rotate:
+            # rotate image around center
+            angle_rad = cls.ros_quat_to_rad(det.tf.rotation)
+            angle_rad = ((0.5 * np.pi) - angle_rad) % np.pi
+            
+            # note: getRotationMatrix2D rotation matrix is different from standard rotation matrix
+            rot_mat = cv2.getRotationMatrix2D(center, np.rad2deg(angle_rad), 1.0)
+            img_rot = cv2.warpAffine(img, rot_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+        else:
+            img_rot = img
         
         # crop image around center point
         size = 200
