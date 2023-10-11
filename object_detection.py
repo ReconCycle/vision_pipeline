@@ -130,10 +130,28 @@ class ObjectDetection:
                 
                 # print("mask.shape", mask.shape)
                 cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if len(cnts) > 0:
+                if len(cnts) == 1:
+                    detection.mask_contour = np.squeeze(cnts[0])
+                elif len(cnts) > 1:
                     # get the contour with the largest area. Assume this is the one containing our object
-                    cnt = max(cnts, key = cv2.contourArea)
-                    detection.mask_contour = np.squeeze(cnt)
+                    # cnt = max(cnts, key = cv2.contourArea)
+                    # cnt = np.squeeze(cnt)
+                    # detection.mask_contour = cnt
+
+                    # todo: maybe we can take largest N contours
+
+                    # Sometimes the mask contains disconnected components. 
+                    # We want to have one contour containing all the components.
+
+                    # put all the points of all the contours in one list.
+                    # take the convex hull of this.
+                    # use this as our contour
+                    cnts_concat = np.concatenate(cnts)
+                    cnts_concat = np.squeeze(cnts_concat)
+                    convex_hull = cv2.convexHull(np.array(cnts_concat))
+                    convex_hull = np.squeeze(convex_hull)
+
+                    detection.mask_contour = convex_hull
                 else:
                     detection.mask_contour = None
                 
@@ -201,9 +219,13 @@ class ObjectDetection:
             detection.angle_px = angle
 
             poly = None
+            # we need at least 3 points to make a polygon
             if detection.mask_contour is not None and len(detection.mask_contour) > 2:
                 poly = Polygon(detection.mask_contour)
                 poly = make_valid_poly(poly)
+            else:
+                print(f"[red]not making poly. is None: {detection.mask_contour is None}, len {len(detection.mask_contour)}")
+
 
             detection.polygon_px = poly
             
