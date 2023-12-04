@@ -245,12 +245,18 @@ class ObjectReId:
 
 
     @classmethod
-    def find_and_crop_det(cls, img, graph, rotate=False):
+    def find_and_crop_det(cls, img, graph, rotate_180=False, labels=[Label.hca_back]):
         # some kind of derivative of: process_detection
-        detections_hca_back = graph.exists(Label.hca_back)
-        # print("dets1, num. of hca_back: " + str(len(detections_hca_back1)))
-        if len(detections_hca_back) < 1:
-            print("dets1, hca_back not found")
+        chosen_label = None
+        for label in labels:
+            detections_hca_back = graph.exists(label)
+            if len(detections_hca_back) >= 1:
+                print("[green]chosen label", label)
+                chosen_label = label
+                break
+
+        if chosen_label is None:
+            print(f"[red]label from list {labels} not found!")
             return None, None
         
         det_hca_back = detections_hca_back[0]
@@ -263,8 +269,12 @@ class ObjectReId:
         # cv2.drawContours(img_cropped, [obb_arr], 0, (0, 255, 255), 2)
         
         # rotated obb:
-        obb = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.tf.rotation, center_cropped, rotate=rotate)
-        
+        if det_hca_back.tf is not None:
+            obb2 = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.tf.rotation, center_cropped)
+        else:
+            obb2 = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.angle_px, center_cropped)
+
+        obb2_arr = np.array(obb2).astype(int)
         # obb2_list = list(obb2_arr)
 
         # print("obb2_arr", obb2_arr.shape)
@@ -278,6 +288,7 @@ class ObjectReId:
         # print("poly_arr", poly_arr)
         
         return img_cropped, obb
+
 
     @classmethod
     def rotated_and_centered_obb(cls, obb_or_poly, center, quat, new_center=None, rotate=False, world_coords=False):
@@ -294,7 +305,13 @@ class ObjectReId:
         # move obb to (0, 0)
         points_centered = points - center
 
-        if rotate:
+        # sometimes the angle is in the z axis (basler) and for realsense it is different.
+        # this is a hack for that
+        if isinstance(quat, float):
+            angle = np.deg2rad(quat)
+            print("[blue]debug rotated_and_centered_obb angle", angle)
+        else:
+            angle = cls.ros_quat_to_rad(quat)
 
             # sometimes the angle is in the z axis (basler) and for realsense it is different.
             # this is a hack for that
@@ -354,16 +371,18 @@ class ObjectReId:
         
         height, width = img.shape[:2]
         
-        if rotate:
-            # rotate image around center
+        # rotate image around center
+        if det.tf is not None:
             angle_rad = cls.ros_quat_to_rad(det.tf.rotation)
-            angle_rad = ((0.5 * np.pi) - angle_rad) % np.pi
-            
-            # note: getRotationMatrix2D rotation matrix is different from standard rotation matrix
-            rot_mat = cv2.getRotationMatrix2D(center, np.rad2deg(angle_rad), 1.0)
-            img_rot = cv2.warpAffine(img, rot_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
         else:
-            img_rot = img
+            angle_rad = np.deg2rad(det.angle_px)
+            print("[blue]debug angle object_reid.py: angle_px", det.angle_px)
+        
+        angle_rad = ((0.5 * np.pi) - angle_rad) % np.pi
+        
+        # note: getRotationMatrix2D rotation matrix is different from standard rotation matrix
+        rot_mat = cv2.getRotationMatrix2D(center, np.rad2deg(angle_rad), 1.0)
+        img_rot = cv2.warpAffine(img, rot_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
         
         # crop image around center point
         size = 200
