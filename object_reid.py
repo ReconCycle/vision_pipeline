@@ -63,7 +63,7 @@ class ObjectReId:
 
 
     @classmethod
-    def find_and_crop_det(cls, img, graph, rotate_180=False, labels=[Label.hca_back]):
+    def find_and_crop_det(cls, img, graph, rotate_180=False, labels=[Label.hca_back], size=400):
         # some kind of derivative of: process_detection
         chosen_label = None
         for label in labels:
@@ -79,7 +79,7 @@ class ObjectReId:
         
         det_hca_back = detections_hca_back[0]
         
-        img_cropped, center_cropped = cls.get_det_img(img, det_hca_back)
+        img_cropped, center_cropped = cls.get_det_img(img, det_hca_back, size=size)
         
         # unrotated obb:
         # obb = hca_back.obb_px - hca_back.center_px + center_cropped
@@ -177,7 +177,7 @@ class ObjectReId:
 
 
     @classmethod
-    def get_det_img(cls, img, det):
+    def get_det_img(cls, img, det, size=400):
         center = det.center_px
         center = (int(center[0]), int(center[1]))
         
@@ -197,12 +197,12 @@ class ObjectReId:
         img_rot = cv2.warpAffine(img, rot_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
         
         # crop image around center point
-        size = 200
-        x1 = np.clip(int(det.center_px[0]) - size, 0, width)
-        x2 = np.clip(int(det.center_px[0]) + size, 0, width)
+        half_size = int(size/2)
+        x1 = np.clip(int(det.center_px[0]) - half_size, 0, width)
+        x2 = np.clip(int(det.center_px[0]) + half_size, 0, width)
         
-        y1 = np.clip(int(det.center_px[1]) - size, 0, height)
-        y2 = np.clip(int(det.center_px[1]) + size, 0, height)
+        y1 = np.clip(int(det.center_px[1]) - half_size, 0, height)
+        y2 = np.clip(int(det.center_px[1]) + half_size, 0, height)
         
         
         img_cropped = img_rot[y1:y2, x1:x2]
