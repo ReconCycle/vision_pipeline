@@ -391,9 +391,8 @@ class ObjectDetection:
             # pcb = graph_relations.get_first(group, Label.pcb)
             # pcb_covered = graph_relations.get_first(group, Label.pcb_covered)
             
-            if hca_back is not None and battery is not None:
+            if hca_back is not None and battery is not None and hca_back.tf is not None and battery.tf is not None:
                 if graph_relations.is_inside(battery, hca_back):
-                    
                     # compute relative TF of battery w.r.t. hca_back
                     hca_back_np_tf = ros_numpy.numpify(hca_back.tf)
                     battery_np_tf = ros_numpy.numpify(battery.tf)
@@ -419,48 +418,47 @@ class ObjectDetection:
             firealarm_back = graph_relations.get_first(group, Label.firealarm_back)
             battery_covered = graph_relations.get_first(group, Label.battery_covered)
 
-            if firealarm_back is not None and battery_covered is not None:
+            if firealarm_back is not None and battery_covered is not None and firealarm_back.tf is not None and battery_covered.tf is not None:
                 if graph_relations.is_inside(battery_covered, firealarm_back): 
-                    if firealarm_back.tf is not None and battery_covered.tf is not None:
 
-                        # set the rotation of firealarm_back equal to battery_covered
-                        firealarm_back.angle_px = battery_covered.angle_px
+                    # set the rotation of firealarm_back equal to battery_covered
+                    firealarm_back.angle_px = battery_covered.angle_px
 
-                        firealarm_back.tf = Transform(firealarm_back.tf.translation, battery_covered.tf.rotation)
-                        firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, battery_covered.tf_px.rotation)
+                    firealarm_back.tf = Transform(firealarm_back.tf.translation, battery_covered.tf.rotation)
+                    firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, battery_covered.tf_px.rotation)
 
-                        # compute relative TF of battery_covered w.r.t. firealarm_back
-                        firealarm_back_np_tf = ros_numpy.numpify(firealarm_back.tf)
-                        battery_covered_np_tf = ros_numpy.numpify(battery_covered.tf)
+                    # compute relative TF of battery_covered w.r.t. firealarm_back
+                    firealarm_back_np_tf = ros_numpy.numpify(firealarm_back.tf)
+                    battery_covered_np_tf = ros_numpy.numpify(battery_covered.tf)
+                    
+                    inv_firealarm = np.linalg.inv(firealarm_back_np_tf)
+                    prod_np_tf = np.dot(inv_firealarm, battery_covered_np_tf)
+                    battery_covered_rel_tf = ros_numpy.msgify(Transform, prod_np_tf)
+
+                    # rotate by 180 degrees based on relative positions
+                    if battery_covered_rel_tf.translation.x < 0:
+
+                        quat = ros_numpy.numpify(battery_covered.tf.rotation)
+                        quat_180 = quaternion_from_euler(0, 0, np.pi)
+                        quat_new = quaternion_multiply(quat_180, quat)
+
+                        # get angle in degrees from quat_new, and taking inverse again, if basler
+                        if worksurface_detection is not None:
+                            euler_new = euler_from_quaternion(quaternion_inverse(quat_new))
+                        else:
+                            euler_new = euler_from_quaternion(quat_new)
+
+                        angle_px = np.rad2deg(euler_new[2]) % 360
                         
-                        inv_firealarm = np.linalg.inv(firealarm_back_np_tf)
-                        prod_np_tf = np.dot(inv_firealarm, battery_covered_np_tf)
-                        battery_covered_rel_tf = ros_numpy.msgify(Transform, prod_np_tf)
+                        firealarm_back.angle_px = angle_px
+                        firealarm_back.tf = Transform(firealarm_back.tf.translation, Quaternion(*quat_new))
+                        firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, Quaternion(*quat_new))
 
-                        # rotate by 180 degrees based on relative positions
-                        if battery_covered_rel_tf.translation.x < 0:
-
-                            quat = ros_numpy.numpify(battery_covered.tf.rotation)
-                            quat_180 = quaternion_from_euler(0, 0, np.pi)
-                            quat_new = quaternion_multiply(quat_180, quat)
-
-                            # get angle in degrees from quat_new, and taking inverse again, if basler
-                            if worksurface_detection is not None:
-                                euler_new = euler_from_quaternion(quaternion_inverse(quat_new))
-                            else:
-                                euler_new = euler_from_quaternion(quat_new)
-
-                            angle_px = np.rad2deg(euler_new[2]) % 360
-                            
-                            firealarm_back.angle_px = angle_px
-                            firealarm_back.tf = Transform(firealarm_back.tf.translation, Quaternion(*quat_new))
-                            firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, Quaternion(*quat_new))
-
-                            battery_covered.angle_px = angle_px
-                            battery_covered.tf = Transform(battery_covered.tf.translation, Quaternion(*quat_new))
-                            battery_covered.tf_px = Transform(battery_covered.tf_px.translation, Quaternion(*quat_new))
-                        
-            
+                        battery_covered.angle_px = angle_px
+                        battery_covered.tf = Transform(battery_covered.tf.translation, Quaternion(*quat_new))
+                        battery_covered.tf_px = Transform(battery_covered.tf_px.translation, Quaternion(*quat_new))
+                    
+        
         # if device contains battery:
             # possibly flip orientation
         
