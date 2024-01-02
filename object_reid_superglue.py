@@ -10,37 +10,56 @@ from typing import List, Optional, Tuple, Any
 from scipy.spatial.transform import Rotation
 from shapely.geometry import Polygon, Point
 import matplotlib.cm as cm
+from PIL import Image
+import math
 
 from types import SimpleNamespace
 
 from graph_relations import GraphRelations, exists_detection, compute_iou
 
 from helpers import scale_img
-from object_reid import ObjectReId
-
+from vision_pipeline.object_reid import ObjectReId
+from pathlib import Path
 import torch
-from superglue.models.matching import Matching
-from superglue.models.utils import (AverageTimer, VideoStreamer,
-                          make_matching_plot_fast, frame2tensor)
+from superglue_training.models.matching import Matching
+from superglue_training.utils.common import make_matching_plot_fast, frame2tensor, VideoStreamer
 
 
 
 class ObjectReIdSuperGlue(ObjectReId):
-    def __init__(self, opt=None) -> None:
+    def __init__(self, model="indoor") -> None:
         super().__init__()
     
         torch.set_grad_enabled(False)
         
-        if opt is None:
-            opt = SimpleNamespace()
-            opt.superglue = "indoor"
-            opt.nms_radius = 4
-            opt.sinkhorn_iterations = 20
-            opt.match_threshold = 0.5 # default 0.2
-            opt.show_keypoints = True
-            opt.keypoint_threshold = 0.005
-            opt.max_keypoints = -1
+        opt = SimpleNamespace()
+        opt.superglue = model
+        opt.nms_radius = 4
+        opt.sinkhorn_iterations = 20
+        opt.match_threshold = 0.3 #! find a good threshold
+        opt.show_keypoints = True
+        opt.keypoint_threshold = 0.005
+        opt.max_keypoints = -1
         
+        weights_mapping = {
+                'superpoint': Path(__file__).parent / 'superglue/models/weights/superpoint_v1.pth',
+                'indoor': Path(__file__).parent / 'superglue/models/weights/superglue_indoor.pth',
+                'outdoor': Path(__file__).parent / 'superglue/models/weights/superglue_outdoor.pth',
+                'coco_homo': Path(__file__).parent / 'superglue/models/weights/superglue_cocohomo.pt'
+            }
+
+        try:
+            curr_weights_path = str(weights_mapping[opt.superglue])
+            if not os.path.isfile(curr_weights_path):
+                print(f"[red]{curr_weights_path} is not a file!")
+        except:
+            if os.path.isfile(opt.superglue) and (os.path.splitext(opt.superglue)[-1] in ['.pt', '.pth']):
+                curr_weights_path = str(opt.superglue)
+            else:
+                raise ValueError("Given --superglue path doesn't exist or invalid")
+
+        print("curr_weights_path", curr_weights_path)
+
         self.opt = opt
         config = {
             'superpoint': {
@@ -49,7 +68,7 @@ class ObjectReIdSuperGlue(ObjectReId):
                 'max_keypoints': opt.max_keypoints
             },
             'superglue': {
-                'weights': opt.superglue,
+                'weights_path': curr_weights_path,
                 'sinkhorn_iterations': opt.sinkhorn_iterations,
                 'match_threshold': opt.match_threshold,
             }
@@ -72,106 +91,141 @@ class ObjectReIdSuperGlue(ObjectReId):
         self.compare(img0, img1, visualise=visualise)
 
 
-    def compare(self, img1, img2, visualise=False):
+    def compare(self, img1, img2, gt=None, affine_fit=False, visualise=False, debug=True):
         if visualise:
             print("[blue]starting compare...[/blue]")
-        # self.timer.update('data')
-        item = 0
         
         img1_tensor = frame2tensor(img1, self.device)
         last_data = self.matching.superpoint({'image': img1_tensor})
         last_data = {k+'0': last_data[k] for k in self.keys}
         last_data['image0'] = img1_tensor
         
-        # scores0 = last_data.scores0
-        # descriptors0 = last_data.descriptors0
-        # print("last_data", last_data)
+        # TODO: ignore matches outside OBB
         
-        scores = []
+        img2_tensor = frame2tensor(img2, self.device)
         
-        # superglue isn't rotation invariant. Try both rotations.
-        for rotate_180 in [False, True]:
-            if rotate_180 is True:
-                #! we should also rotate polygon!
-                img2 = cv2.rotate(img2, cv2.ROTATE_180)
-                
-            if visualise:
-                print("\nrotate:" + str(rotate_180))
-            
-            # TODO: ignore matches outside OBB
-            
-            img2_tensor = frame2tensor(img2, self.device)
-            
-            pred = self.matching({**last_data, 'image1': img2_tensor})
-            kpts0 = last_data['keypoints0'][0].cpu().numpy()
-            kpts1 = pred['keypoints1'][0].cpu().numpy()
-            matches = pred['matches0'][0].cpu().numpy()
-            confidence = pred['matching_scores0'][0].cpu().numpy()
-            # self.timer.update('forward')
+        pred = self.matching({**last_data, 'image1': img2_tensor})
+        kpts0 = last_data['keypoints0'][0].cpu().numpy()
+        kpts1 = pred['keypoints1'][0].cpu().numpy()
+        matches = pred['matches0'][0].cpu().numpy()
+        confidence = pred['matching_scores0'][0].cpu().numpy()
 
-            valid = matches > -1
-            mkpts0 = kpts0[valid]
-            mkpts1 = kpts1[matches[valid]]
+        valid = matches > -1
+        mkpts0 = kpts0[valid]
+        mkpts1 = kpts1[matches[valid]]
+        mconf = confidence[valid]
 
-            k_thresh = self.matching.superpoint.config['keypoint_threshold']
-            m_thresh = self.matching.superglue.config['match_threshold']
+        k_thresh = self.matching.superpoint.config['keypoint_threshold']
+        m_thresh = self.matching.superglue.config['match_threshold']
+        
+        # print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
+        # print("kpts0", len(kpts0), kpts0.shape)
+        # print("kpts0", len(kpts1), kpts1.shape)
+
+        affine_loss = 100.0
+        score_ratio = 0.0
+        affine_median_error = 100
+        angle_est = None
+
+        # 3 matches will always score perfectly because of affine transform
+        # let's say we want at least 5 matches to work
+        if len(matches[valid]) <= 5:
+            if debug:
+                print("not enough matches for SuperGlue", len(matches[valid]))
+            # todo: return something else than 0.0, more like undefined.
+            # return 0.0, None, None
+        else:
+            # see superglue_training/match_homography.py, for how we do stuff for evaluation
+            # sort_index = np.argsort(mconf)[::-1][0:4]
+            # est_homo_dlt = cv2.getPerspectiveTransform(mkpts0[sort_index, :], mkpts1[sort_index, :])
+            est_homo_ransac, _ = cv2.findHomography(mkpts0, mkpts1, method=cv2.RANSAC, maxIters=3000)
+
+
+            # get rotation from homography
             
-            # print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
-            # print("kpts0", len(kpts0), kpts0.shape)
-            # print("kpts0", len(kpts1), kpts1.shape)
-            # 3 matches will always score perfectly because of affine transform
-            # let's say we want at least 5 matches to work
-            if len(matches[valid]) <= 5:
-                if visualise:
-                    print("not enough matches for SuperGlue")
-                # todo: return something else than 0.0, more like undefined.
-                # return 0.0
-                scores.append([0.0, 0.0])
-            else:
-                mean_error, median_error, max_error = self.calculate_matching_error(mkpts0, mkpts1)
+            def angle_from_homo(homo):
+                # https://stackoverflow.com/questions/58538984/how-to-get-the-rotation-angle-from-findhomography
+                u, _, vh = np.linalg.svd(homo[0:2, 0:2])
+                R = u @ vh
+                angle = math.atan2(R[1,0], R[0,0]) # angle between [-pi, pi)
+                return angle
+            
+            def difference_angle(angle1, angle2):
+                difference = (angle1 - angle2) % (2*np.pi)
+                difference = np.where(difference > np.pi, difference - 2*np.pi, difference)
+                return difference
+
+
+            angle_est = angle_from_homo(est_homo_ransac)
+            print("angle_est using findHomography", angle_est, "degrees:", np.rad2deg(angle_est))
+            # angle_gt = angle_from_homo(homo_matrix)
+            # angle_diff = np.abs(difference_angle(angle_est, angle_gt))
+            # print("angle_est", angle_est, "angle_gt", angle_gt)
+            # print("difference", np.round(angle_diff, 4))
+
+            if affine_fit:
+                mean_error, affine_median_error, max_error = ObjectReId.calculate_affine_matching_error(mkpts0, mkpts1)
                 
                 # a median error of less than 0.5 is good
                 strength = 1.0 # increase strength for harsher score function
-                score = 1/(strength*median_error + 1) #! we should test this score function
-                
-                if visualise:
-                    print("median_error", median_error)
-                    print("score", score)
+                affine_loss = 1/(strength*affine_median_error + 1) #! we should test this score function
                 
                 min_num_kpts = min(len(kpts0), len(kpts1))
                 
                 score_ratio = len(matches[valid])/min_num_kpts
 
-                if visualise:
-                    print("score_ratio", score_ratio)
-                
-                scores.append([score, score_ratio])
-                
-                
-            if visualise:
-                color = cm.jet(confidence[valid])
-                text = [
-                    'SuperGlue',
-                    'Keypoints: {}:{}'.format(len(kpts0), len(kpts1)),
-                    'Matches: {}'.format(len(mkpts0))
-                ]
-                small_text = [
-                    'Keypoint Threshold: {:.4f}'.format(k_thresh),
-                    'Match Threshold: {:.2f}'.format(m_thresh),
-                    # 'Image Pair: {:06}:{:06}'.format(stem0, stem1),
-                ]
-                out = make_matching_plot_fast(
-                    img1, img2, kpts0, kpts1, mkpts0, mkpts1, color, text,
-                    path=None, show_keypoints=self.opt.show_keypoints, small_text=small_text)
-                cv2.imshow('SuperGlue matches', out)
-                cv2.waitKey() # visualise
-        
-        scores = np.array(scores)
-        # get the best matching score over the two rotations
-        max_score_ratio = max(scores[0, 1], scores[1, 1])
+                if debug:
+                    print("confidence[valid]", confidence[valid])
+                    print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
+                    print("mean_error", mean_error)
+                    print("median_error", affine_median_error)
+                    print("max_error", max_error)
+                    print("affine_loss (lower is better)", affine_loss)
+                    print("score_ratio (higher is better)", score_ratio)
+                    print("gt", gt)
 
+        vis_out = None
         if visualise:
-            print("[green]max_score_ratio", max_score_ratio)
+            color = cm.jet(confidence[valid])
+            text = [
+                'SuperGlue',
+                'Keypoints: {}:{}'.format(len(kpts0), len(kpts1)),
+                'Matches: {}'.format(len(mkpts0))
+            ]
+            small_text = [
+                'Keypoint Threshold: {:.4f}'.format(k_thresh),
+                'Match Threshold: {:.2f}'.format(m_thresh),
+                # 'Image Pair: {:06}:{:06}'.format(stem0, stem1),
+            ]
+            vis_out = make_matching_plot_fast(
+                img1, img2, kpts0, kpts1, mkpts0, mkpts1, color, text,
+                path=None, show_keypoints=self.opt.show_keypoints, small_text=small_text)
         
-        return max_score_ratio
+        return affine_loss, score_ratio, mconf, affine_median_error, len(matches[valid]), vis_out, angle_est
+
+
+if __name__ == '__main__':
+    # object_reid_superglue = ObjectReIdSuperGlue(model="indoor")
+    object_reid_superglue = ObjectReIdSuperGlue(model="/home/sruiz/projects/reconcycle/superglue_training/output/train/2023-11-18_superglue_model/weights/best.pt")
+
+    vs = VideoStreamer(
+        "/home/sruiz/datasets2/reconcycle/2023-02-20_hca_backs_processed/hca_0/", 
+        [640, 480], 
+        1,
+        ['*.png', '*.jpg', '*.jpeg'], 
+        1000000)
+
+    img1 = vs.load_image("/home/sruiz/datasets2/reconcycle/2023-02-20_hca_backs_processed/hca_0/0001.jpg")
+    img2 = vs.load_image("/home/sruiz/datasets2/reconcycle/2023-02-20_hca_backs_processed/hca_1/0002.jpg")
+
+    print("img1.shape", img1.shape)
+    print("img2.shape", img2.shape)
+
+    object_reid_superglue.compare(img1, img2)
+
+    # cv2.imshow('img1', img1)
+    # cv2.imshow('img2', img2)
+    # cv2.waitKey() # visualise
+
+    
 

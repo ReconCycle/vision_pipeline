@@ -2,6 +2,7 @@ import os
 from types import SimpleNamespace
 import numpy as np
 import time
+from timeit import default_timer as timer
 import commentjson
 import cv2
 import torch
@@ -21,6 +22,7 @@ import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords
 from context_action_framework.types import Detection, Label, Camera
 from object_detector_opencv import SimpleDetector
+from object_reid import ObjectReId
 
 from geometry_msgs.msg import Transform, Vector3, Quaternion, Pose, PoseArray, TransformStamped
 from visualization_msgs.msg import Marker, MarkerArray
@@ -28,7 +30,6 @@ import rospy
 import tf
 import tf2_ros
 from tf.transformations import quaternion_from_euler, quaternion_multiply, euler_from_quaternion, quaternion_inverse
-
 import ros_numpy
 
 
@@ -62,7 +63,7 @@ class ObjectDetection:
         
         self.use_ros = use_ros
 
-    def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None, use_tracker=True):
+    def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None, use_tracker=True, use_classify=True):
         t_start = time.time()
         
         if depth_img is not None:
@@ -157,7 +158,7 @@ class ObjectDetection:
             fps_tracker = 0
         
         # TODO: GET WORKING!
-        detections, markers, poses, graph_img, graph_relations, fps_obb = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info)
+        detections, markers, poses, graph_img, graph_relations, fps_obb = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
 
 
         graphics_start = time.time()
@@ -175,7 +176,7 @@ class ObjectDetection:
         return labelled_img, detections, markers, poses, graph_img, graph_relations
 
 
-    def get_detections(self, detections, colour_img=None, depth_img=None, worksurface_detection=None, camera_info=None):
+    def get_detections(self, detections, colour_img=None, depth_img=None, worksurface_detection=None, camera_info=None, use_classify=True):
         
         obb_start = time.time()
         
@@ -190,7 +191,7 @@ class ObjectDetection:
             poses.header.frame_id = self.frame_id
             poses.header.stamp = rospy.Time.now()
 
-        # calculate the oriented bounding boxes
+        # calculate the oriented bounding boxes in pixels
         for detection in detections:
             if colour_img is not None:
                 corners_px, center_px, angle = obb.get_obb_from_contour(detection.mask_contour, colour_img.shape)
@@ -206,7 +207,34 @@ class ObjectDetection:
                 poly = make_valid_poly(poly)
 
             detection.polygon_px = poly
-            
+
+        if use_classify:
+            # estimate angle using superglue model
+            for detection in detections:
+                if detection.label in [Label.firealarm_front, Label.firealarm_back]:
+
+                    time0 = timer()
+                    
+                    # todo: crop to detection given detection
+                    sample_crop, _ = ObjectReId.crop_det(colour_img, detection, size=400)
+
+                    print("sample_crop", sample_crop.shape, "for label", detection.label)
+
+                    classify_label = self.model.infer_classify(sample_crop)
+
+                    print("classify_label", classify_label)
+
+                    angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
+
+                    # update angle
+                    detection.angle_px = np.rad2deg(angle_rad)
+
+                    elapsed_time_classify_and_rot = timer() - time0
+                    print("elapsed_time_classify_and_rot", elapsed_time_classify_and_rot)
+
+
+        # calculate real world information
+        for detection in detections:
             if angle is not None:
                 if worksurface_detection is not None:
                     # detections from basler, w.r.t. vision module table
@@ -249,7 +277,8 @@ class ObjectDetection:
                     depth_median = np.ma.median(depth_masked_np)
                     
                     if not np.count_nonzero(depth_img):
-                        print("[red]detection: depth image is all 0")
+                        if self.config.obj_detection.debug:
+                            print("[red]detection: depth image is all 0")
                     
                     if isinstance(depth_mean, np.float):
                         
@@ -272,7 +301,8 @@ class ObjectDetection:
                         # print("detection: detection.obb", detection.obb)
                     
                 else:
-                    print("[red]detection: detection real-world info couldn't be determined!")
+                    if self.config.obj_detection.debug:
+                        print("[red]detection: detection real-world info couldn't be determined!")
                     detection.obb = None
                     detection.tf = None
         
@@ -280,13 +310,13 @@ class ObjectDetection:
         # remove objects that don't fit certain constraints, eg. too small, too thin, too big
         def is_valid_detection(detection):
             if detection.angle_px is None:
-                print(f"[red]detection: {detection.label.name} angle is None![/red]")
+                if self.config.obj_detection.debug:
+                    print(f"[red]detection: {detection.label.name} angle is None![/red]")
                 return False
-
-
             
             if detection.obb is None:
-                print(f"[red]detection: {detection.label.name} obb is None![/red]")
+                if self.config.obj_detection.debug:
+                    print(f"[red]detection: {detection.label.name} obb is None![/red]")
                 return False
             
             # check ratio of obb sides
@@ -300,12 +330,14 @@ class ObjectDetection:
             
             # edge_small should be longer than 0.1cm
             if edge_small < 0.001:
-                print(f"[red]detection: {detection.label.name} invalid: edge too small: {round(edge_small, 3)}m")
+                if self.config.obj_detection.debug:
+                    print(f"[red]detection: {detection.label.name} invalid: edge too small: {round(edge_small, 3)}m")
                 return False
             
             # edge_large should be shorter than 25cm
             if edge_large > 0.25:
-                print(f"[red]detection: {detection.label.name} invalid: edge too large: {round(edge_large, 3)}m")
+                if self.config.obj_detection.debug:
+                    print(f"[red]detection: {detection.label.name} invalid: edge too large: {round(edge_large, 3)}m")
                 return False
             
             if self.config.obj_detection.debug:
@@ -315,12 +347,14 @@ class ObjectDetection:
             # ratio of Kalo 1.5 battery: 1.7
             # a really big ratio corresponds to a really long device. Ratio of 5 is probably false positive.
             if ratio > 5:
-                print("[red]detection: invalid: obb ratio of sides too large[/red]")
+                if self.config.obj_detection.debug:
+                    print("[red]detection: invalid: obb ratio of sides too large[/red]")
                 return False
 
             # area should be larger than 1cm^2 = 0.0001 m^2
             if detection.polygon is not None and detection.polygon.area < 0.0001:
-                print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
+                if self.config.obj_detection.debug:
+                    print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
                 return False
             
             return True
@@ -439,6 +473,12 @@ class ObjectDetection:
         
         # if device contains battery:
             # possibly flip orientation
+
+        # TODO: classify and estimate rotation
+        # for group in graph_relations.groups:
+            
+        #     pass
+
         
         if self.config is not None and self.config.reid and colour_img is not None:
             # object re-id
@@ -485,6 +525,7 @@ class ObjectDetection:
             fps_obb = 1.0 / (time.time() - obb_start)
         
         return detections, markers, poses, graph_img, graph_relations, fps_obb
+
 
     def make_marker(self, tf, x, y, z, id, label):
         # make a visualization marker array for the occupancy grid

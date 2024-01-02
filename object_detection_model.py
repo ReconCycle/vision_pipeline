@@ -11,11 +11,20 @@ from rich import print
 import commentjson
 from types import SimpleNamespace
 import torch
+from tqdm import tqdm
+
+import torch
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 from yolact_pkg.data.config import Config
 from yolact_pkg.yolact import Yolact
 
 from ultralytics import YOLO
+
+from device_reid.model_classify import ClassifyModel
+from vision_pipeline.object_reid_superglue import ObjectReIdSuperGlue
+import imutils
 
 
 class ModelType(Enum):
@@ -32,7 +41,11 @@ class ObjectDetectionModel:
         self.yolact = None
         self.yolov8 = None
         self.dataset = None
-        
+
+        self.classify_model = None
+        self.superglue_model = None
+        self.superglue_templates = {}
+
         if config.model.lower() == "yolact":
             self.model_type = ModelType.yolact
             self.yolact, self.dataset = self.load_yolact(config)
@@ -41,6 +54,9 @@ class ObjectDetectionModel:
             self.model_type = ModelType.yolov8
             self.yolov8, self.dataset = self.load_yolov8(config)
 
+        self.load_classify_model()
+        self.load_superglue_model()
+        self.load_superglue_templates(config.superglue_templates) # todo: add to config
 
 
     def load_yolact(self, yolact_config):
@@ -161,3 +177,108 @@ class ObjectDetectionModel:
             frame, classes, scores, boxes, masks = self.infer_yolov8(colour_img)
 
         return frame, classes, scores, boxes, masks
+
+
+    def load_classify_model(self):
+        model_path = os.path.expanduser(self.config.classifier_model_file)
+        self.classify_model = ClassifyModel.load_from_checkpoint(model_path, strict=False)
+
+        print("model.learning_rate", self.classify_model.learning_rate)
+        print("model.batch_size", self.classify_model.batch_size)
+        print("model.freeze_backbone", self.classify_model.freeze_backbone)
+
+    
+    def infer_classify(self, sample_cropped):
+        norm_mean = [0.485, 0.456, 0.406]
+        norm_std = [0.229, 0.224, 0.225]
+
+        transform = A.Compose([
+            A.Resize(300, 300),
+            A.Normalize(mean=norm_mean, std=norm_std),
+            ToTensorV2()
+        ])
+
+        img_tensor = transform(image=sample_cropped)["image"]
+        img_tensor = img_tensor.unsqueeze(0).cuda() # batch size 1
+
+        print(img_tensor.shape)
+
+        self.classify_model.eval()
+
+        with torch.no_grad():
+            logits = self.classify_model(img_tensor)
+            # print("logits", logits)
+
+            preds = torch.argmax(logits, dim=1)
+            # print("preds", preds, logits[0][preds[0]])
+            pred_label = self.classify_model.labels[preds[0]]
+            # print("pred_label", pred_label)
+        
+        return pred_label
+    
+    def load_superglue_templates(self, template_dir):
+
+        template_dir = os.path.expanduser(template_dir)
+
+        if not os.path.isdir(template_dir):
+            print("[red]template_dir not found!", template_dir)
+
+        subfolders = [ (f.path, f.name) for f in os.scandir(template_dir) if f.is_dir() and len(os.listdir(f)) > 0]
+        for sub_path, sub_name in tqdm(subfolders):
+            files = [f for f in os.listdir(sub_path) if 
+                        os.path.isfile(os.path.join(sub_path, f)) 
+                        and os.path.join(sub_path, f).endswith(('.png', '.jpg', '.jpeg'))
+                        and "template" in f]
+                
+            if len(files) > 0:
+
+                # get the first image and use it as template
+                file = files[0]
+
+                img = cv2.imread(os.path.join(sub_path, file))
+                self.superglue_templates[sub_name] = img
+            else:
+                print(f"[red]can't find template for: {sub_name}")
+
+        print(f"[green]Loaded superglue templates {len(self.superglue_templates)}")
+
+
+    def load_superglue_model(self):
+        model_path = os.path.expanduser(self.config.superglue_model_file)
+        # model = "indoor"
+        self.superglue_model = ObjectReIdSuperGlue(model_path)
+
+    def superglue_rot_estimation(self, sample, label):
+
+        # img_path1 = os.path.expanduser("~/datasets2/reconcycle/2023-12-04_hcas_fire_alarms_sorted_cropped/firealarm_back_09/0335_temp.jpg")
+        # img1 = cv2.imread(img_path1)
+
+        # get the template image from the loaded templates
+        img1 = self.superglue_templates[label]
+        print("img1.shape", img1.shape)
+        img1 = imutils.resize(img1, width=300, height=300)
+        print("img1.shape", img1.shape)
+
+        # display(PILImage.fromarray(cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)))
+
+        img2 = sample
+
+        visualise = True
+        debug = True
+
+        # img1 = exp_utils.torch_to_grayscale_np_img(img1).astype(np.float32)
+        # img2 = exp_utils.torch_to_grayscale_np_img(img2).astype(np.float32)
+        img1_grey = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        img2_grey = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY).astype(np.float32)
+
+        affine_score, score_ratio, mconf, median_affine_error, len_matches, vis_out, angle = self.superglue_model.compare(img1_grey, img2_grey, gt=True, affine_fit=False, visualise=visualise, debug=debug)
+
+        # if visualise:
+        #     sns.histplot(mconf)
+        #     plt.show()
+
+        # if visualise and vis_out is not None:            
+        #     display(PILImage.fromarray(vis_out))
+
+        
+        return angle, vis_out

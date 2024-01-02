@@ -25,9 +25,8 @@ class ObjectReId:
     def __init__(self) -> None:
         pass
 
-
     @staticmethod
-    def calculate_matching_error(pts1_matches, pts2_matches):
+    def calculate_affine_matching_error(pts1_matches, pts2_matches):
         
         # todo: compute keypoint locations in world coordinates. Then our error will also be in meters.
         
@@ -43,17 +42,18 @@ class ObjectReId:
         X = pad(pts1_matches)
         # print("X.shape", X.shape)
         Y = pad(pts2_matches)
-        # print("Y.shape", X.shape)
+        # print("Y.shape", Y.shape)
         A, res, rank, s = np.linalg.lstsq(X, Y, rcond=None)
         affine_transform = lambda x: unpad(np.dot(pad(x), A))
         
         # print("affine_transform(pts1_matches).shape", affine_transform(pts1_matches).shape)
         
         # find mean error
-        abs_diff = np.abs(pts2_matches - affine_transform(pts1_matches))
-        mean_error = np.mean(abs_diff)
-        max_error = np.max(abs_diff)
-        median_error = np.median(abs_diff)
+        diff = np.linalg.norm(pts2_matches - affine_transform(pts1_matches), axis=0)
+        # print("diff", diff)
+        mean_error = np.mean(diff)
+        max_error = np.max(diff)
+        median_error = np.median(diff)
         
         # print("mean_error", mean_error)
         # print("median_error", median_error)
@@ -63,13 +63,13 @@ class ObjectReId:
 
 
     @classmethod
-    def find_and_crop_det(cls, img, graph, rotate_180=False, labels=[Label.hca_back], size=400):
+    def find_and_crop_det(cls, img, graph, rotate_180=False, rotate=False, labels=[Label.hca_back], size=400, ):
         # some kind of derivative of: process_detection
         chosen_label = None
         for label in labels:
-            detections_hca_back = graph.exists(label)
-            if len(detections_hca_back) >= 1:
-                print("[green]chosen label", label)
+            detections = graph.exists(label)
+            if len(detections) >= 1:
+                # print("[green]chosen label", label)
                 chosen_label = label
                 break
 
@@ -77,35 +77,10 @@ class ObjectReId:
             print(f"[red]label from list {labels} not found!")
             return None, None
         
-        det_hca_back = detections_hca_back[0]
+        if rotate:
+            return cls.crop_and_rotate_det(img, detections[0], size)
         
-        img_cropped, center_cropped = cls.get_det_img(img, det_hca_back, size=size)
-        
-        # unrotated obb:
-        # obb = hca_back.obb_px - hca_back.center_px + center_cropped
-        # obb_arr = np.array(obb).astype(int)
-        # cv2.drawContours(img_cropped, [obb_arr], 0, (0, 255, 255), 2)
-        
-        # rotated obb:
-        if det_hca_back.tf is not None:
-            obb2 = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.tf.rotation, center_cropped)
-        else:
-            obb2 = cls.rotated_and_centered_obb(det_hca_back.obb_px, det_hca_back.center_px, det_hca_back.angle_px, center_cropped)
-
-        obb2_arr = np.array(obb2).astype(int)
-        # obb2_list = list(obb2_arr)
-
-        # print("obb2_arr", obb2_arr.shape)
-
-        #! somehow go to list and then back to polygon
-        # obb2_poly = Polygon(obb2_arr)
-        
-        # rotated polygon
-        # poly = self.rotated_and_centered_obb(hca_back.polygon_px, hca_back.center_px, hca_back.tf.rotation, center_cropped)
-        # poly_arr = np.array(poly.exterior.coords).astype(int)
-        # print("poly_arr", poly_arr)
-        
-        return img_cropped, obb2_arr
+        return cls.crop_det(img, detections[0], size)
 
 
     @classmethod
@@ -177,11 +152,9 @@ class ObjectReId:
 
 
     @classmethod
-    def get_det_img(cls, img, det, size=400):
+    def crop_and_rotate_det(cls, img, det, size=400):
         center = det.center_px
         center = (int(center[0]), int(center[1]))
-        
-        height, width = img.shape[:2]
         
         # rotate image around center
         if det.tf is not None:
@@ -195,7 +168,41 @@ class ObjectReId:
         # note: getRotationMatrix2D rotation matrix is different from standard rotation matrix
         rot_mat = cv2.getRotationMatrix2D(center, np.rad2deg(angle_rad), 1.0)
         img_rot = cv2.warpAffine(img, rot_mat, img.shape[1::-1], flags=cv2.INTER_LINEAR)
+    
+        img_cropped, center_cropped = cls.crop_det(img_rot, det, size=size)
+
+        # unrotated obb:
+        # obb = hca_back.obb_px - hca_back.center_px + center_cropped
+        # obb_arr = np.array(obb).astype(int)
+        # cv2.drawContours(img_cropped, [obb_arr], 0, (0, 255, 255), 2)
         
+        # rotated obb:
+        if det.tf is not None:
+            obb2 = cls.rotated_and_centered_obb(det.obb_px, det.center_px, det.tf.rotation, center_cropped)
+        else:
+            obb2 = cls.rotated_and_centered_obb(det.obb_px, det.center_px, det.angle_px, center_cropped)
+
+        obb2_arr = np.array(obb2).astype(int)
+        # obb2_list = list(obb2_arr)
+
+        # print("obb2_arr", obb2_arr.shape)
+
+        #! somehow go to list and then back to polygon
+        # obb2_poly = Polygon(obb2_arr)
+        
+        # rotated polygon
+        # poly = self.rotated_and_centered_obb(hca_back.polygon_px, hca_back.center_px, hca_back.tf.rotation, center_cropped)
+        # poly_arr = np.array(poly.exterior.coords).astype(int)
+        # print("poly_arr", poly_arr)
+
+        return img_cropped, obb2_arr
+
+
+    @classmethod
+    def crop_det(cls, img, det, size=400):
+
+        height, width = img.shape[:2]
+
         # crop image around center point
         half_size = int(size/2)
         x1 = np.clip(int(det.center_px[0]) - half_size, 0, width)
@@ -205,7 +212,7 @@ class ObjectReId:
         y2 = np.clip(int(det.center_px[1]) + half_size, 0, height)
         
         
-        img_cropped = img_rot[y1:y2, x1:x2]
+        img_cropped = img[y1:y2, x1:x2]
         
         # new center at:
         center_cropped = det.center_px[0] - x1, det.center_px[1] - y1
@@ -214,6 +221,9 @@ class ObjectReId:
         # cv2.circle(img_cropped, (int(center_cropped[0]), int(center_cropped[1])), 6, (0, 0, 255), -1)
         
         return img_cropped, center_cropped
+    
+
+
     
     @staticmethod
     def m_to_px(x):
