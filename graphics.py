@@ -18,7 +18,7 @@ color_cache = defaultdict(lambda: {})
 def rotated_line(point, angle, length):
     angle_rad = np.deg2rad(angle)
     x2 = point[0] + length * np.cos(angle_rad)
-    y2 = point[1] + length * np.sin(angle_rad)
+    y2 = point[1] - length * np.sin(angle_rad) #!!!! because opencv image plane has y in wrong direction
     point2 = tuple([int(x2), int(y2)])
 
     return point2

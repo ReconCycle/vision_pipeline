@@ -83,9 +83,9 @@ def get_obb_using_cv(contour, img_shape=None):
     #  rotation is a bit funny, and we correct for it. see here:
     # https://stackoverflow.com/questions/15956124/minarearect-angles-unsure-about-the-angle-returned
     if changing_height > changing_width:
-        correct_rot = changing_rot
+        correct_rot = - changing_rot
     else:
-        correct_rot = changing_rot - 90
+        correct_rot = 90 - changing_rot
 
     correct_height = changing_height
     correct_width = changing_width
