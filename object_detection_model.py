@@ -108,7 +108,7 @@ class ObjectDetectionModel:
 
     def load_yolov8(self, config):
         # Load finetuned YOLOv8m-seg model
-        yolov8 = YOLO(config.yolov8_model_file)
+        yolov8 = YOLO(os.path.expanduser(config.yolov8_model_file))
         class_names_dict = yolov8.names
 
         yolov8_dataset = SimpleNamespace()
@@ -201,20 +201,20 @@ class ObjectDetectionModel:
         img_tensor = transform(image=sample_cropped)["image"]
         img_tensor = img_tensor.unsqueeze(0).cuda() # batch size 1
 
-        print(img_tensor.shape)
+        print("infer_classify", img_tensor.shape)
 
         self.classify_model.eval()
 
         with torch.no_grad():
             logits = self.classify_model(img_tensor)
-            # print("logits", logits)
 
             preds = torch.argmax(logits, dim=1)
-            # print("preds", preds, logits[0][preds[0]])
             pred_label = self.classify_model.labels[preds[0]]
-            # print("pred_label", pred_label)
+            
+            # we took logsoftmax, so we have to take the exp to get confidence
+            conf = torch.exp(logits[0][preds[0]])
         
-        return pred_label
+        return pred_label, conf
     
     def load_superglue_templates(self, template_dir):
 
@@ -245,13 +245,9 @@ class ObjectDetectionModel:
 
     def load_superglue_model(self):
         model_path = os.path.expanduser(self.config.superglue_model_file)
-        # model = "indoor"
-        self.superglue_model = ObjectReIdSuperGlue(model_path)
+        self.superglue_model = ObjectReIdSuperGlue(model_path, self.config.superglue_match_threshold)
 
     def superglue_rot_estimation(self, sample, label):
-
-        # img_path1 = os.path.expanduser("~/datasets2/reconcycle/2023-12-04_hcas_fire_alarms_sorted_cropped/firealarm_back_09/0335_temp.jpg")
-        # img1 = cv2.imread(img_path1)
 
         # get the template image from the loaded templates
         img1 = self.superglue_templates[label]

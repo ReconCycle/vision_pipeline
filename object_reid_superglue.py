@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 from graph_relations import GraphRelations, exists_detection, compute_iou
 
-from helpers import scale_img
+from helpers import scale_img, add_angles
 from vision_pipeline.object_reid import ObjectReId
 from pathlib import Path
 import torch
@@ -27,7 +27,8 @@ from superglue_training.utils.common import make_matching_plot_fast, frame2tenso
 
 
 class ObjectReIdSuperGlue(ObjectReId):
-    def __init__(self, model="indoor") -> None:
+    #! We are using superglue ONLY for rotation estimation
+    def __init__(self, model="indoor", match_threshold=0.5) -> None:
         super().__init__()
     
         torch.set_grad_enabled(False)
@@ -36,7 +37,7 @@ class ObjectReIdSuperGlue(ObjectReId):
         opt.superglue = model
         opt.nms_radius = 4
         opt.sinkhorn_iterations = 20
-        opt.match_threshold = 0.3 #! find a good threshold
+        opt.match_threshold = match_threshold
         opt.show_keypoints = True
         opt.keypoint_threshold = 0.005
         opt.max_keypoints = -1
@@ -80,6 +81,14 @@ class ObjectReIdSuperGlue(ObjectReId):
         self.keys = ['keypoints', 'scores', 'descriptors']
         
         # self.timer = AverageTimer()
+
+    def angle_from_homo(self, homo):
+        # https://stackoverflow.com/questions/58538984/how-to-get-the-rotation-angle-from-findhomography
+        u, _, vh = np.linalg.svd(homo[0:2, 0:2])
+        R = u @ vh
+        angle = math.atan2(R[1,0], R[0,0]) # angle between [-pi, pi)
+        return angle
+
 
     def compare_full_img(self, img0, graph0, img1, graph1, visualise=False):
         img0_cropped, obb_poly1 = self.find_and_crop_det(img0, graph0)
@@ -129,7 +138,9 @@ class ObjectReIdSuperGlue(ObjectReId):
 
         # 3 matches will always score perfectly because of affine transform
         # let's say we want at least 5 matches to work
-        if len(matches[valid]) <= 5:
+
+        #! we set it to 3, because we assume that we have already classified it correctly
+        if len(matches[valid]) <= 3:
             if debug:
                 print("not enough matches for SuperGlue", len(matches[valid]))
             # todo: return something else than 0.0, more like undefined.
@@ -139,50 +150,39 @@ class ObjectReIdSuperGlue(ObjectReId):
             # sort_index = np.argsort(mconf)[::-1][0:4]
             # est_homo_dlt = cv2.getPerspectiveTransform(mkpts0[sort_index, :], mkpts1[sort_index, :])
             est_homo_ransac, _ = cv2.findHomography(mkpts0, mkpts1, method=cv2.RANSAC, maxIters=3000)
+            if est_homo_ransac is None:
+                print("[red]est_homo_ransac is None")
+            else:
+                # get rotation from homography
+                angle_est = self.angle_from_homo(est_homo_ransac)
+                angle_est = add_angles(0, -angle_est) # take the negative angle
 
+                print("angle_est using findHomography", angle_est, "degrees:", np.rad2deg(angle_est))
+                # angle_gt = angle_from_homo(homo_matrix)
+                # angle_diff = np.abs(difference_angle(angle_est, angle_gt))
+                # print("angle_est", angle_est, "angle_gt", angle_gt)
+                # print("difference", np.round(angle_diff, 4))
 
-            # get rotation from homography
-            
-            def angle_from_homo(homo):
-                # https://stackoverflow.com/questions/58538984/how-to-get-the-rotation-angle-from-findhomography
-                u, _, vh = np.linalg.svd(homo[0:2, 0:2])
-                R = u @ vh
-                angle = math.atan2(R[1,0], R[0,0]) # angle between [-pi, pi)
-                return angle
-            
-            def difference_angle(angle1, angle2):
-                difference = (angle1 - angle2) % (2*np.pi)
-                difference = np.where(difference > np.pi, difference - 2*np.pi, difference)
-                return difference
+                if affine_fit:
+                    mean_error, affine_median_error, max_error = ObjectReId.calculate_affine_matching_error(mkpts0, mkpts1)
+                    
+                    # a median error of less than 0.5 is good
+                    strength = 1.0 # increase strength for harsher score function
+                    affine_loss = 1/(strength*affine_median_error + 1) #! we should test this score function
+                    
+                    min_num_kpts = min(len(kpts0), len(kpts1))
+                    
+                    score_ratio = len(matches[valid])/min_num_kpts
 
-
-            angle_est = angle_from_homo(est_homo_ransac)
-            print("angle_est using findHomography", angle_est, "degrees:", np.rad2deg(angle_est))
-            # angle_gt = angle_from_homo(homo_matrix)
-            # angle_diff = np.abs(difference_angle(angle_est, angle_gt))
-            # print("angle_est", angle_est, "angle_gt", angle_gt)
-            # print("difference", np.round(angle_diff, 4))
-
-            if affine_fit:
-                mean_error, affine_median_error, max_error = ObjectReId.calculate_affine_matching_error(mkpts0, mkpts1)
-                
-                # a median error of less than 0.5 is good
-                strength = 1.0 # increase strength for harsher score function
-                affine_loss = 1/(strength*affine_median_error + 1) #! we should test this score function
-                
-                min_num_kpts = min(len(kpts0), len(kpts1))
-                
-                score_ratio = len(matches[valid])/min_num_kpts
-
-                if debug:
-                    print("confidence[valid]", confidence[valid])
-                    print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
-                    print("mean_error", mean_error)
-                    print("median_error", affine_median_error)
-                    print("max_error", max_error)
-                    print("affine_loss (lower is better)", affine_loss)
-                    print("score_ratio (higher is better)", score_ratio)
-                    print("gt", gt)
+                    if debug:
+                        print("confidence[valid]", confidence[valid])
+                        print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
+                        print("mean_error", mean_error)
+                        print("median_error", affine_median_error)
+                        print("max_error", max_error)
+                        print("affine_loss (lower is better)", affine_loss)
+                        print("score_ratio (higher is better)", score_ratio)
+                        print("gt", gt)
 
         vis_out = None
         if visualise:

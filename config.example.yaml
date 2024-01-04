@@ -46,13 +46,21 @@ realsense:
   debug_clustering: False
 
 obj_detection:
+  debug: True # shows error messages
   model: yolov8 # yolov8/yolact
 
   # yolact config
-  yolact_dataset_file: data_limited/yolact/2023-07-18_firealarms_hcas/dataset.json
+  yolact_dataset_file: ~/vision_pipeline/data_limited/yolact/2023-07-18_firealarms_hcas/dataset.json
   yolact_score_threshold: 0.5
-  debug: True
+  
 
   # yolov8 config
-  yolov8_model_file: data_limited/yolov8/output_2023-08-25_20000/best.pt
+  yolov8_model_file: ~/vision_pipeline/data_limited/yolov8/output_2023-09-25_40000_early_stopping3/best.pt
   yolov8_score_threshold: 0.5
+
+  superglue_templates: ~/datasets2/reconcycle/2023-12-04_hcas_fire_alarms_sorted_cropped
+  superglue_model_file: "~/superglue_training/output/train/2023-11-18_superglue_model/weights/best.pt"
+  superglue_match_threshold: 0.5
+
+  classifier_model_file: "~/device_reid/results/2024-01-02__12-56_classify_WORKING/lightning_logs/version_0/checkpoints/epoch=598-step=598.ckpt"
+  classifier_threshold: 0.5

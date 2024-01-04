@@ -235,16 +235,19 @@ class ObjectDetection:
                     
                     sample_crop, _ = ObjectReId.crop_det(colour_img, detection, size=400)
 
-                    classify_label = self.model.infer_classify(sample_crop)
+                    classify_label, conf = self.model.infer_classify(sample_crop)
 
-                    print("classify_label", classify_label)
-                    detection.label_precise = classify_label
+                    print("classify_label", classify_label, "conf", conf)
 
-                    angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
+                    if conf > self.config.obj_detection.classifier_threshold:
 
-                    if angle_rad is not None:
-                        # update angle
-                        detection.angle_px = np.rad2deg(angle_rad)
+                        detection.label_precise = classify_label
+
+                        angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
+
+                        if angle_rad is not None:
+                            # update angle
+                            detection.angle_px = np.rad2deg(angle_rad)
 
                     elapsed_time_classify_and_rot = timer() - time0
                     print("elapsed_time_classify_and_rot", elapsed_time_classify_and_rot)
@@ -512,7 +515,7 @@ class ObjectDetection:
             
         #     pass
 
-        
+        # ! remove reid
         if self.config is not None and self.config.reid and colour_img is not None:
             # object re-id
             self.object_reid.process_detection(colour_img, detections, graph_relations, visualise=True)
@@ -527,6 +530,7 @@ class ObjectDetection:
             if detection.valid and detection.tf is not None and detection.obb is not None:
                 
                 # TODO: x and y could be the wrong way around! they should be chosen depending on the rot_quat
+                # TODO: changing_height, changing_width is also specified somewhere else....
                 changing_height = np.linalg.norm(detection.obb[0]-detection.obb[1])
                 changing_width = np.linalg.norm(detection.obb[1]-detection.obb[2])
                 
@@ -536,12 +540,6 @@ class ObjectDetection:
                     height = changing_width
                     width = changing_height
                 
-                #! JSI added this implementation instead: Which one is correct? Why do we even need it?
-                # o = detection.obb
-                # changing_height = np.linalg.norm((o[0]-o[2], o[1] - o[3]))
-                # changing_width = np.linalg.norm((o[2] - o[4], o[3] - o[5]))
-                # height = np.min((changing_height, changing_width))
-                # width = np.max((changing_height, changing_width))
                 if self.use_ros:
                     marker = self.make_marker(detection.tf, height, width, self.object_depth, detection.id, detection.label)
                     markers.markers.append(marker)
