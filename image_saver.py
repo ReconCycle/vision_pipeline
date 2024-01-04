@@ -1,6 +1,7 @@
 import termios, fcntl, sys, os
 import cv2
 from rich import print
+from rich.markup import escape
 import numpy as np
 import ros_numpy
 import pickle
@@ -11,6 +12,8 @@ import rospy
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
 import message_filters
+from camera_control_msgs.srv import SetSleeping
+from std_srvs.srv import SetBool
 
 
 # implementation found here:
@@ -58,12 +61,13 @@ class Main():
         self.counter = 1
         self.save = False
 
-        camera_node = "realsense" #! options: realsense/realsensed405/basler
+        self.camera_node = "basler" #! options: realsense/realsensed405/basler
         
-        self.save_path = "experiments/{date:%Y-%m-%d_%H:%M:%S}_{camera_node}".format(date=datetime.datetime.now(), camera_node=camera_node)
+        self.save_path = "saves/{date:%Y-%m-%d_%H:%M:%S}_{camera_node}".format(date=datetime.datetime.now(), camera_node=self.camera_node)
  
         # check if file path is empty
         if not os.path.exists(self.save_path):
+            print("making folder", self.save_path)
             os.makedirs(self.save_path)
             
         if os.listdir(self.save_path):
@@ -71,31 +75,41 @@ class Main():
             return
         
         # Set up your subscriber and define its callback
-        if camera_node == "realsense":
-            camera_info_topic = f"/{camera_node}/color/camera_info"
-            img_topic = f"/{camera_node}/color/image_raw"
-            depth_topic = f"/{camera_node}/aligned_depth_to_color/image_raw"
+        if self.camera_node == "realsense":
+            camera_info_topic = f"/{self.camera_node}/color/camera_info"
+            img_topic = f"/{self.camera_node}/color/image_raw"
+            depth_topic = f"/{self.camera_node}/aligned_depth_to_color/image_raw"
             camera_info_sub = message_filters.Subscriber(camera_info_topic, CameraInfo)
             img_sub = message_filters.Subscriber(img_topic, Image)
             depth_sub = message_filters.Subscriber(depth_topic, Image)
 
             ts = message_filters.ApproximateTimeSynchronizer([img_sub, depth_sub, camera_info_sub], 10, slop=0.05, allow_headerless=False)
             ts.registerCallback(self.img_from_realsense_cb)
-        elif camera_node == "realsensed405":
-            camera_info_topic = f"/{camera_node}/color/camera_info"
-            img_topic = f"/{camera_node}/color/image_raw"
-            depth_topic = f"/{camera_node}/depth/image_rect_raw"
+        elif self.camera_node == "realsensed405":
+            camera_info_topic = f"/{self.camera_node}/color/camera_info"
+            img_topic = f"/{self.camera_node}/color/image_raw"
+            depth_topic = f"/{self.camera_node}/depth/image_rect_raw"
             camera_info_sub = message_filters.Subscriber(camera_info_topic, CameraInfo)
             img_sub = message_filters.Subscriber(img_topic, Image)
             depth_sub = message_filters.Subscriber(depth_topic, Image)
 
             ts = message_filters.ApproximateTimeSynchronizer([img_sub, depth_sub, camera_info_sub], 10, slop=0.05, allow_headerless=False)
             ts.registerCallback(self.img_from_realsense_cb)
-        elif camera_node == "basler":
-            image_topic = f"/{camera_node}/image_rect_color"
+        elif self.camera_node == "basler":
+            image_topic = f"/{self.camera_node}/image_rect_color"
             rospy.Subscriber(image_topic, Image, self.img_from_basler_cb)
         
+        # wake camera
+        if self.camera_node == "basler":
+            self.enable_camera_invert = True
+            self.camera_service = rospy.ServiceProxy(f"/{self.camera_node}/set_sleeping", SetSleeping)
         
+        elif self.camera_node == "realsense":
+            self.enable_camera_invert = False
+            self.camera_service = rospy.ServiceProxy(f"/{self.camera_node}/enable", SetBool)
+
+        self.enable_camera(True)
+
         # Spin until ctrl + c
         # rospy.spin()
         self.keypress_listener = KeypressListener()
@@ -120,6 +134,55 @@ class Main():
 
         # tidy up
         self.close()
+
+
+    #! duplicate code from pipeline_camera.py:
+    def enable_camera(self, state):
+        success = False
+        msg = self.camera_node + ": "
+        try:
+            # inverse required for basler camera
+            if self.enable_camera_invert:
+                res = self.camera_service(not state)
+            else:
+                res = self.camera_service(state)
+            
+            success = res.success
+            if success:
+                if state:
+                    msg += "enabled camera"
+                else:
+                    msg += "disabled camera"
+            else:
+                if state:
+                    msg += "FAILED to enable camera"
+                else:
+                    msg += "FAILED to disable camera"
+            
+        except rospy.ServiceException as e:
+            if "UVC device is streaming" in str(e) and state:
+                msg += "enabled camera (already streaming)"
+                success = True
+            elif "UVC device is not streaming" in str(e) and not state:
+                msg += "disabled camera (already stopped)"
+                success = True
+            else:
+                if state:
+                    msg += "FAILED to enable camera"
+                else:
+                    msg += "FAILED to disable camera"
+                
+                msg += ", service call failed: " + escape(str(e))
+        
+        if success: 
+            print("[green]" + msg)
+            # update internal state
+            self.camera_enabled = state
+        else:
+            print("[red]" + msg)
+        
+        return success, msg
+
 
     def img_from_realsense_cb(self, img_msg, depth_msg, camera_info):
         self.img_saver(img_msg, depth_msg, camera_info)
@@ -181,6 +244,7 @@ class Main():
         self.close()
     
     def close(self):
+        self.enable_camera(False)
         self.keypress_listener.close()
         
     def parse_keypress(self):
