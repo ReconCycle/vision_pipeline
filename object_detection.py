@@ -19,7 +19,7 @@ from tracker.byte_tracker import BYTETracker
 from action_predictor.graph_relations import GraphRelations, exists_detection, compute_iou
 import obb
 import graphics
-from helpers import Struct, make_valid_poly, img_to_camera_coords
+from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles
 from context_action_framework.types import Detection, Label, Camera
 from object_detector_opencv import SimpleDetector
 from object_reid import ObjectReId
@@ -100,6 +100,7 @@ class ObjectDetection:
                 
                 # hardcode all detections as hca_back
                 detection.label = Label.hca_back
+                detection.label_precise = None
                 detection.score = float(1.0)
                 detection.box_px = boxes[i].reshape((-1,2))
                 detection.mask_contour = np.squeeze(cnts[i])
@@ -120,6 +121,7 @@ class ObjectDetection:
                 # the self.dataset.class_names dict may not correlate with Label Enum,
                 # therefore we have to convert:
                 detection.label = Label[self.model.dataset.class_names[classes[i]]]
+                detection.label_precise = None
                 detection.score = float(scores[i])
                 
                 box_px = boxes[i].reshape((-1,2)) # convert tlbr
@@ -129,12 +131,18 @@ class ObjectDetection:
                 mask = masks[i].cpu().numpy().astype("uint8")
                 detection.mask = mask
                 
-                # print("mask.shape", mask.shape)
                 cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                if len(cnts) > 0:
-                    # get the contour with the largest area. Assume this is the one containing our object
-                    cnt = max(cnts, key = cv2.contourArea)
-                    detection.mask_contour = np.squeeze(cnt)
+                if len(cnts) == 1:
+                    cnt = np.squeeze(cnts[0]) # (n, 2)
+                    detection.mask_contour = cnt
+                elif len(cnts) > 1:
+                    # getting only the biggest contour is not the best:
+                    # cnt = np.squeeze(max(cnts, key = cv2.contourArea))
+
+                    # we should merge the contours
+                    flattened_cnts = np.vstack(cnts).squeeze() # (n, 2)
+                    convex_hull = np.squeeze(cv2.convexHull(flattened_cnts, False)) # (n, 2)
+                    detection.mask_contour = convex_hull
                 else:
                     detection.mask_contour = None
                 
@@ -172,16 +180,21 @@ class ObjectDetection:
 
 
         return labelled_img, detections, markers, poses, graph_img, graph_relations
+    
+    def angle_to_quat(self, worksurface_detection, angle_px):
+        if worksurface_detection is not None:
+            # detections from basler, w.r.t. vision module table
+            # print("[red]DEBUG: inverse")
+            # rot_quat = Rotation.from_euler('xyz', [0, 0, angle_px], degrees=True).inv().as_quat() # ? why inverse?
+            rot_quat = Rotation.from_euler('xyz', [0, 0, angle_px], degrees=True).as_quat() 
+        else:
+            # detections from realsense, w.r.t. realsense camera
+            # rotate 180 degrees because camera is pointing down
+            rot_quat = Rotation.from_euler('xyz', [180, 0, angle_px], degrees=True).as_quat()
 
+        return rot_quat
 
     def get_detections(self, detections, colour_img=None, depth_img=None, worksurface_detection=None, camera_info=None, use_classify=True):
-
-        # TODO: move function into helper
-        def add_angles(angle1, angle2):
-            # angles in rad as input and output
-            angle_new = (angle1 + angle2) % (2*np.pi)
-            angle_new = np.where(angle_new > np.pi, angle_new - 2*np.pi, angle_new)
-            return angle_new
         
         obb_start = time.time()
         
@@ -225,6 +238,7 @@ class ObjectDetection:
                     classify_label = self.model.infer_classify(sample_crop)
 
                     print("classify_label", classify_label)
+                    detection.label_precise = classify_label
 
                     angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
 
@@ -239,19 +253,15 @@ class ObjectDetection:
         # calculate real world information
         for detection in detections:
             if detection.angle_px is not None:
-                if worksurface_detection is not None:
-                    # detections from basler, w.r.t. vision module table
-                    rot_quat = Rotation.from_euler('xyz', [0, 0, detection.angle_px], degrees=True).inv().as_quat() # ? why inverse?
-                else:
-                    # detections from realsense, w.r.t. realsense camera
-                    # rotate 180 degrees because camera is pointing down
-                    rot_quat = Rotation.from_euler('xyz', [180, 0, detection.angle_px], degrees=True).as_quat()
+                rot_quat = self.angle_to_quat(worksurface_detection, detection.angle_px)
                 
                 # todo: obb_3d
+                #! this tf_px coordinate system is horrible, because the y-axis is wrong.
+                #! so something is wrong here
                 detection.tf_px = Transform(Vector3(*detection.center_px, 0), Quaternion(*rot_quat))
                 
                 if worksurface_detection is not None and detection.obb_px is not None:
-                    center = worksurface_detection.pixels_to_meters(center_px)
+                    center = worksurface_detection.pixels_to_meters(detection.center_px)
                     corners = worksurface_detection.pixels_to_meters(detection.obb_px)
                     
                     detection.center = np.array([*center, 0])
@@ -415,28 +425,19 @@ class ObjectDetection:
                     battery_np_tf = ros_numpy.numpify(battery.tf)
                     
                     inv_hca = np.linalg.inv(hca_back_np_tf)
-                    prod_np_tf = np.dot(inv_hca, battery_np_tf)
-                    battery_rel_tf = ros_numpy.msgify(Transform, prod_np_tf)
+                    battery_rel_np_tf = np.dot(inv_hca, battery_np_tf)
+                    battery_rel_tf = ros_numpy.msgify(Transform, battery_rel_np_tf)
                     
                     # now we check if battery_rel_tf.translation.x > 0, in which case the battery is in the positive direction of the center of the HCA.
                     if battery_rel_tf.translation.x < 0:
+                        
                         angle_px = np.rad2deg(add_angles(np.deg2rad(hca_back.angle_px), np.deg2rad(180)))
                         hca_back.angle_px = angle_px
 
-                        # TODO: remove repeated code for getting rot_quat
-                        if worksurface_detection is not None:
-                            # detections from basler, w.r.t. vision module table
-                            rot_quat = Rotation.from_euler('xyz', [0, 0, angle_px], degrees=True).inv().as_quat() # ? why inverse?
-                        else:
-                            # detections from realsense, w.r.t. realsense camera
-                            # rotate 180 degrees because camera is pointing down
-                            rot_quat = Rotation.from_euler('xyz', [180, 0, angle_px], degrees=True).as_quat()
+                        rot_quat = self.angle_to_quat(worksurface_detection, angle_px)
 
-
-                        # TODO: check these in RViz
                         hca_back.tf = Transform(hca_back.tf.translation, Quaternion(*rot_quat))
                         hca_back.tf_px = Transform(hca_back.tf_px.translation, Quaternion(*rot_quat))
-
 
         # based on groups, orientate firealarm_back to always orientate based on battery_covered (if it exists).
         for group in graph_relations.groups:
@@ -453,30 +454,23 @@ class ObjectDetection:
                     firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, battery_covered.tf_px.rotation)
 
                     # compute relative TF of battery_covered w.r.t. firealarm_back
-                    firealarm_back_np_tf_px = ros_numpy.numpify(firealarm_back.tf_px)
-                    battery_covered_np_tf_px = ros_numpy.numpify(battery_covered.tf_px)
+                    firealarm_back_np_tf = ros_numpy.numpify(firealarm_back.tf)
+                    battery_covered_np_tf = ros_numpy.numpify(battery_covered.tf)
 
-                    inv_firealarm = np.linalg.inv(firealarm_back_np_tf_px)
-                    battery_covered_rel_np_tf_px = np.dot(inv_firealarm, battery_covered_np_tf_px)
-                    battery_covered_rel_tf_px = ros_numpy.msgify(Transform, battery_covered_rel_np_tf_px)
+
+                    # vector from firealarm_back center to battery_covered center
+                    inv_firealarm = np.linalg.inv(firealarm_back_np_tf)
+                    battery_covered_rel_np_tf = np.dot(inv_firealarm, battery_covered_np_tf)
+                    battery_covered_rel_tf = ros_numpy.msgify(Transform, battery_covered_rel_np_tf)
 
                     # rotate by 180 degrees based on relative positions
-                    if battery_covered_rel_tf_px.translation.x < 0:
-
+                    if battery_covered_rel_tf.translation.x < 0:
                         angle_px = np.rad2deg(add_angles(np.deg2rad(battery_covered.angle_px), np.deg2rad(180)))
                         battery_covered.angle_px = angle_px
                         firealarm_back.angle_px = angle_px
 
-                        # TODO: remove repeated code for getting rot_quat
-                        if worksurface_detection is not None:
-                            # detections from basler, w.r.t. vision module table
-                            rot_quat = Rotation.from_euler('xyz', [0, 0, angle_px], degrees=True).inv().as_quat() # ? why inverse?
-                        else:
-                            # detections from realsense, w.r.t. realsense camera
-                            # rotate 180 degrees because camera is pointing down
-                            rot_quat = Rotation.from_euler('xyz', [180, 0, angle_px], degrees=True).as_quat()
+                        rot_quat = self.angle_to_quat(worksurface_detection, angle_px)
 
-                        # TODO: check these in RViz
                         firealarm_back.tf = Transform(firealarm_back.tf.translation, Quaternion(*rot_quat))
                         firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, Quaternion(*rot_quat))
 
@@ -491,20 +485,22 @@ class ObjectDetection:
                     # # this angle is from firealarm_back.center_px to battery_covered.center_px
                     # print("rel_angle_px", rel_angle_px)
 
-                    # def add_angles(angle1, angle2):
-                    #     # angles in rad as input and output
-                    #     angle_new = (angle1 + angle2) % (2*np.pi)
-                    #     angle_new = np.where(angle_new > np.pi, angle_new - 2*np.pi, angle_new)
-                    #     return angle_new
-
                     # # the angle from firealarm_back.center_px to battery_covered.center_px should be about the same 
                     # # as the angle of the battery_covered. If not (eg. > 90 degrees), then we are 180 degrees out, 
                     # # so rotate by 180 degrees
-                    # # if np.abs(battery_covered.angle_px - rel_angle_px) > 90:
-                    # if battery_covered_rel_tf.translation.x < 0:
-                    #     battery_covered.angle_px = np.rad2deg(add_angles(np.deg2rad(battery_covered.angle_px), np.deg2rad(180)))
+                    # if np.abs(battery_covered.angle_px - rel_angle_px) > 90:
+                    #     angle_px = np.rad2deg(add_angles(np.deg2rad(battery_covered.angle_px), np.deg2rad(180)))
+                    #     battery_covered.angle_px = angle_px
+                    #     firealarm_back.angle_px = angle_px
 
-                    #     firealarm_back.angle_px = battery_covered.angle_px
+                    #     rot_quat = self.angle_to_quat(worksurface_detection, angle_px)
+
+                    #     # TODO: check these in RViz
+                    #     firealarm_back.tf = Transform(firealarm_back.tf.translation, Quaternion(*rot_quat))
+                    #     firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, Quaternion(*rot_quat))
+
+                    #     battery_covered.tf = Transform(battery_covered.tf.translation, Quaternion(*rot_quat))
+                    #     battery_covered.tf_px = Transform(battery_covered.tf_px.translation, Quaternion(*rot_quat))
 
                     # <-- END, ANOTHER METHOD
 

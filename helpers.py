@@ -222,6 +222,15 @@ def img_grid(imgs, w=2, h=None, margin=0):
     # cv2.imwrite(name, resized, compression_params)
     return img_matrix
 
+
+def add_angles(angle1, angle2):
+    # angles in range [-pi, pi), then output is again in range [-pi, pi)
+    # angles in rad as input and output
+    angle_new = (angle1 + angle2) % (2*np.pi)
+    angle_new = np.where(angle_new > np.pi, angle_new - 2*np.pi, angle_new)
+    return angle_new
+    
+
 def make_valid_poly(poly):
     if not poly.is_valid:
         # print(explain_validity(poly))
