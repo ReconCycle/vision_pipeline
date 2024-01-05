@@ -184,13 +184,12 @@ class ObjectDetection:
     def angle_to_quat(self, worksurface_detection, angle_px):
         if worksurface_detection is not None:
             # detections from basler, w.r.t. vision module table
-            # print("[red]DEBUG: inverse")
-            # rot_quat = Rotation.from_euler('xyz', [0, 0, angle_px], degrees=True).inv().as_quat() # ? why inverse?
             rot_quat = Rotation.from_euler('xyz', [0, 0, angle_px], degrees=True).as_quat() 
         else:
             # detections from realsense, w.r.t. realsense camera
-            # rotate 180 degrees because camera is pointing down
-            rot_quat = Rotation.from_euler('xyz', [180, 0, angle_px], degrees=True).as_quat()
+            # rotate 180 degrees because camera is pointing down, and invert object angle
+            inv_angle_px = np.rad2deg(add_angles(0, np.deg2rad(-angle_px)))
+            rot_quat = Rotation.from_euler('xyz', [180, 0, inv_angle_px], degrees=True).as_quat()
 
         return rot_quat
 
