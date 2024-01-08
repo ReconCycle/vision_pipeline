@@ -19,7 +19,7 @@ from tracker.byte_tracker import BYTETracker
 from action_predictor.graph_relations import GraphRelations, exists_detection, compute_iou
 import obb
 import graphics
-from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles
+from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles, circular_median
 from context_action_framework.types import Detection, Label, Camera
 from object_detector_opencv import SimpleDetector
 from object_reid import ObjectReId
@@ -62,6 +62,8 @@ class ObjectDetection:
         self.fps_objdet = -1.
         
         self.use_ros = use_ros
+
+        self.angle_hist_dict = {}
 
     def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None, use_tracker=True, use_classify=True):
         t_start = time.time()
@@ -161,11 +163,44 @@ class ObjectDetection:
                 detections[t.input_id].tracking_box = t.tlbr
                 detections[t.input_id].score = float(t.score)
 
+                if t.track_id not in self.angle_hist_dict:
+                    print("[blue]created history dict")
+                    self.angle_hist_dict[t.track_id] = []
+
             fps_tracker = 1.0 / (time.time() - tracker_start)
         else:
             fps_tracker = 0
         
         detections, markers, poses, graph_img, graph_relations, fps_obb = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
+
+
+        if self.config.obj_detection.rotation_median_filter:
+            # add angle_px to history
+            for detection in detections:
+                if detection.tracking_id is not None:
+                    print(f"[blue]added angle to history_dict track: {detection.tracking_id, detection.angle_px}deg, list len: {len(self.angle_hist_dict[detection.tracking_id])}")
+                    self.angle_hist_dict[detection.tracking_id].append(detection.angle_px)
+                    
+                    # prune list
+                    n = 10
+                    if len(self.angle_hist_dict[detection.tracking_id]) > n+4:
+                        # keep last 4 elements in list, when pruning
+                        del self.angle_hist_dict[detection.tracking_id][:n]
+
+            # apply filter to angle
+            for detection in detections:
+                if detection.tracking_id is not None:
+                    # last 4 elements:
+                    if len(self.angle_hist_dict[detection.tracking_id]) >= 4:
+                        last_angles = self.angle_hist_dict[detection.tracking_id][-4:]
+
+                        median_idx = circular_median(last_angles, degrees=True)
+                        median_angle = last_angles[median_idx]
+
+                        print(f"[green] {detection.label.name}, median_angle {median_angle}, {last_angles}")
+
+                        # set the angle and the median angle
+                        self.set_rotation(detection, median_angle, worksurface_detection)
 
         graphics_start = time.time()
         if extra_text is not None:
@@ -192,6 +227,15 @@ class ObjectDetection:
             rot_quat = Rotation.from_euler('xyz', [180, 0, inv_angle_px], degrees=True).as_quat()
 
         return rot_quat
+    
+    def set_rotation(self, detection, angle_px, worksurface_detection):
+        # angle in degrees
+        detection.angle_px = angle_px
+        
+        rot_quat = self.angle_to_quat(worksurface_detection, angle_px)
+        
+        detection.tf = Transform(detection.tf.translation, Quaternion(*rot_quat))
+        detection.tf_px = Transform(detection.tf_px.translation, Quaternion(*rot_quat))
 
     def get_detections(self, detections, colour_img=None, depth_img=None, worksurface_detection=None, camera_info=None, use_classify=True):
         
@@ -432,14 +476,9 @@ class ObjectDetection:
                     
                     # now we check if battery_rel_tf.translation.x > 0, in which case the battery is in the positive direction of the center of the HCA.
                     if battery_rel_tf.translation.x < 0:
-                        
-                        angle_px = np.rad2deg(add_angles(np.deg2rad(hca_back.angle_px), np.deg2rad(180)))
-                        hca_back.angle_px = angle_px
+                        angle_px = add_angles(hca_back.angle_px, 180, degrees=True)
+                        self.set_rotation(hca_back, angle_px, worksurface_detection)
 
-                        rot_quat = self.angle_to_quat(worksurface_detection, angle_px)
-
-                        hca_back.tf = Transform(hca_back.tf.translation, Quaternion(*rot_quat))
-                        hca_back.tf_px = Transform(hca_back.tf_px.translation, Quaternion(*rot_quat))
 
         # based on groups, orientate firealarm_back to always orientate based on battery_covered (if it exists).
         for group in graph_relations.groups:
@@ -459,7 +498,6 @@ class ObjectDetection:
                     firealarm_back_np_tf = ros_numpy.numpify(firealarm_back.tf)
                     battery_covered_np_tf = ros_numpy.numpify(battery_covered.tf)
 
-
                     # vector from firealarm_back center to battery_covered center
                     inv_firealarm = np.linalg.inv(firealarm_back_np_tf)
                     battery_covered_rel_np_tf = np.dot(inv_firealarm, battery_covered_np_tf)
@@ -467,17 +505,10 @@ class ObjectDetection:
 
                     # rotate by 180 degrees based on relative positions
                     if battery_covered_rel_tf.translation.x < 0:
-                        angle_px = np.rad2deg(add_angles(np.deg2rad(battery_covered.angle_px), np.deg2rad(180)))
-                        battery_covered.angle_px = angle_px
-                        firealarm_back.angle_px = angle_px
+                        angle_px = add_angles(battery_covered.angle_px, 180, degrees=True)
+                        self.set_rotation(firealarm_back, angle_px, worksurface_detection)
+                        self.set_rotation(battery_covered, angle_px, worksurface_detection)
 
-                        rot_quat = self.angle_to_quat(worksurface_detection, angle_px)
-
-                        firealarm_back.tf = Transform(firealarm_back.tf.translation, Quaternion(*rot_quat))
-                        firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, Quaternion(*rot_quat))
-
-                        battery_covered.tf = Transform(battery_covered.tf.translation, Quaternion(*rot_quat))
-                        battery_covered.tf_px = Transform(battery_covered.tf_px.translation, Quaternion(*rot_quat))
 
                     # --> ANOTHER METHOD:
 
@@ -491,18 +522,7 @@ class ObjectDetection:
                     # # as the angle of the battery_covered. If not (eg. > 90 degrees), then we are 180 degrees out, 
                     # # so rotate by 180 degrees
                     # if np.abs(battery_covered.angle_px - rel_angle_px) > 90:
-                    #     angle_px = np.rad2deg(add_angles(np.deg2rad(battery_covered.angle_px), np.deg2rad(180)))
-                    #     battery_covered.angle_px = angle_px
-                    #     firealarm_back.angle_px = angle_px
-
-                    #     rot_quat = self.angle_to_quat(worksurface_detection, angle_px)
-
-                    #     # TODO: check these in RViz
-                    #     firealarm_back.tf = Transform(firealarm_back.tf.translation, Quaternion(*rot_quat))
-                    #     firealarm_back.tf_px = Transform(firealarm_back.tf_px.translation, Quaternion(*rot_quat))
-
-                    #     battery_covered.tf = Transform(battery_covered.tf.translation, Quaternion(*rot_quat))
-                    #     battery_covered.tf_px = Transform(battery_covered.tf_px.translation, Quaternion(*rot_quat))
+                    #     angle_px = add_angles(battery_covered.angle_px, 180, degrees=True)
 
                     # <-- END, ANOTHER METHOD
 

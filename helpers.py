@@ -223,12 +223,37 @@ def img_grid(imgs, w=2, h=None, margin=0):
     return img_matrix
 
 
-def add_angles(angle1, angle2):
+def add_angles(angle1, angle2, degrees=False):
+    if degrees:
+        angle1 = np.deg2rad(angle1)
+        angle2 = np.deg2rad(angle2)
     # angles in range [-pi, pi), then output is again in range [-pi, pi)
     # angles in rad as input and output
     angle_new = (angle1 + angle2) % (2*np.pi)
     angle_new = np.where(angle_new > np.pi, angle_new - 2*np.pi, angle_new)
+
+    if degrees:
+        angle_new = np.rad2deg(angle_new)
     return angle_new
+
+
+def circular_median(angles_list, degrees=False):
+    smallest_sum_so_far = np.Inf
+    index = None
+    for i in np.arange(len(angles_list)):
+        # sum this distances from point a[i] to all the other points.
+        # the one with the smallest distance is the median
+        sum = 0
+        for j in np.arange(len(angles_list)):
+            if i != j:
+                # absolute difference of the angles
+                sum += abs(add_angles(angles_list[i], -angles_list[j], degrees=degrees))
+
+        if sum < smallest_sum_so_far:
+            smallest_sum_so_far = sum
+            index = i
+
+    return index
     
 
 def make_valid_poly(poly):
