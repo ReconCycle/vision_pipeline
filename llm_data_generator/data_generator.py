@@ -6,7 +6,7 @@ import natsort
 # ROS
 from context_action_framework.types import Module
 
-from .labelme_importer import LabelMeImporter
+from vision_pipeline.llm_data_generator.labelme_importer import LabelMeImporter
 from action_predictor.action_prediction_decision_tree import ActionPredictorDecisionTree
 
 
@@ -24,21 +24,21 @@ class LLMDataGenerator():
         # load list of images, with ground truths, labelme style
         # convert ground truths to Detections
 
-
         datasets_dir = os.path.expanduser("~/datasets2/reconcycle/2023-07-25_disassembly_sequences/")
         
         subfolders = [ f.path for f in os.scandir(datasets_dir) if f.is_dir() ]
         subfolders = natsort.os_sorted(subfolders)
         
-        print("subfolders", subfolders)
-        
         for subfolder in subfolders:
             
-            print(f"\n[green]subfolder: {subfolder}")
+            print(f"\n[blue]importing: {subfolder}")            
         
             img_paths, all_detections, all_graph_relations, modules, cameras = self.labelme_importer.process_labelme_dir(subfolder)
+
+            print(f"[green]imported {subfolder}")
             
             print("===================================================")
+            print(f"[blue]running decision tree:")
             print("===================================================")
 
             for img_path, detections, graph_relations, module, camera in zip(img_paths, all_detections, all_graph_relations, modules, cameras):

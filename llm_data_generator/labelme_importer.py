@@ -22,10 +22,9 @@ import pickle
 # ros package
 from context_action_framework.types import Detection, Label, Module, Camera
 from sensor_msgs.msg import Image, CameraInfo # CameraInfo needed for pickle
+import rospy
 
 # local imports
-from helpers import Struct, make_valid_poly, img_to_camera_coords
-from graph_relations import GraphRelations, exists_detection, compute_iou
 from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
 from gap_detection.gap_detector_clustering import GapDetectorClustering
@@ -35,6 +34,8 @@ class LabelMeImporter():
     def __init__(self, ignore_labels=[]) -> None:
         self.ignore_labels = ignore_labels
         self.worksurface_detection = None
+
+        rospy.init_node("asdf") #! we require an init_node
         
         # config
         self.work_surface_ignore_border_width = 100
@@ -251,6 +252,43 @@ class LabelMeImporter():
 
         return detections, graph_relations, module, camera
     
+
+    #! this function is also used in device_reid/preprocessing_crop_imgs.py
+    def labelme_to_detections(self, json_data, sample):
+        detections = []
+        img_h, img_w = sample.shape[:2]    
+
+        idx = 0
+        for shape in json_data['shapes']:
+            # only add items that are in the allowed
+            if shape['label'] not in self.ignore_labels:
+
+                if shape['shape_type'] == "polygon":
+
+                    detection = Detection()
+                    detection.id = idx
+                    detection.tracking_id = idx
+
+                    detection.label = Label[shape['label']]
+                    # print("detection.label", detection.label)
+                    detection.score = float(1.0)
+
+                    detection.valid = True
+
+                    detection.mask_contour = self.points_to_contour(shape['points'])
+                    detection.box_px = self.contour_to_box(detection.mask_contour)
+
+                    mask = np.zeros((img_h, img_w), np.uint8)
+                    cv2.drawContours(mask, [detection.mask_contour], -1, (255), -1)
+                    detection.mask = mask
+                    
+                    detections.append(detection)
+                    idx += 1
+
+        detections, markers, poses, graph_img, graph_relations, fps_obb = self.object_detection.get_detections(detections, depth_img=None, worksurface_detection=None, camera_info=None, use_classify=False)
+
+        return detections, graph_relations
+
 
     def points_to_contour(self, points):
         obj_point_list =  points # [(x1,y1),(x2,y2),...]
