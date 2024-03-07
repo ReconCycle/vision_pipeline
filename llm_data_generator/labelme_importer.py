@@ -97,7 +97,7 @@ class LabelMeImporter():
             json_data = json.load(open(json_path))
             filename = json_path.stem
             
-            print("filename", filename)
+            print("filename", json_path.name)
 
             img_matches = [_img_path for _img_path in image_paths if filename == _img_path.stem.split('_')[0] ]
             
@@ -228,13 +228,13 @@ class LabelMeImporter():
                     idx += 1
 
         detections, markers, poses, graph_img, graph_relations, fps_obb = self.object_detection.get_detections(detections, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
-
+        
+        graph_relations_text = graph_relations.to_text()
+        print("graph:", graph_relations_text)
+        print("list_wc_components", graph_relations.list_wc_components)
+        print("detections", len(detections))
+        
         if depth_img is not None:
-            graph_relations_text = graph_relations.to_text()
-            print("graph:", graph_relations_text)
-            print("list_wc_components", graph_relations.list_wc_components)
-            print("detections", len(detections))
-            
             gaps, cluster_img, depth_scaled, device_mask \
                 = self.gap_detector.lever_detector(
                     colour_img,
