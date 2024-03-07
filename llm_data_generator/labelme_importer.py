@@ -99,7 +99,7 @@ class LabelMeImporter():
             
             print("filename", json_path.name)
 
-            img_matches = [_img_path for _img_path in image_paths if filename == _img_path.stem.split('_')[0] ]
+            img_matches = [_img_path for _img_path in image_paths if filename == _img_path.stem ]
             
             camera_info_matches = [_cinfo for _cinfo in camera_info_paths if filename == _cinfo.stem.split('_')[0]]
             
