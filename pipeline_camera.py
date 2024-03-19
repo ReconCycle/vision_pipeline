@@ -27,7 +27,7 @@ from camera_control_msgs.srv import SetSleeping
 from visualization_msgs.msg import MarkerArray
 from geometry_msgs.msg import Transform, Vector3, Quaternion, PoseArray, TransformStamped
 
-from context_action_framework.srv import VisionDetection, VisionDetectionResponse, VisionDetectionRequest
+from context_action_framework.srv import VisionDetection, VisionDetectionResponse, VisionDetectionRequest, ProcessImg, ProcessImgResponse
 from context_action_framework.msg import VisionDetails
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
@@ -161,6 +161,8 @@ class PipelineCamera:
         vision_get_detection = path(self.config.node_name, self.camera_config.topic, "get_detection")
         continuous_enable = path(self.config.node_name, self.camera_config.topic, "continuous")
 
+        vision_process_img = path(self.config.node_name, self.camera_config.topic, "process_img")
+
         rospy.Service(camera_enable, SetBool, self.enable_camera_cb)
         rospy.Service(labelled_img_enable, SetBool, self.labelled_img_enable_cb)
         rospy.Service(graph_img_enable, SetBool, self.graph_img_enable_cb)
@@ -171,7 +173,10 @@ class PipelineCamera:
         rospy.Service(vision_get_detection, VisionDetection, self.vision_single_det_cb)
         rospy.Service(continuous_enable, SetBool, self.enable_continuous_cb)
         
-      
+        print(f"[yellow]creating service {vision_process_img}")
+        #! aren't we now reinventing VisionDetection?????
+        rospy.Service(vision_process_img, ProcessImg, self.process_img_cb) # TODO
+
     def img_from_camera_cb(self, img_msg):
         self.acquisition_stamp = img_msg.header.stamp
         self.img_msg = img_msg
@@ -261,6 +266,23 @@ class PipelineCamera:
         else:
             print(self.camera_name +": returning empty response!")
             return VisionDetectionResponse(False, VisionDetails(), img)
+
+
+    def process_img_cb(self, req):
+        # TODO: write this function
+        imgmsg = req.image
+        img = CvBridge().imgmsg_to_cv2(imgmsg, desired_encoding='passthrough')
+
+        print(f"(process_img_cb) received image to process {img.shape}")
+
+        #! we are not running on main thread. Some things may not work!!
+        labelled_img, detections, markers, poses, graph_img, *remaining_args = self.process_img(colour_img=img)
+
+        detections_ros = detections_to_ros(detections)
+        labelled_img_ros = CvBridge().cv2_to_imgmsg(labelled_img, encoding="bgr8")
+
+        return ProcessImgResponse(success=True, detections=detections_ros, labelled_image=labelled_img_ros)
+
     
     def enable_continuous_cb(self, req):
         state = req.data
@@ -438,8 +460,10 @@ class PipelineCamera:
         return True
     
 
-    def process_img(self, fps=None, camera_info=None, depth_img=None, compute_gaps=False):
-        colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg, "bgr8"))
+    def process_img(self, fps=None, camera_info=None, colour_img=None, depth_img=None, compute_gaps=False):
+        if colour_img is None:
+            colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg, "bgr8"))
+        
         self.colour_img = rotate_img(colour_img, self.camera_config.rotate_img)
         
         if hasattr(self.camera_config, "use_worksurface_detection") and self.camera_config.use_worksurface_detection:

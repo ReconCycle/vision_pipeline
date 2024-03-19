@@ -61,6 +61,7 @@ obj_detection:
   superglue_templates: ~/datasets2/reconcycle/2023-12-04_hcas_fire_alarms_sorted_cropped
   superglue_model_file: "~/superglue_training/output/train/2023-11-18_superglue_model/weights/best.pt"
   superglue_match_threshold: 0.5
+  rotation_median_filter: True
 
   classifier_model_file: "~/device_reid/results/2024-01-02__12-56_classify_WORKING/lightning_logs/version_0/checkpoints/epoch=598-step=598.ckpt"
   classifier_threshold: 0.5
