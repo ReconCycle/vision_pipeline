@@ -272,7 +272,7 @@ class ObjectDetection:
         if use_classify:
             # estimate angle using superglue model
             for detection in detections:
-                if detection.label in [Label.firealarm_front, Label.firealarm_back]:
+                if detection.label in [Label.firealarm_front, Label.firealarm_back, Label.hca_back, Label.hca_front]:
 
                     time0 = timer()
                     
@@ -286,11 +286,13 @@ class ObjectDetection:
 
                         detection.label_precise = classify_label
 
-                        angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
+                        if detection.label in [Label.firealarm_front, Label.firealarm_back]:
 
-                        if angle_rad is not None:
-                            # update angle
-                            detection.angle_px = np.rad2deg(angle_rad)
+                            angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
+
+                            if angle_rad is not None:
+                                # update angle
+                                detection.angle_px = np.rad2deg(angle_rad)
 
                     elapsed_time_classify_and_rot = timer() - time0
                     print("elapsed_time_classify_and_rot", elapsed_time_classify_and_rot)

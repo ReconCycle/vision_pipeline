@@ -117,7 +117,9 @@ class ObjectReIdSuperGlue(ObjectReId):
         kpts0 = last_data['keypoints0'][0].cpu().numpy()
         kpts1 = pred['keypoints1'][0].cpu().numpy()
         matches = pred['matches0'][0].cpu().numpy()
-        confidence = pred['matching_scores0'][0].cpu().numpy()
+        # confidence = pred['matching_scores0'][0].cpu().numpy()
+        #! gives error: Can't call numpy() on Tensor that requires grad. Use tensor.detach().numpy()
+        confidence = pred['matching_scores0'][0].cpu().detach().numpy()
 
         valid = matches > -1
         mkpts0 = kpts0[valid]
