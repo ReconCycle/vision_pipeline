@@ -19,7 +19,7 @@ from object_detection import ObjectDetection
 from work_surface_detection_opencv import WorkSurfaceDetection
 from aruco_detection import ArucoDetection
 
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CompressedImage
 from std_srvs.srv import SetBool
 from cv_bridge import CvBridge
 from std_msgs.msg import String
@@ -119,6 +119,11 @@ class PipelineCamera:
         print(self.camera_name +": enabling camera ...")
         self.enable_camera(True)
         
+        if not self.continuous_mode:
+            print("==========================")
+            print(f"[red]{self.camera_name}: Continuous mode disabled!")
+            print("==========================")
+        
         # register what to do on shutdown
         rospy.on_shutdown(self.exit)
     
@@ -127,8 +132,12 @@ class PipelineCamera:
         self.worksurface_detection = None
 
     def create_subscribers(self):
-        img_topic = path(self.camera_config.camera_node, self.camera_config.image_topic)
-        self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_cb)
+        # img_topic = path(self.camera_config.camera_node, self.camera_config.image_topic)
+        # self.img_sub = rospy.Subscriber(img_topic, Image, self.img_from_camera_cb)
+
+        img_topic = path(self.camera_config.camera_node, self.camera_config.image_topic, "compressed")
+        self.img_sub = rospy.Subscriber(img_topic, CompressedImage, self.img_from_camera_cb)
+        
 
     def create_service_client(self):
         timeout = 2 # 2 second timeout
@@ -144,10 +153,14 @@ class PipelineCamera:
     def create_publishers(self):
         self.br = CvBridge()
         self.labelled_img_pub = rospy.Publisher(path(self.camera_topic, "colour"), Image, queue_size=1)
+        self.labelled_img_comp_pub = rospy.Publisher(path(self.camera_topic, "colour", "compressed"), CompressedImage, queue_size=1)
+
+
         self.detections_pub = rospy.Publisher(path(self.camera_topic, "detections"), ROSDetections, queue_size=1)
         self.markers_pub = rospy.Publisher(path(self.camera_topic, "markers"), MarkerArray, queue_size=1)
         self.poses_pub = rospy.Publisher(path(self.camera_topic, "poses"), PoseArray, queue_size=1)
         self.graph_img_pub = rospy.Publisher(path(self.camera_topic, "graph"), Image, queue_size=1)
+        self.graph_img_comp_pub = rospy.Publisher(path(self.camera_topic, "graph", "compressed"), CompressedImage, queue_size=1)
         
 
     def create_services(self):
@@ -178,6 +191,7 @@ class PipelineCamera:
         rospy.Service(vision_process_img, ProcessImg, self.process_img_cb) # TODO
 
     def img_from_camera_cb(self, img_msg):
+        
         self.acquisition_stamp = img_msg.header.stamp
         self.img_msg = img_msg
         self.img_id += 1
@@ -353,7 +367,8 @@ class PipelineCamera:
         # disable the camera
         print(self.camera_name + ": stopping...")
         self.enable_continuous(False)
-        self.enable_camera(False)
+        if self.camera_config.sleep_camera_on_exit:
+            self.enable_camera(False)
 
     def run(self):
         single_mode_frame_accepted = False
@@ -400,10 +415,12 @@ class PipelineCamera:
 
         if self.img_msg is None:
             #print(self.camera_name +": Waiting to receive image.")
+            # print(f"[red]{self.camera_name}: img_msg is None")
             return False
         
         # check we haven't processed this frame already
         if self.processed_img_id >= self.img_id:
+            # print(f"[red]{self.camera_name}: already processed img {self.img_id}")
             return False
 
         # Pipeline is enabled and we have an image
@@ -462,7 +479,14 @@ class PipelineCamera:
 
     def process_img(self, fps=None, camera_info=None, colour_img=None, depth_img=None, compute_gaps=False):
         if colour_img is None:
-            colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg, "bgr8"))
+            np_arr = np.frombuffer(self.img_msg.data, np.uint8)
+            colour_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+            # print("is msg none?", self.img_msg is None)
+            # print("colour_img", colour_img.shape)
+            
+            #! we switched to compressedImage
+            # colour_img = np.array(CvBridge().imgmsg_to_cv2(self.img_msg, "bgr8"))
         
         self.colour_img = rotate_img(colour_img, self.camera_config.rotate_img)
         
@@ -501,11 +525,23 @@ class PipelineCamera:
             img_msg = self.br.cv2_to_imgmsg(img, encoding="bgr8")
             img_msg.header.stamp = timestamp
             self.labelled_img_pub.publish(img_msg)
+
+            img_msg_comp = CompressedImage()
+            img_msg_comp.header.stamp = timestamp
+            img_msg_comp.format = "jpeg"
+            img_msg_comp.data = np.array(cv2.imencode('.jpg', img)[1]).tostring()
+            self.labelled_img_comp_pub.publish(img_msg_comp)
         
         if graph_img is not None and self.camera_config.publish_graph_img:
             graph_img_msg = self.br.cv2_to_imgmsg(graph_img, encoding="8UC4")
             graph_img_msg.header.stamp = timestamp
             self.graph_img_pub.publish(graph_img_msg)
+
+            img_msg_comp = CompressedImage()
+            img_msg_comp.header.stamp = timestamp
+            img_msg_comp.format = "jpeg"
+            img_msg_comp.data = np.array(cv2.imencode('.jpg', graph_img)[1]).tostring()
+            self.graph_img_comp_pub.publish(img_msg_comp)
         
         # publish valid detections
         valid_detections = [detection for detection in detections if detection.valid]

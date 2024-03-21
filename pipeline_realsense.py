@@ -19,7 +19,7 @@ from aruco_detection import ArucoDetection
 from gap_detection.gap_detector_clustering import GapDetectorClustering
 
 from geometry_msgs.msg import PoseStamped, PointStamped, PoseArray
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CompressedImage, CameraInfo
 from std_srvs.srv import SetBool
 from cv_bridge import CvBridge
 from std_msgs.msg import String
@@ -64,7 +64,7 @@ class PipelineRealsense(PipelineCamera):
         img_topic = path(self.camera_config.camera_node, "color/image_raw")
         depth_topic = path(self.camera_config.camera_node, "aligned_depth_to_color/image_raw")
         camera_info_sub = message_filters.Subscriber(camera_info_topic, CameraInfo)
-        img_sub = message_filters.Subscriber(img_topic, Image)
+        img_sub = message_filters.Subscriber(img_topic, CompressedImage)
         depth_sub = message_filters.Subscriber(depth_topic, Image)
 
         ts = message_filters.ApproximateTimeSynchronizer([camera_info_sub, img_sub, depth_sub], 10, slop=0.05, allow_headerless=False)
