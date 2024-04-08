@@ -29,9 +29,12 @@ from work_surface_detection_opencv import WorkSurfaceDetection
 from object_detection import ObjectDetection
 from gap_detection.gap_detector_clustering import GapDetectorClustering
 
+from config import load_config
+from object_detection_model import ObjectDetectionModel
+
 
 class LabelMeImporter():
-    def __init__(self, ignore_labels=[]) -> None:
+    def __init__(self, ignore_labels=[], use_obj_det_model=True) -> None:
         self.ignore_labels = ignore_labels
         self.worksurface_detection = None
 
@@ -41,18 +44,23 @@ class LabelMeImporter():
         self.work_surface_ignore_border_width = 100
         self.debug_work_surface_detection = False
 
-        config = SimpleNamespace()
-        config.reid = False
-        config.realsense = SimpleNamespace()
-        config.realsense.debug_clustering = False
+        config = load_config(os.path.expanduser("~/vision_pipeline/config.yaml"))
 
-        config.obj_detection = SimpleNamespace()
+        # overwrite some settings
+        config.reid = False
+        config.realsense.debug_clustering = False
         config.obj_detection.debug = False
 
         self.camera_config = SimpleNamespace()
         self.camera_config.publish_graph_img = False
 
-        self.object_detection = ObjectDetection(config=config, camera_config=self.camera_config, use_ros=False) #! probably we need to add more stuff
+        model = None
+        if use_obj_det_model:
+            # optional, load the object detection model. We can get the precise label using this.
+            
+            model = ObjectDetectionModel(config.obj_detection)
+
+        self.object_detection = ObjectDetection(config=config, camera_config=self.camera_config, model=model, use_ros=False) #! probably we need to add more stuff
         
         self.gap_detector = GapDetectorClustering(config) 
 
@@ -128,11 +136,22 @@ class LabelMeImporter():
                         break
                 
             
-            if colour_img is not None:    
+            if colour_img is not None:
+
+                # if 2900x2900, scale down.
+                apply_scale = 1.0
+                if colour_img.shape[0] == 2900 and colour_img.shape[1] == 2900:
+                    apply_scale = 0.5
+                    dim = (1450, 1450)
+                    colour_img = cv2.resize(colour_img, dim, interpolation = cv2.INTER_AREA)
+
+                    print("applied scale colour_img.shape", colour_img.shape)
+
                 if self.worksurface_detection is None:
                     self._process_work_surface_detection(colour_img)
+
                     
-                detections, graph_relations, module, camera = self._process_labelme_img(json_data, colour_img, depth_img, camera_info)
+                detections, graph_relations, module, camera = self._process_labelme_img(json_data, colour_img, depth_img, camera_info, apply_scale)
 
                 img_paths.append(colour_img_path)
                 all_detections.append(detections)
@@ -152,7 +171,7 @@ class LabelMeImporter():
     def _process_work_surface_detection(self, img):
         self.worksurface_detection = WorkSurfaceDetection(img, self.work_surface_ignore_border_width, debug=self.debug_work_surface_detection)
 
-    def _process_labelme_img(self, json_data, colour_img, depth_img=None, camera_info=None):
+    def _process_labelme_img(self, json_data, colour_img, depth_img=None, camera_info=None, apply_scale=1.0):
         detections = []
 
         # img = Image.open(img_path).convert('RGB') # SLOW
@@ -217,8 +236,8 @@ class LabelMeImporter():
                     detection.label = Label[shape['label']]
                     detection.score = float(1.0)
 
-                    detection.mask_contour = self.points_to_contour(shape['points'])
-                    detection.box_px = self.contour_to_box(detection.mask_contour)
+                    detection.mask_contour = self.points_to_contour(shape['points'], apply_scale)
+                    detection.box_px = self.contour_to_box(detection.mask_contour, apply_scale)
 
                     mask = np.zeros((img_h, img_w), np.uint8)
                     cv2.drawContours(mask, [detection.mask_contour], -1, (255), -1)
@@ -227,7 +246,7 @@ class LabelMeImporter():
                     detections.append(detection)
                     idx += 1
 
-        detections, markers, poses, graph_img, graph_relations, fps_obb = self.object_detection.get_detections(detections, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
+        detections, markers, poses, graph_img, graph_relations, fps_obb = self.object_detection.get_detections(detections, colour_img, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
         
         graph_relations_text = graph_relations.to_text()
         print("graph:", graph_relations_text)
@@ -290,16 +309,27 @@ class LabelMeImporter():
         return detections, graph_relations
 
 
-    def points_to_contour(self, points):
+    def points_to_contour(self, points, apply_scale=1.0):
         obj_point_list =  points # [(x1,y1),(x2,y2),...]
-        obj_point_list = np.array(obj_point_list).astype(int) # convert to int
+        obj_point_list = np.array(obj_point_list)
+        if apply_scale != 1.0:
+            obj_point_list = obj_point_list * apply_scale
+        
+        obj_point_list = obj_point_list.astype(int) # convert to int
         # obj_point_list = [tuple(point) for point in obj_point_list] # convert back to list of tuples
+
+        
+
 
         # contour
         return obj_point_list
 
-    def contour_to_box(self, contour):
-        x,y,w,h = cv2.boundingRect(contour)
+    def contour_to_box(self, contour, apply_scale=1.0):
+        x, y, w, h = cv2.boundingRect(contour)
+
+        if apply_scale != 1.0:
+            x, y, w, h = x*apply_scale, y*apply_scale, w*apply_scale, h*apply_scale
+
         # (x,y) is the top-left coordinate of the rectangle and (w,h) its width and height
-        box = np.array([x, y, x + w, y + h]).reshape((-1,2)) # convert tlbr (top left bottom right)
+        box = np.array([x, y, x + w, y + h]).reshape((-1,2)).astype(int) # convert tlbr (top left bottom right)
         return box
