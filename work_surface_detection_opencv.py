@@ -1,3 +1,4 @@
+import os
 import sys
 import numpy as np
 from scipy import spatial
@@ -11,7 +12,9 @@ from scipy.optimize import linear_sum_assignment
 
 from helpers import scale_img
 from shapely.geometry import Polygon
+
 import matplotlib.pyplot as plt
+import datetime
 
 
 # https://stackoverflow.com/questions/45531074/how-to-merge-lines-after-houghlinesp
@@ -256,8 +259,8 @@ class WorkSurfaceDetection:
         # self.compute_affine_transform()
         
         # for debugging, draw everything
-        # if self.debug:
-        #     self.draw_corners_and_circles(img, show=True)
+        if self.debug:
+            self.draw_corners_and_circles(img, show=False)
 
             
         
@@ -453,8 +456,13 @@ class WorkSurfaceDetection:
             print("affine matrix", affine_m)
             print("affine translation", affine_t)
             print("affine", affine)
-
+            plt.gca().set_aspect('equal')
+            plt.xlabel("x, meters")
+            plt.ylabel("y, meters")
+            plt.legend(loc="center left")
+            plt.savefig("saves/{date:%Y-%m-%d_%H:%M:%S}_affine.png".format(date=datetime.datetime.now()), bbox_inches='tight', dpi=300)
             plt.show()
+            plt.close()
         
         result = np.copy(source_scaled)
         result = res.transformation.transform(result)
@@ -492,14 +500,18 @@ class WorkSurfaceDetection:
         mean_error = dist.mean()
         
         if self.debug:
-            print("max_error", max_error)
-            print("mean_error", mean_error)
+            print("bolt matching max_error", max_error)
+            print("bolt matching mean_error", mean_error)
             
-            plt.plot(target_flipped[:,0], target_flipped[:,1],'bo', markersize = 10)
-            plt.plot(result[:,0], result[:,1],'rs',  markersize = 7)
+            plt.plot(target_flipped[:,0], target_flipped[:,1],'g^', markersize = 10)
+            plt.plot(result[:,0], result[:,1],'bo',  markersize = 7)
             for p in range(len(result)):
                 if matching_idxs[p] is not None:
                     plt.plot([target_flipped[matching_idxs[p], 0], result[p,0]], [target_flipped[matching_idxs[p], 1], result[p,1]], 'k')
+            plt.gca().set_aspect('equal')
+            plt.xlabel("x, meters")
+            plt.ylabel("y, meters")
+            plt.savefig("saves/{date:%Y-%m-%d_%H:%M:%S}_matching.png".format(date=datetime.datetime.now()), bbox_inches='tight', dpi=300)
             plt.show()
 
 
@@ -694,8 +706,8 @@ class WorkSurfaceDetection:
             
             # print("Target:", points_m)
             # print("Result:", self.pixels_to_meters(points_px))
-            print("max_error", max_error)
-            print("mean_error", mean_error)
+            print("affine max_error", max_error)
+            print("affine mean_error", mean_error)
 
             print("self.meters_to_pixels", self.meters_to_pixels(np.array([0.0, 0.0])))
             print("and back...", self.pixels_to_meters(self.meters_to_pixels(np.array([0.0, 0.0]))))
@@ -754,7 +766,20 @@ class WorkSurfaceDetection:
                         line_type=8)
                     
                     cv2.putText(img, key, (int(x)-100, int(y)-20), self.font_face, self.font_scale, [0,255,0], self.font_thickness, cv2.LINE_AA)
+
+            img_mask = np.zeros_like(img)
+            # draw borders to ignore
+            red_color =  (0, 0, 255)
+            cv2.rectangle(img_mask, (0, 0), (1450, self.border_width), red_color, -1) # top border
+            cv2.rectangle(img_mask, (0, 1450), (1450, 1450 - self.border_width), red_color, -1) # bottom border
+            cv2.rectangle(img_mask, (1450, 0), (1450- self.border_width, 1450), red_color, -1) # right border border
+            cv2.rectangle(img_mask, (0, 0), (self.border_width, 1450), red_color, -1) # left border
+
+            img = cv2.addWeighted(img, 0.75, img_mask, 0.25, 0)
         
+        if self.debug:
+            cv2.imwrite("saves/{date:%Y-%m-%d_%H:%M:%S}_bolts.png".format(date=datetime.datetime.now()), scale_img(img))
+
         if show:
             cv2.imshow("1", scale_img(img))
             cv2.waitKey(0)
@@ -802,7 +827,19 @@ class WorkSurfaceDetection:
             return self.coord_transform_inv(coords)
         
 if __name__ == '__main__':
-    img = cv2.imread("data_full/2022-12-05_work_surface/frame0000.jpg")
+    from config import load_config
+
+    config = load_config()
+
+
+    img = cv2.imread(os.path.expanduser("~/datasets2/reconcycle/2022-12-05_work_surface/frame0000.jpg"))
     # img = cv2.imread("data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021/img000.png")
-    work_surface_det2 = WorkSurfaceDetection(img, debug=True)
+
+    print("img.shape", img.shape)
+    border_width = config.basler.work_surface_ignore_border_width
+    print("border_width", border_width)
+    # border_width = 100
+    # print("border_width", border_width)
+
+    work_surface_det2 = WorkSurfaceDetection(img, border_width, debug=True)
     
