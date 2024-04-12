@@ -19,6 +19,7 @@ basler:
   marker_lifetime: 1 # in seconds
   work_surface_ignore_border_width: 100
   show_work_surface_detection: True
+  use_worksurface_detection: True
   debug_work_surface_detection: False # debug worksurface detection
 
 realsense:

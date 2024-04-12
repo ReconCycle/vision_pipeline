@@ -18,6 +18,7 @@ from helpers import path, rotate_img
 from object_detection import ObjectDetection
 from work_surface_detection_opencv import WorkSurfaceDetection
 from aruco_detection import ArucoDetection
+from object_reid import ObjectReId
 
 from sensor_msgs.msg import Image, CompressedImage
 from std_srvs.srv import SetBool
@@ -283,19 +284,30 @@ class PipelineCamera:
 
 
     def process_img_cb(self, req):
-        # TODO: write this function
         imgmsg = req.image
         img = CvBridge().imgmsg_to_cv2(imgmsg, desired_encoding='passthrough')
 
         print(f"(process_img_cb) received image to process {img.shape}")
 
         #! we are not running on main thread. Some things may not work!!
-        labelled_img, detections, markers, poses, graph_img, *remaining_args = self.process_img(colour_img=img)
+        labelled_img, detections, markers, poses, graph_img, graph_relations = self.process_img(colour_img=img)
 
+        # ! probably should pass self.colour_img instead of class variable
         detections_ros = detections_to_ros(detections)
         labelled_img_ros = CvBridge().cv2_to_imgmsg(labelled_img, encoding="bgr8")
 
-        return ProcessImgResponse(success=True, detections=detections_ros, labelled_image=labelled_img_ros)
+        # TODO:  create cropped_img
+        # see device_reid/preprocessing_crop_imgs.py for original implementation
+        labels = [Label.hca_front, Label.hca_back, Label.firealarm_front, Label.firealarm_back]
+        sample_crop, poly = ObjectReId.find_and_crop_det(self.colour_img, graph_relations, labels=labels, size=300)
+
+        sample_crop_ros = CvBridge().cv2_to_imgmsg(sample_crop, encoding="bgr8")
+        # TODO: also return graph_relations
+
+        return ProcessImgResponse(success=True, 
+                                  detections=detections_ros, 
+                                  labelled_image=labelled_img_ros,
+                                  cropped_image=sample_crop_ros)
 
     
     def enable_continuous_cb(self, req):
