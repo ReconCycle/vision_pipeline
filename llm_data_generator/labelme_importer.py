@@ -77,6 +77,7 @@ class LabelMeImporter():
         images_dir = Path(images_dir)
         
         json_paths = list(labelme_dir.glob('*.json'))
+        json_paths = [path for path in json_paths if "_qa" not in str(path.stem)]
         json_paths = natsort.os_sorted(json_paths)
         
         image_paths = list(images_dir.glob('*.png')) 

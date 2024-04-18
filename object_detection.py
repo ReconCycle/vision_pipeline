@@ -20,7 +20,7 @@ from context_action_framework.graph_relations import GraphRelations, exists_dete
 import obb
 import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles, circular_median
-from context_action_framework.types import Detection, Label, Camera
+from context_action_framework.types import Detection, Label, LabelFace, Camera
 from object_detector_opencv import SimpleDetector
 from object_reid import ObjectReId
 
@@ -101,7 +101,8 @@ class ObjectDetection:
                 detection.id = int(i)
                 
                 # hardcode all detections as hca_back
-                detection.label = Label.hca_back
+                detection.label = Label.hca
+                detection.label_face = LabelFace.back
                 detection.label_precise = None
                 detection.score = float(1.0)
                 detection.box_px = boxes[i].reshape((-1,2))
@@ -122,7 +123,31 @@ class ObjectDetection:
 
                 # the self.dataset.class_names dict may not correlate with Label Enum,
                 # therefore we have to convert:
-                detection.label = Label[self.model.dataset.class_names[classes[i]]]
+                label_from_model = self.model.dataset.class_names[classes[i]]
+                label = label_from_model
+                label_face = None
+                if label_from_model == "hca_front":
+                    label = "hca"
+                    label_face = LabelFace.front
+                elif label_from_model == "hca_back":
+                    label = "hca"
+                    label_face = LabelFace.back
+                elif label_from_model == "hca_side1":
+                    label = "hca"
+                    label_face = LabelFace.side2
+                elif label_from_model == "hca_side2":
+                    label = "hca"
+                    label_face = LabelFace.side2
+                elif label_from_model == "firealarm_front":
+                    label = "smoke_detector"
+                    label_face = LabelFace.front
+                elif label_from_model == "firealarm_back":
+                    label = "smoke_detector"
+                    label_face = LabelFace.back
+
+                detection.label = Label[label]
+                detection.label_face = label_face
+
                 detection.label_precise = None
                 detection.score = float(scores[i])
                 
@@ -272,7 +297,7 @@ class ObjectDetection:
         if use_classify:
             # estimate angle using superglue model
             for detection in detections:
-                if detection.label in [Label.firealarm_front, Label.firealarm_back, Label.hca_back, Label.hca_front]:
+                if detection.label in [Label.smoke_detector, Label.hca]:
 
                     time0 = timer()
                     
@@ -280,13 +305,19 @@ class ObjectDetection:
 
                     classify_label, conf = self.model.infer_classify(sample_crop)
 
+                    # if detection.label == Label.hca:
+                    #     if "hca" in classify_label:
+
+                    # TODO: the classify label is also predicting hca/firealarm and 
+                    # TODO: back/front. We should not return all this info.
+
                     print("classify_label", classify_label, "conf", conf)
 
                     if conf > self.config.obj_detection.classifier_threshold:
 
                         detection.label_precise = classify_label
 
-                        if detection.label in [Label.firealarm_front, Label.firealarm_back]:
+                        if detection.label == Label.smoke_detector:
 
                             angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
 
@@ -460,7 +491,7 @@ class ObjectDetection:
         # TODO: track groups
         # based on groups, orientate HCA to always point the same way, dependent on battery position in the device.
         for group in graph_relations.groups:
-            hca_back = graph_relations.get_first(group, Label.hca_back)
+            hca_back = graph_relations.get_first(group, Label.hca, LabelFace.back)
             battery = graph_relations.get_first(group, Label.battery)
             # TODO: Also fix orientation of other internals like pcb, pcb_uncovered
             # pcb = graph_relations.get_first(group, Label.pcb)
@@ -484,7 +515,7 @@ class ObjectDetection:
 
         # based on groups, orientate firealarm_back to always orientate based on battery_covered (if it exists).
         for group in graph_relations.groups:
-            firealarm_back = graph_relations.get_first(group, Label.firealarm_back)
+            firealarm_back = graph_relations.get_first(group, Label.smoke_detector, LabelFace.back)
             battery_covered = graph_relations.get_first(group, Label.battery_covered)
 
             if firealarm_back is not None and battery_covered is not None and firealarm_back.tf is not None and battery_covered.tf is not None:
