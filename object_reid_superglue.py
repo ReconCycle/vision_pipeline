@@ -15,7 +15,7 @@ import math
 
 from types import SimpleNamespace
 
-from graph_relations import GraphRelations, exists_detection, compute_iou
+from context_action_framework.graph_relations import GraphRelations, exists_detection, compute_iou
 
 from helpers import scale_img, add_angles
 from vision_pipeline.object_reid import ObjectReId

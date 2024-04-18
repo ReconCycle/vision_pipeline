@@ -14,7 +14,7 @@ import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
 from types import SimpleNamespace
 
-from action_predictor.graph_relations import GraphRelations, exists_detection, compute_iou
+from context_action_framework.graph_relations import GraphRelations, exists_detection, compute_iou
 
 from context_action_framework.types import Action, Detection, Gap, Label
 

@@ -16,7 +16,7 @@ from yolact_pkg.data.config import Config, COLORS
 from yolact_pkg.yolact import Yolact
 
 from tracker.byte_tracker import BYTETracker
-from action_predictor.graph_relations import GraphRelations, exists_detection, compute_iou
+from context_action_framework.graph_relations import GraphRelations, exists_detection, compute_iou
 import obb
 import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles, circular_median

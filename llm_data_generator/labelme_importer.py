@@ -18,6 +18,7 @@ from shapely.geometry import Polygon
 from rich import print
 from types import SimpleNamespace
 import pickle
+from object_reid import ObjectReId
 
 # ros package
 from context_action_framework.types import Detection, Label, Module, Camera
@@ -65,7 +66,7 @@ class LabelMeImporter():
         self.gap_detector = GapDetectorClustering(config) 
 
     
-    def process_labelme_dir(self, labelme_dir, images_dir=None):
+    def process_labelme_dir(self, labelme_dir, images_dir=None, filter_cropped=True):
         # load in the labelme data
         labelme_dir = Path(labelme_dir)
 
@@ -78,7 +79,12 @@ class LabelMeImporter():
         json_paths = list(labelme_dir.glob('*.json'))
         json_paths = natsort.os_sorted(json_paths)
         
-        image_paths = list(images_dir.glob('*.png')) + list(images_dir.glob('*.jpg')) 
+        image_paths = list(images_dir.glob('*.png')) 
+        image_paths.extend(list(images_dir.glob('*.jpg')))
+        
+        # don't work on the cropped images. Remove them from the image paths
+        if filter_cropped:
+            image_paths = [path for path in image_paths if "crop" not in str(path.stem)]
         image_paths = natsort.os_sorted(image_paths)
         
         depth_paths = list(images_dir.glob('*_depth.npy'))
@@ -97,6 +103,7 @@ class LabelMeImporter():
         all_graph_relations = []
         modules = []
         cameras = []
+        crop_imgs = []
 
         for idx, json_path in enumerate(tqdm_json_paths):
             tqdm_json_paths.set_description(f"Converting {Path(json_path).stem}")
@@ -150,14 +157,18 @@ class LabelMeImporter():
                 if self.worksurface_detection is None:
                     self._process_work_surface_detection(colour_img)
 
-                    
                 detections, graph_relations, module, camera = self._process_labelme_img(json_data, colour_img, depth_img, camera_info, apply_scale)
+
+                # TODO: get the cropped image
+                cropped_labels = [Label.hca_front, Label.hca_back, Label.firealarm_front, Label.firealarm_back]
+                sample_crop, poly = ObjectReId.find_and_crop_det(colour_img, graph_relations, labels=cropped_labels, size=300)
 
                 img_paths.append(colour_img_path)
                 all_detections.append(detections)
                 all_graph_relations.append(graph_relations)
                 modules.append(module)
                 cameras.append(camera)
+                crop_imgs.append(sample_crop)
                
             else:
                 print(f"[red]No image matched for {json_path}")
@@ -166,7 +177,7 @@ class LabelMeImporter():
                 print("[red] DEBUG: max 20 steps in sequence")
                 break # ! debug
 
-        return img_paths, all_detections, all_graph_relations, modules, cameras
+        return img_paths, all_detections, all_graph_relations, modules, cameras, crop_imgs
 
     def _process_work_surface_detection(self, img):
         self.worksurface_detection = WorkSurfaceDetection(img, self.work_surface_ignore_border_width, debug=self.debug_work_surface_detection)
