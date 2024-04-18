@@ -201,7 +201,7 @@ class ObjectDetectionModel:
         img_tensor = transform(image=sample_cropped)["image"]
         img_tensor = img_tensor.unsqueeze(0).cuda() # batch size 1
 
-        print("infer_classify", img_tensor.shape)
+        # print("infer_classify", img_tensor.shape)
 
         self.classify_model.eval()
 

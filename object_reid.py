@@ -63,7 +63,7 @@ class ObjectReId:
 
 
     @classmethod
-    def find_and_crop_det(cls, img, graph, rotate_180=False, rotate=False, labels=[Label.hca_back], size=400, ):
+    def find_and_crop_det(cls, img, graph, rotate_180=False, rotate=False, labels=[Label.hca], size=400):
         # some kind of derivative of: process_detection
         chosen_label = None
         for label in labels:

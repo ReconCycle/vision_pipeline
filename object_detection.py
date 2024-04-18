@@ -124,6 +124,7 @@ class ObjectDetection:
                 # the self.dataset.class_names dict may not correlate with Label Enum,
                 # therefore we have to convert:
                 label_from_model = self.model.dataset.class_names[classes[i]]
+
                 label = label_from_model
                 label_face = None
                 if label_from_model == "hca_front":
@@ -147,7 +148,6 @@ class ObjectDetection:
 
                 detection.label = Label[label]
                 detection.label_face = label_face
-
                 detection.label_precise = None
                 detection.score = float(scores[i])
                 
@@ -311,11 +311,27 @@ class ObjectDetection:
                     # TODO: the classify label is also predicting hca/firealarm and 
                     # TODO: back/front. We should not return all this info.
 
-                    print("classify_label", classify_label, "conf", conf)
-
                     if conf > self.config.obj_detection.classifier_threshold:
 
-                        detection.label_precise = classify_label
+                        # ! I trust the classifier more than the segmentation. 
+                        print("classify_label", classify_label, "conf", conf)
+                        label_split = classify_label.rsplit('_')
+                        classify_type = label_split[0]
+                        classify_face = label_split[1]
+                        classify_num = label_split[2]
+                        
+                        if classify_type != detection.label.name:
+                            print("[red]classifier says {classify_type}, but yolo says {detection.label}")
+                        
+                        if classify_face != detection.label_face.name:
+                            print("[red]classifier says {classify_face}, but yolo says {detection.label_face}")
+
+                        print("classify_label.rsplit('_')", classify_label.rsplit('_'))
+                        print("classify_num", classify_num)
+                        print("classify_face", classify_face)
+                        print("classify_type", classify_type)
+
+                        detection.label_precise = classify_num
 
                         if detection.label == Label.smoke_detector:
 

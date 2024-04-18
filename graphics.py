@@ -215,6 +215,8 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
                     tracking_id = "t_id " + str(detection.tracking_id) + "," if detection.tracking_id is not None else ""
                     # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) + ", " if detection.tracking_score is not None else ""
                     name = detection.label.name
+                    if detection.label_face is not None:
+                        name += " " + detection.label_face.name
                     if detection.label_precise is not None:
                         name += " " + detection.label_precise
                     text_str = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else detection.label.name
