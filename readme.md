@@ -114,6 +114,17 @@ where True provides the gaps as well.
 
 These are called internally and shouldn't be used manually.
 
+## Saving Images
+
+Open `vision_pipeline/image_saver.py` and change the line:
+```python
+self.camera_node = "realsense" #! options: realsense/realsensed405/basler
+```
+to match your desired camera.
+
+Run it, and press any key to save an image.
+
+
 # Dataset Creation and Training
 
 ## Labelling Images with Segmentation for use with Yolact
