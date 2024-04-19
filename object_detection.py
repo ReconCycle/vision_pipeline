@@ -321,7 +321,13 @@ class ObjectDetection:
             if detection.mask_contour is not None and len(detection.mask_contour) > 2:
                 poly = Polygon(detection.mask_contour)
                 poly = make_valid_poly(poly)
-
+                
+                for _ in np.arange(3):
+                    if len(poly.exterior.coords) > 20:
+                        poly = poly.simplify(tolerance=5.) # tolerance in pixels
+                    else:
+                        break
+                        
             detection.polygon_px = poly
 
         if use_classify:
@@ -344,22 +350,26 @@ class ObjectDetection:
                     if conf > self.config.obj_detection.classifier_threshold:
 
                         # ! I trust the classifier more than the segmentation. 
-                        print("classify_label", classify_label, "conf", conf)
+                        # print("classify_label", classify_label, "conf", conf)
                         label_split = classify_label.rsplit('_')
                         classify_type = label_split[0]
                         classify_face = label_split[1]
                         classify_num = label_split[2]
+
+                        # print("classify_label.rsplit('_')", classify_label.rsplit('_'))
+                        # print("classify_num", classify_num)
+                        # print("classify_face", classify_face)
+                        # print("classify_type", classify_type)
+
+                        # fix for old naming convention
+                        if classify_type == "firealarm":
+                            classify_type = "smoke_detector"
                         
                         if classify_type != detection.label.name:
-                            print("[red]classifier says {classify_type}, but yolo says {detection.label}")
+                            print(f"[red]classifier says {classify_type}, but yolo says {detection.label.name}")
                         
                         if classify_face != detection.label_face.name:
-                            print("[red]classifier says {classify_face}, but yolo says {detection.label_face}")
-
-                        print("classify_label.rsplit('_')", classify_label.rsplit('_'))
-                        print("classify_num", classify_num)
-                        print("classify_face", classify_face)
-                        print("classify_type", classify_type)
+                            print(f"[red]classifier says {classify_face}, but yolo says {detection.label_face.name}")
 
                         detection.label_precise = classify_num
 
