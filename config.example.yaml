@@ -38,6 +38,7 @@ realsense:
   publish_cluster_img: True
   publish_graph_img: False
   has_depth: True
+  compute_gaps: True
   run_continuous: False
   wait_for_services: True # only disable for rosbag
   detect_arucos: False # GOE only

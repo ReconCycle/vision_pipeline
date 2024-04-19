@@ -65,6 +65,10 @@ class PipelineCamera:
 
         if hasattr(self.camera_config, 'run_continuous'):
             self.continuous_mode = self.camera_config.run_continuous
+
+        self.compute_gaps = False
+        if hasattr(self.camera_config, "compute_gaps"):
+            self.compute_gaps = self.camera_config.compute_gaps
         
         # is gaps requested?
         self.single_mode_request_gaps = False
@@ -402,7 +406,7 @@ class PipelineCamera:
             single_mode_frame_accepted or \
             self.is_first_frame:
             
-            compute_gaps = True # TODO: we could make this a parameter
+            compute_gaps = self.compute_gaps
             if single_mode_frame_accepted:
                 compute_gaps = self.single_mode_request_gaps
             

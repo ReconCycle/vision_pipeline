@@ -24,7 +24,31 @@ Look at the documentation in [ros-basler](https://github.com/ReconCycle/ros-basl
 
 ## Usage
 
-Set the parameters you want in `config.yaml`.
+Set the parameters you want in `config.yaml`. For a specific camera there are the following options available:
+```yaml
+target_fps: 10
+max_allowed_acquisition_delay: 2.0 # in seconds
+rotate_img: 0 # specify in degrees
+topic: "realsense" # topic that we publish to: /node_name/topic
+camera_node: "/realsense" # camera node
+image_topic: "color/image_raw"
+info_topic: "color/camera_info"
+depth_topic: "aligned_depth_to_color/image_raw"
+sleep_camera_on_exit: False #! debug, usually set to True
+publish_labelled_img: True
+publish_depth_img: True
+publish_cluster_img: True
+publish_graph_img: False
+has_depth: True
+run_continuous: True
+wait_for_services: True # only disable for rosbag
+detect_arucos: False # GOE only
+camera_height: 0.20 # height in meters
+parent_frame: 'panda_2/realsense' # When publishing TFs, this will be the parent frame.
+create_parent_frame: False # GOE only
+marker_lifetime: 1 # in seconds
+debug_clustering: False
+```
 
 Run example:
 ```
@@ -45,6 +69,7 @@ rosservice call /vision/basler/get_detection False
 Basler:
 
 - `/vision/basler/colour`, Image
+- `/vision/basler/colour/compressed`, CompressedImage
 - `/vision/basler/detections`, ROSDetections
 - `/vision/basler/markers`, MarkerArray
 - `/vision/basler/poses`, PoseArray
@@ -52,6 +77,7 @@ Basler:
 Realsense:
 
 - `/vision/realsense/colour`, Image
+- `/vision/realsense/colour/compressed`, CompressedImage
 - `/vision/realsense/detections`, ROSDetections
 - `/vision/realsense/markers`, MarkerArray
 - `/vision/realsense/poses`, PoseArray
@@ -62,6 +88,14 @@ Realsense:
 - `/vision/realsense/lever`, PoseStamped
 
 **Services**:
+
+To run the vision pipeline on an image use the service:
+
+- `/vision/basler/process_img`
+- `/vision/realsense/process_img`
+
+See [context_action_framework/src/ProcessImg.srv](https://github.com/ReconCycle/context_action_framework/blob/main/srv/ProcessImg.srv).
+
 
 To enable or disable the cameras **This should not be required. Cameras are automatically enabled on start, and disabled on program exit**:
 
@@ -75,10 +109,10 @@ To enable/disable continuous mode:
 
 To get a single detection:
 
-- `/vision/basler/get_detection` True/False (VisionDetection.srv from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
-- `/vision/realsense/get_detection` True/False (VisionDetection.srv from [context_action_framework](https://github.com/ReconCycle/context_action_framework))
+- `/vision/basler/get_detection` True/False
+- `/vision/realsense/get_detection` True/False
 
-where True/False is whether to provide gap detection
+where True/False is whether to provide gap detection. See [context_action_framework/srv/VisionDetection.srv](https://github.com/ReconCycle/context_action_framework)
 
 To enable/disable certain topics from being published:
 
@@ -91,6 +125,8 @@ To enable/disable certain topics from being published:
 - `/vision/realsense/depth_img/enable` True/False
 - `/vision/realsense/cluster_img/enable` True/False
 - `/vision/realsense/debug/enable` True/False
+
+
 
 **Example:**
 
