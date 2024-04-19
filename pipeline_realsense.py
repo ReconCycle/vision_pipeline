@@ -61,7 +61,9 @@ class PipelineRealsense(PipelineCamera):
     
     def create_subscribers(self):
         camera_info_topic = path(self.camera_config.camera_node, "color/camera_info")
-        img_topic = path(self.camera_config.camera_node, "color/image_raw")
+
+        #! for compressed image image use: image_raw/compressed instead of image_raw
+        img_topic = path(self.camera_config.camera_node, "color/image_raw/compressed")
         depth_topic = path(self.camera_config.camera_node, "aligned_depth_to_color/image_raw")
         camera_info_sub = message_filters.Subscriber(camera_info_topic, CameraInfo)
         img_sub = message_filters.Subscriber(img_topic, CompressedImage)

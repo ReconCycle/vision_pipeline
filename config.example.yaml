@@ -8,6 +8,7 @@ basler:
   topic: "basler" # topic that we publish to: /node_name/topic
   camera_node: "/basler" # camera topic
   image_topic: "image_rect_color"
+  sleep_camera_on_exit: False #! debug, usually set to True
   publish_labelled_img: True
   publish_graph_img: False
   has_depth: False
@@ -31,6 +32,7 @@ realsense:
   image_topic: "color/image_raw"
   info_topic: "color/camera_info"
   depth_topic: "aligned_depth_to_color/image_raw"
+  sleep_camera_on_exit: False #! debug, usually set to True
   publish_labelled_img: True
   publish_depth_img: True
   publish_cluster_img: True

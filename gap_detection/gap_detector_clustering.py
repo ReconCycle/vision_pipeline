@@ -27,7 +27,7 @@ import random
 # Own Modules
 from obb import get_obb_from_contour
 from helpers import get_colour, get_colour_blue, make_valid_poly, img_to_camera_coords, camera_info_to_o3d_intrinsics
-from context_action_framework.types import Gap, Label, Detection
+from context_action_framework.types import Gap, Label, LabelFace, Detection
 
 
 class GapDetectorClustering:
@@ -181,7 +181,7 @@ class GapDetectorClustering:
             o3d.visualization.draw_geometries([pointcloud])
 
         # get the first detection that is hca_back        
-        detections_hca_back = graph_relations.exists(Label.hca_back)
+        detections_hca_back = graph_relations.exists(Label.hca, LabelFace.back)
         
         detection_hca_back = None
         if len(detections_hca_back) > 0:
