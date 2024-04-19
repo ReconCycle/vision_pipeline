@@ -9,7 +9,7 @@ import datetime
 
 # ROS
 import rospy
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
 import message_filters
 from camera_control_msgs.srv import SetSleeping
@@ -61,7 +61,7 @@ class Main():
         self.counter = 1
         self.save = False
 
-        self.camera_node = "basler" #! options: realsense/realsensed405/basler
+        self.camera_node = "realsense" #! options: realsense/realsensed405/basler
         
         self.save_path = "saves/{date:%Y-%m-%d_%H:%M:%S}_{camera_node}".format(date=datetime.datetime.now(), camera_node=self.camera_node)
  
@@ -237,14 +237,13 @@ class Main():
                 
                 self.counter += 1
                 self.save = False
-        
-        
 
     def except_hook(self, type, value, tb):
         self.close()
     
     def close(self):
-        self.enable_camera(False)
+        #! don't disable camera because vision_pipeline might also be running
+        # self.enable_camera(False) 
         self.keypress_listener.close()
         
     def parse_keypress(self):

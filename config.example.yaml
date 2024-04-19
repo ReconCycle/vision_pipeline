@@ -15,6 +15,7 @@ basler:
   run_continuous: False
   wait_for_services: True # only disable for rosbag
   detect_arucos: False
+  table_name: "table_vision"
   parent_frame: "vision_table_zero" # When publishing transforms, this is the base/parent frame from which they are published.
   create_parent_frame: False # GOE only
   marker_lifetime: 1 # in seconds
