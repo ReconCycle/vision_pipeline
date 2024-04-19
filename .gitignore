@@ -11,6 +11,8 @@ camera_images/
 labelled_images/
 object_templates/
 context_action_framework/
+saves/
+
 
 __pycache__/
 .vscode/
