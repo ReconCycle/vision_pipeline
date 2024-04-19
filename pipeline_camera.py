@@ -36,7 +36,7 @@ from context_action_framework.types import detections_to_ros, gaps_to_ros, Label
 
 
 class PipelineCamera:
-    def __init__(self, model, object_reid, config, camera_config, camera_type, static_tf_manager):
+    def __init__(self, model, object_reid, config, camera_config, camera_type, static_tf_manager, table_name=None):
         self.config = config
         self.camera_config = camera_config
         
@@ -44,6 +44,8 @@ class PipelineCamera:
         self.camera_name = camera_type.name
         
         self.camera_enabled = False
+
+        self.table_name = table_name
         
         # time stuff
         self.target_fps = self.camera_config.target_fps
@@ -514,7 +516,13 @@ class PipelineCamera:
                 print(self.camera_name +": detecting work surface...")
                 self.worksurface_detection = WorkSurfaceDetection(self.colour_img, self.camera_config.work_surface_ignore_border_width, debug=self.camera_config.debug_work_surface_detection)
         
-        labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(self.colour_img, depth_img=depth_img, worksurface_detection=self.worksurface_detection, extra_text=fps, camera_info=camera_info)
+        labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(self.colour_img, 
+            depth_img=depth_img, 
+            worksurface_detection=self.worksurface_detection, 
+            extra_text=fps, 
+            camera_info=camera_info, 
+            parent_frame=self.parent_frame,
+            table_name=self.table_name)
 
         # debug
         if hasattr(self.camera_config, "use_worksurface_detection") and self.camera_config.use_worksurface_detection:
@@ -589,8 +597,7 @@ class PipelineCamera:
                 t = TransformStamped()
                 t.header.stamp = timestamp
                 t.header.frame_id = self.parent_frame
-                # t.child_frame_id = "obj_"+ str(detection.id)
-                t.child_frame_id = '%s_%s_%s'%(Label(detection.label).name, detection.id, self.camera_config.parent_frame)
+                t.child_frame_id = detection.tf_name
                 t.transform = detection.tf
 
                 self.tf_broadcaster.sendTransform(t)

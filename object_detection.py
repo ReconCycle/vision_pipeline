@@ -65,7 +65,7 @@ class ObjectDetection:
 
         self.angle_hist_dict = {}
 
-    def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None, use_tracker=True, use_classify=True):
+    def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None, use_tracker=True, use_classify=True, parent_frame=None, table_name=None):
         t_start = time.time()
         
         if depth_img is not None:
@@ -121,34 +121,50 @@ class ObjectDetection:
                 detection = Detection()
                 detection.id = int(i)
 
+                detection.parent_frame = parent_frame
+                detection.table_name = table_name
+
                 # the self.dataset.class_names dict may not correlate with Label Enum,
                 # therefore we have to convert:
                 label_from_model = self.model.dataset.class_names[classes[i]]
 
                 label = label_from_model
                 label_face = None
-                if label_from_model == "hca_front":
-                    label = "hca"
-                    label_face = LabelFace.front
-                elif label_from_model == "hca_back":
-                    label = "hca"
-                    label_face = LabelFace.back
-                elif label_from_model == "hca_side1":
-                    label = "hca"
-                    label_face = LabelFace.side2
-                elif label_from_model == "hca_side2":
-                    label = "hca"
-                    label_face = LabelFace.side2
-                elif label_from_model == "firealarm_front":
-                    label = "smoke_detector"
-                    label_face = LabelFace.front
-                elif label_from_model == "firealarm_back":
-                    label = "smoke_detector"
-                    label_face = LabelFace.back
+                # if label_from_model == "hca_front":
+                #     label = "hca"
+                #     label_face = LabelFace.front
+                # elif label_from_model == "hca_back":
+                #     label = "hca"
+                #     label_face = LabelFace.back
+                # elif label_from_model == "hca_side1":
+                #     label = "hca"
+                #     label_face = LabelFace.side1
+                # elif label_from_model == "hca_side2":
+                #     label = "hca"
+                #     label_face = LabelFace.side2
+                # elif label_from_model == "firealarm_front":
+                #     label = "smoke_detector"
+                #     label_face = LabelFace.front
+                # elif label_from_model == "firealarm_back":
+                #     label = "smoke_detector"
+                #     label_face = LabelFace.back
+
+                label_mapping = {
+                    "hca_front": ["hca", LabelFace.front],
+                    "hca_back": ["hca", LabelFace.back],
+                    "hca_side1": ["hca", LabelFace.side1],
+                    "hca_side2": ["hca", LabelFace.side2],
+                    "firealarm_front": ["smoke_detector", LabelFace.front],
+                    "firealarm_back": ["smoke_detector", LabelFace.back],
+                }
+                if label_from_model in label_mapping:
+                    label = label_mapping[label_from_model][0]
+                    label_face = label_mapping[label_from_model][1]
 
                 detection.label = Label[label]
                 detection.label_face = label_face
                 detection.label_precise = None
+                
                 detection.score = float(scores[i])
                 
                 box_px = boxes[i].reshape((-1,2)) # convert tlbr
@@ -195,9 +211,23 @@ class ObjectDetection:
             fps_tracker = 1.0 / (time.time() - tracker_start)
         else:
             fps_tracker = 0
-        
-        detections, markers, poses, graph_img, graph_relations, fps_obb = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
 
+        # add tf_name
+        for detection in detections:
+            tf_name = detection.label.name
+            if detection.label_face is not None:
+                tf_name += f"_{detection.label_face.name}"
+            if use_tracker:
+                if detection.tracking_id is not None:
+                    tf_name += f"_{detection.tracking_id}"
+                else:
+                    tf_name += f"_no_tracking_{detection.id}"
+            else:
+                tf_name += f"_{detection.id}"
+
+            detection.tf_name = tf_name
+
+        detections, markers, poses, graph_img, graph_relations, fps_obb = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
 
         if self.config.obj_detection.rotation_median_filter:
             # add angle_px to history
