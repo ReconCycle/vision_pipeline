@@ -76,7 +76,7 @@ class KalmanFilter(object):
         std = [
             2 * self._std_weight_position * measurement[3],
             2 * self._std_weight_position * measurement[3],
-            10 * self._std_weight_velocity * measurement[3], # was: 1e-2,
+            2 * self._std_weight_position * measurement[3], # was: 1e-2,
             2 * self._std_weight_position * measurement[3],
             10 * self._std_weight_velocity * measurement[3],
             10 * self._std_weight_velocity * measurement[3],

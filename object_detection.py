@@ -52,12 +52,18 @@ class ObjectDetection:
 
         self.tracker_args = SimpleNamespace()
         self.tracker_args.track_thresh = 0.1
-        self.tracker_args.track_buffer = 10 # num of frames to remember lost tracks
+        self.tracker_args.track_buffer = 2 * 10 # num of frames to remember lost tracks. 2fps, then 10 seconds
         self.tracker_args.match_thresh = 2.5 # default: 0.9 # higher number is more lenient
         self.tracker_args.min_box_area = 10
         self.tracker_args.mot20 = False
-        
-        self.tracker = BYTETracker(self.tracker_args)
+
+        self.tracker_dict = {}
+
+        # for each class, create a tracker
+        for idx, a_class in enumerate(self.model.dataset.class_names):
+            #! frame_rate is actually unused inside BYTETracker
+            self.tracker_dict[a_class] = BYTETracker(self.tracker_args, cls_id=idx) 
+
         self.fps_graphics = -1.
         self.fps_objdet = -1.
         
@@ -126,29 +132,13 @@ class ObjectDetection:
 
                 # the self.dataset.class_names dict may not correlate with Label Enum,
                 # therefore we have to convert:
-                label_from_model = self.model.dataset.class_names[classes[i]]
+                model_label = self.model.dataset.class_names[classes[i]]
 
-                label = label_from_model
+                detection._model_label = model_label # internal use only
+                detection._model_box = boxes[i] # internal only
+
+                label = model_label
                 label_face = None
-                # if label_from_model == "hca_front":
-                #     label = "hca"
-                #     label_face = LabelFace.front
-                # elif label_from_model == "hca_back":
-                #     label = "hca"
-                #     label_face = LabelFace.back
-                # elif label_from_model == "hca_side1":
-                #     label = "hca"
-                #     label_face = LabelFace.side1
-                # elif label_from_model == "hca_side2":
-                #     label = "hca"
-                #     label_face = LabelFace.side2
-                # elif label_from_model == "firealarm_front":
-                #     label = "smoke_detector"
-                #     label_face = LabelFace.front
-                # elif label_from_model == "firealarm_back":
-                #     label = "smoke_detector"
-                #     label_face = LabelFace.back
-
                 label_mapping = {
                     "hca_front": ["hca", LabelFace.front],
                     "hca_back": ["hca", LabelFace.back],
@@ -157,9 +147,9 @@ class ObjectDetection:
                     "firealarm_front": ["smoke_detector", LabelFace.front],
                     "firealarm_back": ["smoke_detector", LabelFace.back],
                 }
-                if label_from_model in label_mapping:
-                    label = label_mapping[label_from_model][0]
-                    label_face = label_mapping[label_from_model][1]
+                if model_label in label_mapping:
+                    label = label_mapping[model_label][0]
+                    label_face = label_mapping[model_label][1]
 
                 detection.label = Label[label]
                 detection.label_face = label_face
@@ -195,18 +185,22 @@ class ObjectDetection:
             tracker_start = time.time()
             # apply tracker
             # look at: https://github.com/ifzhang/ByteTrack/blob/main/yolox/evaluators/mot_evaluator.py
-            
-            # todo: add classes to tracker
-            online_targets = self.tracker.update(boxes, scores)
+            # https://github.com/mnuske/fairmot-exploration-room/blob/multi-class/src/lib/tracker/multitracker.py
 
-            for t in online_targets:
-                detections[t.input_id].tracking_id = int(t.track_id)
-                detections[t.input_id].tracking_box = t.tlbr
-                detections[t.input_id].score = float(t.score)
+            # for each class, update the tracker
+            for a_class in self.model.dataset.class_names:
+                # lookup all detections with this class
+                class_detections = [detection for detection in detections if detection._model_label == a_class]
 
-                if t.track_id not in self.angle_hist_dict:
-                    print("[blue]created history dict")
-                    self.angle_hist_dict[t.track_id] = []
+                boxes = np.array([detection._model_box for detection in class_detections])
+                scores = np.array([detection.score for detection in class_detections])
+
+                online_targets = self.tracker_dict[a_class].update(boxes, scores)
+
+                for t in online_targets:
+                    class_detections[t.input_id].tracking_id = int(t.track_id)
+                    class_detections[t.input_id].tracking_box = t.tlbr
+                    class_detections[t.input_id].score = float(t.score) #! why are we setting the score again??
 
             fps_tracker = 1.0 / (time.time() - tracker_start)
         else:
@@ -229,33 +223,38 @@ class ObjectDetection:
 
         detections, markers, poses, graph_img, graph_relations, fps_obb = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
 
-        if self.config.obj_detection.rotation_median_filter:
-            # add angle_px to history
-            for detection in detections:
-                if detection.tracking_id is not None:
-                    print(f"[blue]added angle to history_dict track: {detection.tracking_id, detection.angle_px}deg, list len: {len(self.angle_hist_dict[detection.tracking_id])}")
-                    self.angle_hist_dict[detection.tracking_id].append(detection.angle_px)
-                    
-                    # prune list
-                    n = 10
-                    if len(self.angle_hist_dict[detection.tracking_id]) > n+4:
-                        # keep last 4 elements in list, when pruning
-                        del self.angle_hist_dict[detection.tracking_id][:n]
+        if use_tracker:
+            if self.config.obj_detection.rotation_median_filter:
+                # apply filter to angle
+                for detection in detections:
+                    # filter by object
+                    if detection.label == Label.smoke_detector and detection.tracking_id is not None:
 
-            # apply filter to angle
-            for detection in detections:
-                if detection.tracking_id is not None:
-                    # last 4 elements:
-                    if len(self.angle_hist_dict[detection.tracking_id]) >= 4:
-                        last_angles = self.angle_hist_dict[detection.tracking_id][-4:]
+                        if detection.tf_name not in self.angle_hist_dict:
+                            # print("[blue]created history dict")
+                            self.angle_hist_dict[detection.tf_name] = []
 
-                        median_idx = circular_median(last_angles, degrees=True)
-                        median_angle = last_angles[median_idx]
+                        # print(f"[blue]added angle to history_dict track: {detection.tf_name, detection.angle_px}deg, list len: {len(self.angle_hist_dict[detection.tf_name])}")
+                        # add angle_px to history
+                        self.angle_hist_dict[detection.tf_name].append(detection.angle_px)
+                        
+                        # prune list
+                        n = 10
+                        if len(self.angle_hist_dict[detection.tf_name]) > n+4:
+                            # keep last 4 elements in list, when pruning
+                            del self.angle_hist_dict[detection.tf_name][:n]
 
-                        print(f"[green] {detection.label.name}, median_angle {median_angle}, {last_angles}")
+                        # last 4 elements:
+                        if len(self.angle_hist_dict[detection.tf_name]) >= 4:
+                            last_angles = self.angle_hist_dict[detection.tf_name][-4:]
 
-                        # set the angle and the median angle
-                        self.set_rotation(detection, median_angle, worksurface_detection)
+                            median_idx = circular_median(last_angles, degrees=True)
+                            median_angle = last_angles[median_idx]
+
+                            # print(f"[green] {detection.label.name}, median_angle {median_angle}, {last_angles}")
+
+                            # set the angle and the median angle
+                            self.set_rotation(detection, median_angle, worksurface_detection)
 
         graphics_start = time.time()
         if extra_text is not None:
@@ -490,8 +489,8 @@ class ObjectDetection:
                     print(f"[red]detection: {detection.label.name} invalid: edge too large: {round(edge_large, 3)}m")
                 return False
             
-            if self.config.obj_detection.debug:
-                print(f"{detection.label.name}, edge large: {round(edge_large, 3)}m, edge small: {round(edge_small, 3)}m")
+            # if self.config.obj_detection.debug:
+            #     print(f"{detection.label.name}, edge large: {round(edge_large, 3)}m, edge small: {round(edge_small, 3)}m")
             
             # ratio of longest HCA: 3.4
             # ratio of Kalo 1.5 battery: 1.7

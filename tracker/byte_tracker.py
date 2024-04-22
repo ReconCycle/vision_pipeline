@@ -12,7 +12,10 @@ from .base_track import BaseTrack, TrackState
 
 class STrack(BaseTrack):
     shared_kalman = KalmanFilter()
-    def __init__(self, tlwh, score, input_id):
+    def __init__(self, tlwh, score, input_id, cls_id):
+
+        # object class id. Used for the STrack _count_dict. 
+        self.cls_id = cls_id
 
         # wait activate
         self._tlwh = np.asarray(tlwh, dtype=np.float)
@@ -44,10 +47,14 @@ class STrack(BaseTrack):
                 stracks[i].mean = mean
                 stracks[i].covariance = cov
 
-    def activate(self, kalman_filter, frame_id):
+    def reset_track_id(self):
+        self.reset_track_count(self.cls_id)
+
+    def activate(self, kalman_filter, frame_id, track_id):
         """Start a new tracklet"""
         self.kalman_filter = kalman_filter
-        self.track_id = self.next_id()
+        # self.track_id = self.next_id(self.cls_id) # ! Seb: we don't use this. Instead we use the next available ID.
+        self.track_id = track_id
         self.mean, self.covariance = self.kalman_filter.initiate(self.tlwh_to_xyah(self._tlwh))
 
         self.tracklet_len = 0
@@ -58,7 +65,7 @@ class STrack(BaseTrack):
         self.frame_id = frame_id
         self.start_frame = frame_id
 
-    def re_activate(self, new_track, frame_id, new_id=False):
+    def re_activate(self, new_track, frame_id):
         self.mean, self.covariance = self.kalman_filter.update(
             self.mean, self.covariance, self.tlwh_to_xyah(new_track.tlwh)
         )
@@ -66,8 +73,8 @@ class STrack(BaseTrack):
         self.state = TrackState.Tracked
         self.is_activated = True
         self.frame_id = frame_id
-        if new_id:
-            self.track_id = self.next_id()
+        # if new_id:
+        #     self.track_id = self.next_id(self.cls_id)
         self.score = new_track.score
         self.input_id = new_track.input_id
 
@@ -147,16 +154,18 @@ class STrack(BaseTrack):
 
 
 class BYTETracker(object):
-    def __init__(self, args, frame_rate=30):
+    def __init__(self, args, cls_id=0):
         self.tracked_stracks = []  # type: list[STrack]
         self.lost_stracks = []  # type: list[STrack]
         self.removed_stracks = []  # type: list[STrack]
+
+        # 
+        self.cls_id = cls_id
 
         self.frame_id = 0
         self.args = args
         #self.det_thresh = args.track_thresh
         self.det_thresh = args.track_thresh + 0.1
-        # self.buffer_size = int(frame_rate / 30.0 * args.track_buffer)
         self.buffer_size = int(args.track_buffer)
         self.max_time_lost = self.buffer_size
         self.kalman_filter = KalmanFilter()
@@ -196,8 +205,7 @@ class BYTETracker(object):
 
         if len(dets) > 0:
             '''Detections'''
-            #! Seb: here we lose which detection corresponds to which input.
-            detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s, input_id) for
+            detections = [STrack(STrack.tlbr_to_tlwh(tlbr), s, input_id, self.cls_id) for
                           (tlbr, s, input_id) in zip(dets, scores_keep, input_ids_keep)]
         else:
             detections = []
@@ -227,7 +235,7 @@ class BYTETracker(object):
                 track.update(detections[idet], self.frame_id)
                 activated_starcks.append(track)
             else:
-                track.re_activate(det, self.frame_id, new_id=False)
+                track.re_activate(det, self.frame_id)
                 refind_stracks.append(track)
 
         ''' Step 3: Second association, with low score detection boxes'''
@@ -248,7 +256,7 @@ class BYTETracker(object):
                 track.update(det, self.frame_id)
                 activated_starcks.append(track)
             else:
-                track.re_activate(det, self.frame_id, new_id=False)
+                track.re_activate(det, self.frame_id)
                 refind_stracks.append(track)
 
         for it in u_track:
@@ -276,7 +284,9 @@ class BYTETracker(object):
             track = detections[inew]
             if track.score < self.det_thresh:
                 continue
-            track.activate(self.kalman_filter, self.frame_id)
+
+            new_track_id = self._get_new_track_id(activated_starcks) #! added by Seb. Usually you would want to continue to count up the track_id. We don't. We want there always to be a track_id (can be lost). 
+            track.activate(self.kalman_filter, self.frame_id, new_track_id)
             activated_starcks.append(track)
         """ Step 5: Update state"""
         for track in self.lost_stracks:
@@ -298,6 +308,49 @@ class BYTETracker(object):
         output_stracks = [track for track in self.tracked_stracks if track.is_activated]
 
         return output_stracks
+
+    def _get_new_track_id(self, activated_stracks):
+        # the activated_stracks are stracks that have been activated but not yet updated in self.lost_stracks or self.removed_stracks
+        used_track_ids = self._get_in_use_track_ids(activated_stracks)
+        unused_id = self.find_first_unused_id(used_track_ids)
+
+        # print("self.lost_stracks:", [track.track_id for track in self.lost_stracks])
+        # print("self.removed_stracks:", [track.track_id for track in self.removed_stracks])
+        # print("used_track_ids:", used_track_ids)
+        # print(f"unused_id: {unused_id}")
+        # print()
+
+        return unused_id
+
+    @staticmethod
+    def find_first_unused_id(ids):
+        # Convert the list of IDs to a set
+        id_set = set(ids)
+        
+        # Start checking from the first positive ID, which is 1
+        current_id = 1
+        
+        # Increment current_id until you find an ID not in the set
+        while current_id in id_set:
+            current_id += 1
+        
+        return current_id
+
+    
+    def _get_in_use_track_ids(self, activated_stracks=[]):
+        used_track_ids = []
+
+        for track in activated_stracks:
+            used_track_ids.append(track.track_id)
+            
+        for track in self.tracked_stracks:
+            used_track_ids.append(track.track_id)
+        
+        for track in self.lost_stracks:
+            used_track_ids.append(track.track_id)
+
+        return used_track_ids
+
 
 
 def joint_stracks(tlista, tlistb):

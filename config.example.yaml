@@ -68,5 +68,5 @@ obj_detection:
   superglue_match_threshold: 0.5
   rotation_median_filter: True
 
-  classifier_model_file: "~/device_reid/results/2024-01-02__12-56_classify_WORKING/lightning_logs/version_0/checkpoints/epoch=598-step=598.ckpt"
+  classifier_model_file: ~/device_reid/results/2024-03-21__15-58_classify_WORKING/lightning_logs/version_0/checkpoints/epoch=212-step=212.ckpt
   classifier_threshold: 0.5
