@@ -197,11 +197,14 @@ class ObjectDetectionModel:
             A.Normalize(mean=norm_mean, std=norm_std),
             ToTensorV2()
         ])
-
-        img_tensor = transform(image=sample_cropped)["image"]
-        img_tensor = img_tensor.unsqueeze(0).cuda() # batch size 1
-
-        # print("infer_classify", img_tensor.shape)
+        if len(sample_cropped.shape) > 3:
+            # input is a batch
+            img_tensor = torch.stack([transform(image=img)["image"] for img in sample_cropped], dim=0)
+            img_tensor = img_tensor.cuda()
+        else:
+            # input is single image
+            img_tensor = transform(image=sample_cropped)["image"]
+            img_tensor = img_tensor.unsqueeze(0).cuda() # batch size 1
 
         self.classify_model.eval()
 
@@ -209,10 +212,21 @@ class ObjectDetectionModel:
             logits = self.classify_model(img_tensor)
 
             preds = torch.argmax(logits, dim=1)
-            pred_label = self.classify_model.labels[preds[0]]
-            
+
+            # print("logits.shape", logits.shape)
+            # print("preds.shape", preds.shape, preds)
+
+            # for a single image:
+            # pred_label = self.classify_model.labels[preds[0]]
             # we took logsoftmax, so we have to take the exp to get confidence
-            conf = torch.exp(logits[0][preds[0]])
+            # conf = torch.exp(logits[0][preds[0]])
+
+            # for a batch:
+            pred_label = [self.classify_model.labels[i] for i in preds]
+
+            # we took logsoftmax, so we have to take the exp to get confidence
+            # ! there must be a better way to write this
+            conf = [float(torch.exp(logits[i][preds[i]]).cpu()) for i in np.arange(len(preds))]
         
         return pred_label, conf
     

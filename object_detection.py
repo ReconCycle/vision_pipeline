@@ -330,58 +330,68 @@ class ObjectDetection:
             detection.polygon_px = poly
 
         if use_classify:
-            # estimate angle using superglue model
-            for detection in detections:
-                if detection.label in [Label.smoke_detector, Label.hca]:
+            time0 = timer()
 
-                    time0 = timer()
+            # use classifier for precise label
+            # estimate angle using superglue model
+            batch_imgs = []
+            batch_imgs_detection_mapping = [None] * len(detections)
+            # batch the classifier
+            for idx, detection in enumerate(detections):
+                if detection.label in [Label.smoke_detector, Label.hca]:
                     
                     sample_crop, _ = ObjectReId.crop_det(colour_img, detection, size=400)
+                    batch_imgs_detection_mapping[idx] = len(batch_imgs)
+                    batch_imgs.append(sample_crop)
+            
+            if len(batch_imgs) > 0:
+                batch_imgs = np.array(batch_imgs)
+                classify_labels, confs = self.model.infer_classify(batch_imgs)
 
-                    classify_label, conf = self.model.infer_classify(sample_crop)
-
-                    # if detection.label == Label.hca:
-                    #     if "hca" in classify_label:
-
-                    # TODO: the classify label is also predicting hca/firealarm and 
-                    # TODO: back/front. We should not return all this info.
-
-                    if conf > self.config.obj_detection.classifier_threshold:
-
-                        # ! I trust the classifier more than the segmentation. 
-                        # print("classify_label", classify_label, "conf", conf)
-                        label_split = classify_label.rsplit('_')
-                        classify_type = label_split[0]
-                        classify_face = label_split[1]
-                        classify_num = label_split[2]
-
-                        # print("classify_label.rsplit('_')", classify_label.rsplit('_'))
-                        # print("classify_num", classify_num)
-                        # print("classify_face", classify_face)
-                        # print("classify_type", classify_type)
-
-                        # fix for old naming convention
-                        if classify_type == "firealarm":
-                            classify_type = "smoke_detector"
+                for idx, detection in enumerate(detections):
+                    if detection.label in [Label.smoke_detector, Label.hca]:
                         
-                        if classify_type != detection.label.name:
-                            print(f"[red]classifier says {classify_type}, but yolo says {detection.label.name}")
-                        
-                        if classify_face != detection.label_face.name:
-                            print(f"[red]classifier says {classify_face}, but yolo says {detection.label_face.name}")
+                        classify_label = classify_labels[batch_imgs_detection_mapping[idx]]
+                        conf = confs[batch_imgs_detection_mapping[idx]]
 
-                        detection.label_precise = classify_num
+                        if conf > self.config.obj_detection.classifier_threshold:
 
-                        if detection.label == Label.smoke_detector:
+                            # ! I trust the classifier more than the segmentation. 
+                            # print("classify_label", classify_label, "conf", conf)
+                            label_split = classify_label.rsplit('_')
+                            classify_type = label_split[0]
+                            classify_face = label_split[1]
+                            classify_num = label_split[2]
 
-                            angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
+                            # print("classify_label.rsplit('_')", classify_label.rsplit('_'))
+                            # print("classify_num", classify_num)
+                            # print("classify_face", classify_face)
+                            # print("classify_type", classify_type)
 
-                            if angle_rad is not None:
-                                # update angle
-                                detection.angle_px = np.rad2deg(angle_rad)
+                            # fix for old naming convention
+                            if classify_type == "firealarm":
+                                classify_type = "smoke_detector"
+                            
+                            if classify_type != detection.label.name:
+                                print(f"[red]classifier says {classify_type}, but yolo says {detection.label.name}")
+                            
+                            if classify_face != detection.label_face.name:
+                                print(f"[red]classifier says {classify_face}, but yolo says {detection.label_face.name}")
 
-                    elapsed_time_classify_and_rot = timer() - time0
-                    print("elapsed_time_classify_and_rot", elapsed_time_classify_and_rot)
+                            detection.label_precise = classify_num
+
+                            if detection.label == Label.smoke_detector:
+
+                                angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
+
+                                if angle_rad is not None:
+                                    # update angle
+                                    detection.angle_px = np.rad2deg(angle_rad)
+                        else:
+                            print(f"[red]classify conf too low: {conf}, {classify_label}")
+
+                elapsed_time_classify_and_rot = timer() - time0
+                print("elapsed_time_classify_and_rot", elapsed_time_classify_and_rot)
 
 
         # calculate real world information

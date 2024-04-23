@@ -204,25 +204,52 @@ class ObjectReId:
         height, width = img.shape[:2]
 
         # crop image around center point
-        half_size = int(size/2)
-        x1 = np.clip(int(det.center_px[0]) - half_size, 0, width)
-        x2 = np.clip(int(det.center_px[0]) + half_size, 0, width)
+        # half_size = int(size/2)
+        # x1 = np.clip(int(det.center_px[0]) - half_size, 0, width)
+        # x2 = np.clip(int(det.center_px[0]) + half_size, 0, width)
         
-        y1 = np.clip(int(det.center_px[1]) - half_size, 0, height)
-        y2 = np.clip(int(det.center_px[1]) + half_size, 0, height)
+        # y1 = np.clip(int(det.center_px[1]) - half_size, 0, height)
+        # y2 = np.clip(int(det.center_px[1]) + half_size, 0, height)
+        # img_cropped = img[y1:y2, x1:x2]
         
+        # # new center at:
+        # center_cropped = det.center_px[0] - x1, det.center_px[1] - y1
         
-        img_cropped = img[y1:y2, x1:x2]
+        # # debug
+        # # cv2.circle(img_cropped, (int(center_cropped[0]), int(center_cropped[1])), 6, (0, 0, 255), -1)
         
-        # new center at:
-        center_cropped = det.center_px[0] - x1, det.center_px[1] - y1
-        
-        # debug
-        # cv2.circle(img_cropped, (int(center_cropped[0]), int(center_cropped[1])), 6, (0, 0, 255), -1)
-        
-        return img_cropped, center_cropped
+        # return img_cropped, center_cropped
     
+        half_size = size // 2  # Using integer division directly
 
+        # Original crop coordinates
+        x_center, y_center = int(det.center_px[0]), int(det.center_px[1])
+        x1 = x_center - half_size
+        x2 = x_center + half_size
+        y1 = y_center - half_size
+        y2 = y_center + half_size
+
+        # Calculate padding requirements
+        pad_left = max(0, -x1)
+        pad_right = max(0, x2 - width)
+        pad_top = max(0, -y1)
+        pad_bottom = max(0, y2 - height)
+
+        # Pad image if necessary
+        if any([pad_left, pad_right, pad_top, pad_bottom]):
+            img_padded = np.pad(img, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant', constant_values=0)
+            # Update coordinates to match the padding
+            x1 += pad_left
+            x2 += pad_left
+            y1 += pad_top
+            y2 += pad_top
+        else:
+            img_padded = img
+
+        img_cropped = img_padded[y1:y2, x1:x2]
+        center_cropped = x_center - x1, y_center - y1
+
+        return img_cropped, center_cropped
 
     
     @staticmethod
