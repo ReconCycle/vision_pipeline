@@ -2,8 +2,45 @@
 
 Project to track heat cost allocators and the individual parts of the heat cost allocator.
 
-![Object Tracking](./readme_image.png)
+![Object Tracking](./readme/readme_image.png)
 
+
+## Device Classification
+
+Each device has a unique class that is called `label_precise`. See the following charts:
+
+![chat HCAs](./readme/chart_HCAs.png)
+
+![chart smoke detectors](./readme/chart_smoke_detectors.png)
+
+## Detections
+
+Each detection has the following attributes:
+- id (int): index in detections list
+- tracking_id (int): unique ID per label that is stable across frames.
+
+- label (Label): hca/smoke_detector/battery...
+- label_face (LabelFace/None): front/back/side1/side2
+- label_precise (str/None): 01/01.1/02...
+- score (float): segmentation confidence
+
+- tf_px (Transform): transform in pixels
+- box_px (array): bounding box in pixels
+- obb_px (array): oriented bounding box in pixels
+- center_px (array): center coordinates in pixels
+- polygon_px (Polygon): polygon segmentation in pixels
+
+- tf (Transform): transform in meters
+- box (array): bounding box in meters
+- obb (array): oriented bounding box in meters
+- center (array): center coordinates in meters
+- polygon (Polygon): polygon segmentation in meters
+
+- obb_3d (array): oriented bounding box with depth in meters
+
+- parent_frame (str): ROS parent frame name
+- table_name (str/None): table name of detection location 
+- tf_name (str): ROS transform name corresponding to published detection TF
 
 ## Installation
 
