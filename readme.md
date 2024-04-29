@@ -9,9 +9,7 @@ Project to track heat cost allocators and the individual parts of the heat cost 
 
 Each device has a unique class that is called `label_precise`. See the following charts:
 
-![chat HCAs](./readme/chart_HCAs.png)
-
-![chart smoke detectors](./readme/chart_smoke_detectors.png)
+![chat HCAs](./readme/device_chart.png)
 
 ## Detections
 
