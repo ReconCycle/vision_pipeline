@@ -21,7 +21,7 @@ import pickle
 from object_reid import ObjectReId
 
 # ros package
-from context_action_framework.types import Detection, Label, Module, Camera
+from context_action_framework.types import Detection, Label, Module, Camera, LabelFace
 from sensor_msgs.msg import Image, CameraInfo # CameraInfo needed for pickle
 import rospy
 
@@ -161,8 +161,8 @@ class LabelMeImporter():
                 detections, graph_relations, module, camera = self._process_labelme_img(json_data, colour_img, depth_img, camera_info, apply_scale)
 
                 # TODO: get the cropped image
-                cropped_labels = [Label.hca_front, Label.hca_back, Label.firealarm_front, Label.firealarm_back]
-                sample_crop, poly = ObjectReId.find_and_crop_det(colour_img, graph_relations, labels=cropped_labels, size=300)
+                cropped_labels = [Label.hca, Label.smoke_detector]
+                sample_crop, poly = ObjectReId.find_and_crop_det(colour_img, graph_relations, labels=cropped_labels, size=400)
 
                 img_paths.append(colour_img_path)
                 all_detections.append(detections)
@@ -245,7 +245,10 @@ class LabelMeImporter():
                     detection.id = idx
                     detection.tracking_id = idx
 
-                    detection.label = Label[shape['label']]
+                    label, label_face = ObjectDetection.fix_labels(shape['label'])
+
+                    detection.label = label
+                    detection.label_face = label_face
                     detection.score = float(1.0)
 
                     detection.mask_contour = self.points_to_contour(shape['points'], apply_scale)

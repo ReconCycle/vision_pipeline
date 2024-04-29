@@ -20,7 +20,7 @@ from context_action_framework.graph_relations import GraphRelations, exists_dete
 import obb
 import graphics
 from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles, circular_median
-from context_action_framework.types import Detection, Label, LabelFace, Camera
+from context_action_framework.types import Detection, Label, LabelFace, Camera, lookup_label_precise_name
 from object_detector_opencv import SimpleDetector
 from object_reid import ObjectReId
 
@@ -70,6 +70,24 @@ class ObjectDetection:
         self.use_ros = use_ros
 
         self.angle_hist_dict = {}
+
+    @staticmethod
+    def fix_labels(model_label):
+        label = model_label
+        label_face = None
+        label_mapping = {
+            "hca_front": ["hca", LabelFace.front],
+            "hca_back": ["hca", LabelFace.back],
+            "hca_side1": ["hca", LabelFace.side1],
+            "hca_side2": ["hca", LabelFace.side2],
+            "firealarm_front": ["smoke_detector", LabelFace.front],
+            "firealarm_back": ["smoke_detector", LabelFace.back],
+        }
+        if model_label in label_mapping:
+            label = label_mapping[model_label][0]
+            label_face = label_mapping[model_label][1]
+        
+        return Label[label], label_face
 
     def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None, use_tracker=True, use_classify=True, parent_frame=None, table_name=None):
         t_start = time.time()
@@ -136,22 +154,10 @@ class ObjectDetection:
 
                 detection._model_label = model_label # internal use only
                 detection._model_box = boxes[i] # internal only
+                
+                label, label_face = self.fix_labels(model_label)
 
-                label = model_label
-                label_face = None
-                label_mapping = {
-                    "hca_front": ["hca", LabelFace.front],
-                    "hca_back": ["hca", LabelFace.back],
-                    "hca_side1": ["hca", LabelFace.side1],
-                    "hca_side2": ["hca", LabelFace.side2],
-                    "firealarm_front": ["smoke_detector", LabelFace.front],
-                    "firealarm_back": ["smoke_detector", LabelFace.back],
-                }
-                if model_label in label_mapping:
-                    label = label_mapping[model_label][0]
-                    label_face = label_mapping[model_label][1]
-
-                detection.label = Label[label]
+                detection.label = label
                 detection.label_face = label_face
                 detection.label_precise = None
                 
@@ -355,7 +361,7 @@ class ObjectDetection:
                         conf = confs[batch_imgs_detection_mapping[idx]]
 
                         if conf > self.config.obj_detection.classifier_threshold:
-
+                            
                             # ! I trust the classifier more than the segmentation. 
                             # print("classify_label", classify_label, "conf", conf)
                             label_split = classify_label.rsplit('_')
@@ -363,22 +369,28 @@ class ObjectDetection:
                             classify_face = label_split[1]
                             classify_num = label_split[2]
 
-                            # print("classify_label.rsplit('_')", classify_label.rsplit('_'))
-                            # print("classify_num", classify_num)
+                            # print("label_precise", label_precise)
                             # print("classify_face", classify_face)
                             # print("classify_type", classify_type)
 
                             # fix for old naming convention
                             if classify_type == "firealarm":
-                                classify_type = "smoke_detector"
-                            
-                            if classify_type != detection.label.name:
+                                classify_type = Label.smoke_detector
+                            elif classify_type == "hca":
+                                classify_type = Label.hca
+
+                            if classify_type.name != detection.label.name:
                                 print(f"[red]classifier says {classify_type}, but yolo says {detection.label.name}")
                             
                             if classify_face != detection.label_face.name:
                                 print(f"[red]classifier says {classify_face}, but yolo says {detection.label_face.name}")
-
+                            
+                            
+                            label_precise_name = lookup_label_precise_name(classify_type, classify_num)
                             detection.label_precise = classify_num
+                            detection.label_precise_name = label_precise_name
+
+                            print(f"classify: {label_precise_name}, {classify_num}, conf: {conf}")
 
                             if detection.label == Label.smoke_detector:
 

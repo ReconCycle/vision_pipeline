@@ -1,6 +1,7 @@
 
 *.png
 !readme_image.png
+!readme/*.png
 config.yaml
 output/
 data_full/
