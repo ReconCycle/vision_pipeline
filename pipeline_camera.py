@@ -109,6 +109,10 @@ class PipelineCamera:
             if self.parent_frame == "panda_2/realsense":
                 rot_quat = Rotation.from_euler('xyz', [0, 180, 180], degrees=True).as_quat()
                 transform = Transform(Vector3(1.0, 0.4, 0.2), Quaternion(*rot_quat))
+
+            elif self.parent_frame == "vision_table_zero":
+                rot_quat = Rotation.from_euler('xyz', [0, 0, 0], degrees=True).as_quat()
+                transform = Transform(Vector3(0., 0., 0.), Quaternion(*rot_quat))
             
             static_tf_manager.create_tf(self.parent_frame, parent_frame="world", transform=transform)
 
@@ -135,7 +139,7 @@ class PipelineCamera:
         rospy.on_shutdown(self.exit)
     
     def init_pipeline(self, model, object_reid):
-        self.object_detection = ObjectDetection(self.config, self.camera_config, model, object_reid, self.camera_type, self.parent_frame)
+        self.object_detection = ObjectDetection(self.config, self.camera_config, model, object_reid, self.camera_type, frame_id=self.parent_frame)
         self.worksurface_detection = None
 
     def create_subscribers(self):
@@ -601,7 +605,10 @@ class PipelineCamera:
                 t = TransformStamped()
                 t.header.stamp = timestamp
                 t.header.frame_id = self.parent_frame
-                t.child_frame_id = detection.tf_name
+                
+                # since the tf_name is only unique for each camera, we add the parent_frame to the child_frame_id
+                t.child_frame_id = self.parent_frame + "/" + detection.tf_name
+
                 t.transform = detection.tf
 
                 self.tf_broadcaster.sendTransform(t)

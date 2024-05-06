@@ -66,7 +66,7 @@ class LabelMeImporter():
         self.gap_detector = GapDetectorClustering(config) 
 
     
-    def process_labelme_dir(self, labelme_dir, images_dir=None, filter_cropped=True):
+    def process_labelme_dir(self, labelme_dir, images_dir=None, filter_cropped=True, use_yield=False):
         # load in the labelme data
         labelme_dir = Path(labelme_dir)
 
@@ -146,23 +146,19 @@ class LabelMeImporter():
             
             if colour_img is not None:
 
-                # if 2900x2900, scale down.
-                apply_scale = 1.0
-                if colour_img.shape[0] == 2900 and colour_img.shape[1] == 2900:
-                    apply_scale = 0.5
-                    dim = (1450, 1450)
-                    colour_img = cv2.resize(colour_img, dim, interpolation = cv2.INTER_AREA)
-
-                    print("applied scale colour_img.shape", colour_img.shape)
+                if colour_img.shape[0] == 1450:
+                    crop_size = 300
+                else:
+                    crop_size = 600
 
                 if self.worksurface_detection is None:
                     self._process_work_surface_detection(colour_img)
 
-                detections, graph_relations, module, camera = self._process_labelme_img(json_data, colour_img, depth_img, camera_info, apply_scale)
+                detections, graph_relations, module, camera = self._process_labelme_img(json_data, colour_img, depth_img, camera_info)
 
-                # TODO: get the cropped image
+                # get the cropped image
                 cropped_labels = [Label.hca, Label.smoke_detector]
-                sample_crop, poly = ObjectReId.find_and_crop_det(colour_img, graph_relations, labels=cropped_labels, size=400)
+                sample_crop, poly = ObjectReId.find_and_crop_det(colour_img, graph_relations, labels=cropped_labels, size=crop_size)
 
                 img_paths.append(colour_img_path)
                 all_detections.append(detections)
@@ -170,15 +166,19 @@ class LabelMeImporter():
                 modules.append(module)
                 cameras.append(camera)
                 crop_imgs.append(sample_crop)
+
+                if use_yield:
+                    yield colour_img_path, detections, graph_relations, module, camera, sample_crop
                
             else:
                 print(f"[red]No image matched for {json_path}")
 
-            if idx > 20:
-                print("[red] DEBUG: max 20 steps in sequence")
-                break # ! debug
+            # if idx > 20:
+            #     print("[red] DEBUG: max 20 steps in sequence")
+            #     break # ! debug
 
-        return img_paths, all_detections, all_graph_relations, modules, cameras, crop_imgs
+        if not use_yield:
+            return img_paths, all_detections, all_graph_relations, modules, cameras, crop_imgs
 
     def _process_work_surface_detection(self, img):
         self.worksurface_detection = WorkSurfaceDetection(img, self.work_surface_ignore_border_width, debug=self.debug_work_surface_detection)
@@ -232,6 +232,8 @@ class LabelMeImporter():
             #     binning_y = 0,
             #     roi = None
             # )
+        else:
+            print("[red]labelme_importer: camera not set!")
             
         
         idx = 0
@@ -332,9 +334,6 @@ class LabelMeImporter():
         
         obj_point_list = obj_point_list.astype(int) # convert to int
         # obj_point_list = [tuple(point) for point in obj_point_list] # convert back to list of tuples
-
-        
-
 
         # contour
         return obj_point_list

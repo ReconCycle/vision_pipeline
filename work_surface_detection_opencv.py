@@ -189,13 +189,24 @@ class WorkSurfaceDetection:
         return copy_dict
 
     def run_detection(self, img):
+        input_img_width = img.shape[1]
+        input_img_height = img.shape[0]
         
-        self.img_width = img.shape[1]
-        self.img_height = img.shape[0]
+        # scale image to 1450x1450 for bolt matching
+        img_maybe_scaled = img
+        is_img_scaled = False
+        if input_img_width == 2900 and input_img_height == 2900:
+            dim = (1450, 1450)
+            img_maybe_scaled = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
+            is_img_scaled = True
 
-        if self.img_width != 1450 or self.img_height != 1450:
-            print("[red]Work surface detection has been tuned for imgs 1450x1450!")
-            sys.exit("Work surface detection has been tuned for imgs 1450x1450!")
+        elif input_img_width != 1450 or input_img_height != 1450:
+            print(f"[red]img can only be 2900x2900 or 1450x1450 for work surface detection, not {input_img_width}x{input_img_height}!")
+            sys.exit(f"img can only be 2900x2900 or 1450x1450 for work surface detection, not {input_img_width}x{input_img_height}!")
+
+
+        self.img_width = img_maybe_scaled.shape[1]
+        self.img_height = img_maybe_scaled.shape[0]
         
         self.corners_px_dict = {}
         self.bolts_px_dict = {}
@@ -233,12 +244,12 @@ class WorkSurfaceDetection:
         self.generate_all_sides(self.bolts_m_bottom_dict, self.bolts_m_dict)
         self.generate_all_sides(self.corner_m_bottom_dict, self.corners_m_dict)
         
-        print("corners_m_dict", self.corners_m_dict)
+        # print("corners_m_dict", self.corners_m_dict)
 
         # 1. mask everything but the work surface
-        # img = self.mask_worksurface(img) #! BROKEN in some cases
+        # img_maybe_scaled = self.mask_worksurface(img_maybe_scaled) #! BROKEN in some cases
 
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(img_maybe_scaled, cv2.COLOR_BGR2GRAY)
         self.blur = cv2.GaussianBlur(gray, (5, 5), 0) # remove artefacts in image
         
         # 1st estimate for affine transform using only bolts
@@ -249,9 +260,19 @@ class WorkSurfaceDetection:
             return
         
         self.bolt_point_matching()
+
+        # we found the bolts. Now rescale, if img was scaled down
+        if is_img_scaled:
+            # rescale corners and bolts
+            for key, val in self.corners_px_dict.items():
+                self.corners_px_dict[key] = val * 2
+                
+            for key, val in self.bolts_px_dict.items():
+                self.bolts_px_dict[key] = val * 2
+
         self.compute_affine_transform()
         
-        self.estimate_corners_using_transform()
+        self.estimate_corners_using_transform(input_img_width, input_img_height)
         
         # 2nd estimate for affine transformation using also corners
         #! this usually makes things worse
@@ -713,12 +734,12 @@ class WorkSurfaceDetection:
             print("and back...", self.pixels_to_meters(self.meters_to_pixels(np.array([0.0, 0.0]))))
         
         
-    def estimate_corners_using_transform(self):
+    def estimate_corners_using_transform(self, img_width, img_height):
         for key, value in self.corners_m_dict.items():
             corner_in_meters = self.meters_to_pixels(np.array(value))
             self.corners_px_dict[key] = corner_in_meters
-            if corner_in_meters[0] > self.img_width or corner_in_meters[0] < 0 \
-                or corner_in_meters[1] > self.img_height or corner_in_meters[1] < 0:
+            if corner_in_meters[0] > img_width or corner_in_meters[0] < 0 \
+                or corner_in_meters[1] > img_height or corner_in_meters[1] < 0:
                 print("[red]Corner estimate is out of bounds! " + str(corner_in_meters[0]) + ", " + str(corner_in_meters[1]) + "[/red]")
         
         if self.debug:
