@@ -6,6 +6,7 @@ import json
 import argparse
 import time
 import atexit
+from datetime import datetime
 from enum import Enum
 from rich import print
 import commentjson
@@ -289,6 +290,13 @@ class ObjectDetectionModel:
 
         # if visualise and vis_out is not None:            
         #     display(PILImage.fromarray(vis_out))
+
+        # if visualise:
+            
+        #     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        #     filename = f"saves/{timestamp}_{label}_matches_{len_matches}.jpg"
+        #     print(f"[red]saving file: {filename}")
+        #     cv2.imwrite(filename, vis_out)
 
         
         return angle, vis_out

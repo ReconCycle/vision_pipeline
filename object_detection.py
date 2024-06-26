@@ -80,8 +80,12 @@ class ObjectDetection:
             "hca_back": ["hca", LabelFace.back],
             "hca_side1": ["hca", LabelFace.side1],
             "hca_side2": ["hca", LabelFace.side2],
+            "hca_back_empty": ["hca_empty", LabelFace.back],
             "firealarm_front": ["smoke_detector", LabelFace.front],
             "firealarm_back": ["smoke_detector", LabelFace.back],
+            "firealarm_insides": ["smoke_detector_insides", None],
+            "firealarm_insides_empty": ["smoke_detector_insides_empty", None],
+
         }
         if model_label in label_mapping:
             label = label_mapping[model_label][0]
@@ -227,7 +231,7 @@ class ObjectDetection:
 
             detection.tf_name = tf_name
 
-        detections, markers, poses, graph_img, graph_relations, fps_obb = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
+        detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
 
         if use_tracker:
             if self.config.obj_detection.rotation_median_filter:
@@ -335,24 +339,25 @@ class ObjectDetection:
                         
             detection.polygon_px = poly
 
+        batch_crop_imgs = None
         if use_classify:
             time0 = timer()
 
             # use classifier for precise label
             # estimate angle using superglue model
-            batch_imgs = []
+            batch_crop_imgs = []
             batch_imgs_detection_mapping = [None] * len(detections)
             # batch the classifier
             for idx, detection in enumerate(detections):
                 if detection.label in [Label.smoke_detector, Label.hca]:
                     
                     sample_crop, _ = ObjectReId.crop_det(colour_img, detection, size=400)
-                    batch_imgs_detection_mapping[idx] = len(batch_imgs)
-                    batch_imgs.append(sample_crop)
+                    batch_imgs_detection_mapping[idx] = len(batch_crop_imgs)
+                    batch_crop_imgs.append(sample_crop)
             
-            if len(batch_imgs) > 0:
-                batch_imgs = np.array(batch_imgs)
-                classify_labels, confs = self.model.infer_classify(batch_imgs)
+            if len(batch_crop_imgs) > 0:
+                batch_crop_imgs_arr = np.array(batch_crop_imgs)
+                classify_labels, confs = self.model.infer_classify(batch_crop_imgs_arr)
 
                 for idx, detection in enumerate(detections):
                     if detection.label in [Label.smoke_detector, Label.hca]:
@@ -373,6 +378,10 @@ class ObjectDetection:
                             # print("classify_face", classify_face)
                             # print("classify_type", classify_type)
 
+                            # if classify_face == "inside":
+                            #     print(f"[red]classifier says {classify_face}, label {classify_label}. Skipping...")
+                            #     break
+
                             # fix for old naming convention
                             if classify_type == "firealarm":
                                 classify_type = Label.smoke_detector
@@ -380,10 +389,10 @@ class ObjectDetection:
                                 classify_type = Label.hca
 
                             if classify_type.name != detection.label.name:
-                                print(f"[red]classifier says {classify_type}, but yolo says {detection.label.name}")
+                                print(f"[red]classifier says type: {classify_type} (face: {classify_face}), but yolo says type: {detection.label.name}")
                             
                             if classify_face != detection.label_face.name:
-                                print(f"[red]classifier says {classify_face}, but yolo says {detection.label_face.name}")
+                                print(f"[red]classifier says face:  {classify_face} (type: {classify_type}), but yolo says face: {detection.label_face.name}")
                             
                             
                             label_precise_name = lookup_label_precise_name(classify_type, classify_num)
@@ -394,7 +403,7 @@ class ObjectDetection:
 
                             if detection.label == Label.smoke_detector:
 
-                                angle_rad, *_ = self.model.superglue_rot_estimation(sample_crop, classify_label)
+                                angle_rad, *_ = self.model.superglue_rot_estimation(batch_crop_imgs_arr[idx], classify_label)
 
                                 if angle_rad is not None:
                                     # update angle
@@ -498,7 +507,11 @@ class ObjectDetection:
                 edge_small, edge_large = edge_large, edge_small
                 
             ratio = edge_large / edge_small
-            
+
+            #!
+            #! These area constraints don't make sense with close up camera!
+            #!
+
             # edge_small should be longer than 0.1cm
             if edge_small < 0.001:
                 if self.config.obj_detection.debug:
@@ -522,11 +535,16 @@ class ObjectDetection:
                     print("[red]detection: invalid: obb ratio of sides too large[/red]")
                 return False
 
-            # area should be larger than 1cm^2 = 0.0001 m^2
-            if detection.polygon is not None and detection.polygon.area < 0.0001:
-                if self.config.obj_detection.debug:
-                    print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
-                return False
+            if detection.label == Label.screw:
+                # screws cannot be bigger than 
+                if detection.polygon.area > 0.001:
+                    return False
+            else:
+                # area should be larger than 1cm^2 = 0.0001 m^2
+                if detection.polygon is not None and detection.polygon.area < 0.0001:
+                    if self.config.obj_detection.debug:
+                        print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
+                    return False
             
             return True
                     
@@ -684,7 +702,7 @@ class ObjectDetection:
         if time.time() - obb_start > 0:
             fps_obb = 1.0 / (time.time() - obb_start)
         
-        return detections, markers, poses, graph_img, graph_relations, fps_obb
+        return detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs
 
 
     def make_marker(self, tf, x, y, z, id, label):

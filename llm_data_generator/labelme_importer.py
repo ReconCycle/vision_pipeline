@@ -42,7 +42,7 @@ class LabelMeImporter():
         rospy.init_node("asdf") #! we require an init_node
         
         # config
-        self.work_surface_ignore_border_width = 100
+        self.work_surface_ignore_border_width = 50
         self.debug_work_surface_detection = False
 
         config = load_config(os.path.expanduser("~/vision_pipeline/config.yaml"))
@@ -66,7 +66,12 @@ class LabelMeImporter():
         self.gap_detector = GapDetectorClustering(config) 
 
     
-    def process_labelme_dir(self, labelme_dir, images_dir=None, filter_cropped=True, use_yield=False):
+    def process_labelme_dir(self, labelme_dir, images_dir=None, filter_cropped=True, use_yield=False, reset_worksurface_each_time=True):
+        # for each image, run worksurface detection
+        if reset_worksurface_each_time:
+            print("[blue]resetting worksurface detection")
+            self.worksurface_detection = None
+        
         # load in the labelme data
         labelme_dir = Path(labelme_dir)
 
@@ -104,7 +109,7 @@ class LabelMeImporter():
         all_graph_relations = []
         modules = []
         cameras = []
-        crop_imgs = []
+        all_batch_crop_imgs = []
 
         for idx, json_path in enumerate(tqdm_json_paths):
             tqdm_json_paths.set_description(f"Converting {Path(json_path).stem}")
@@ -146,42 +151,33 @@ class LabelMeImporter():
             
             if colour_img is not None:
 
-                if colour_img.shape[0] == 1450:
-                    crop_size = 300
-                else:
-                    crop_size = 600
+                #TODO: only run work surface detection if camera is basler, not realsense
+                if self.worksurface_detection is None and camera_info is None:
+                    # camera_info is not None only when realsense is used
+                    self.worksurface_detection = WorkSurfaceDetection(colour_img, self.work_surface_ignore_border_width, debug=self.debug_work_surface_detection)
 
-                if self.worksurface_detection is None:
-                    self._process_work_surface_detection(colour_img)
-
-                detections, graph_relations, module, camera = self._process_labelme_img(json_data, colour_img, depth_img, camera_info)
-
-                # get the cropped image
-                cropped_labels = [Label.hca, Label.smoke_detector]
-                sample_crop, poly = ObjectReId.find_and_crop_det(colour_img, graph_relations, labels=cropped_labels, size=crop_size)
+                detections, graph_relations, module, camera, batch_crop_imgs = self._process_labelme_img(json_data, colour_img, depth_img, camera_info)
 
                 img_paths.append(colour_img_path)
                 all_detections.append(detections)
                 all_graph_relations.append(graph_relations)
                 modules.append(module)
                 cameras.append(camera)
-                crop_imgs.append(sample_crop)
+                all_batch_crop_imgs.append(batch_crop_imgs)
 
                 if use_yield:
-                    yield colour_img_path, detections, graph_relations, module, camera, sample_crop
+                    yield colour_img_path, detections, graph_relations, module, camera, batch_crop_imgs
+
+                    if reset_worksurface_each_time:
+                        print("[blue]resetting worksurface detection")
+                        self.worksurface_detection = None
                
             else:
                 print(f"[red]No image matched for {json_path}")
 
-            # if idx > 20:
-            #     print("[red] DEBUG: max 20 steps in sequence")
-            #     break # ! debug
-
         if not use_yield:
-            return img_paths, all_detections, all_graph_relations, modules, cameras, crop_imgs
-
-    def _process_work_surface_detection(self, img):
-        self.worksurface_detection = WorkSurfaceDetection(img, self.work_surface_ignore_border_width, debug=self.debug_work_surface_detection)
+            return img_paths, all_detections, all_graph_relations, modules, cameras, all_batch_crop_imgs
+        
 
     def _process_labelme_img(self, json_data, colour_img, depth_img=None, camera_info=None, apply_scale=1.0):
         detections = []
@@ -213,10 +209,8 @@ class LabelMeImporter():
         
         worksurface_detection = None
         if camera is Camera.basler:
-            # TODO: really, run this for every module
             worksurface_detection = self.worksurface_detection
-        elif camera is Camera.realsense:            
-            # TODO: get real camera_info
+        elif camera is Camera.realsense:          
             if camera_info is None:
                 print("[red] realsense missing camera_info")
             # camera_info = CameraInfo(
@@ -263,7 +257,7 @@ class LabelMeImporter():
                     detections.append(detection)
                     idx += 1
 
-        detections, markers, poses, graph_img, graph_relations, fps_obb = self.object_detection.get_detections(detections, colour_img, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
+        detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs = self.object_detection.get_detections(detections, colour_img, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
         
         graph_relations_text = graph_relations.to_text()
         print("graph:", graph_relations_text)
@@ -281,15 +275,10 @@ class LabelMeImporter():
                 )
             print("gaps", gaps)
             
-            
-            # sys.exit()
-            
 
-
-        return detections, graph_relations, module, camera
+        return detections, graph_relations, module, camera, batch_crop_imgs
     
 
-    #! this function is also used in device_reid/preprocessing_crop_imgs.py
     def labelme_to_detections(self, json_data, sample):
         detections = []
         img_h, img_w = sample.shape[:2]    

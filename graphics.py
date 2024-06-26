@@ -9,6 +9,7 @@ from yolact_pkg.layers.output_utils import postprocess, undo_image_transformatio
 from yolact_pkg.data.config import cfg, set_cfg, set_dataset, MEANS, COLORS
 from yolact_pkg.data.coco import COCODetection, get_label_map
 from collections import defaultdict
+from context_action_framework.types import Label
 
 iou_thresholds = [x / 100 for x in range(50, 100, 5)]
 coco_cats = {} # Call prep_coco_cats to fill this
@@ -58,14 +59,14 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
         tracking_id = ""
         if not detection.valid:
             tracking_id += "INVALID, "
-        tracking_id += "t_id " + str(detection.tracking_id) + ", " if detection.tracking_id is not None else ""
+        tracking_id += "id " + str(detection.tracking_id) + "," if detection.tracking_id is not None else ""
         # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) if detection.tracking_score is not None else ""
         name = detection.label.name
         if detection.label_face is not None:
             name += " " + detection.label_face.name
         if detection.label_precise is not None:
             name += f" {detection.label_precise_name} ({detection.label_precise})"
-        detection_text = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else detection.label.name
+        detection_text = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else '%s: %s %.2f' % (name, tracking_id, detection.score)
 
         detection_texts.append(detection_text)
     
@@ -185,9 +186,10 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
             cv2.circle(img_numpy, tuple(detection.center_px), 5, mask_colour, -1)
             cv2.drawContours(img_numpy, [detection.obb_px], 0, outline_colour, 2)
             
-            # draw the arrow
-            point2 = rotated_line(tuple(detection.center_px), detection.angle_px, 60)
-            cv2.arrowedLine(img_numpy, tuple(detection.center_px), point2, mask_colour, 3, tipLength = 0.5)
+            if detection.label not in [Label.screw, Label.wires]:
+                # draw the arrow
+                point2 = rotated_line(tuple(detection.center_px), detection.angle_px, 60)
+                cv2.arrowedLine(img_numpy, tuple(detection.center_px), point2, mask_colour, 3, tipLength = 0.5)
             
             # cv2.drawContours(img_numpy, [detection.mask_contour], 0, outline_colour, 2)
 

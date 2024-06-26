@@ -51,6 +51,10 @@ font_thickness = 1
 # object reidentification - reidentify object based on features
 class ObjectReIdSift(ObjectReId):
     def __init__(self) -> None:
+
+        print("[red]***************************")
+        print("[red]USING ObjectReIdSift!")
+        print("[red]***************************")
         
         self.object_templates = []
         self.template_imgs = []
