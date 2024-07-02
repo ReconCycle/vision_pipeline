@@ -306,7 +306,8 @@ class PipelineCamera:
         detections_ros = detections_to_ros(detections)
         labelled_img_ros = CvBridge().cv2_to_imgmsg(labelled_img, encoding="bgr8")
 
-        # TODO:  create cropped_img
+        #! Cropping the image is already done in get_detections ... so actually no need to do it again.
+        
         # see device_reid/preprocessing_crop_imgs.py for original implementation
         labels = [Label.hca, Label.smoke_detector]
         sample_crop, poly = ObjectReId.find_and_crop_det(self.colour_img, graph_relations, labels=labels, size=300)

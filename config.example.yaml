@@ -67,6 +67,7 @@ obj_detection:
   superglue_model_file: "~/superglue_training/output/train/2023-11-18_superglue_model/weights/best.pt"
   superglue_match_threshold: 0.5
   rotation_median_filter: True
+  superglue_visualise_to_file: False #! saves images... don't run all the time
 
   classifier_model_file: ~/device_reid/results/2024-03-21__15-58_classify_WORKING/lightning_logs/version_0/checkpoints/epoch=212-step=212.ckpt
   classifier_threshold: 0.5

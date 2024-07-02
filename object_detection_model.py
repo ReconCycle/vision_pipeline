@@ -274,15 +274,14 @@ class ObjectDetectionModel:
 
         img2 = sample
 
-        visualise = True
-        debug = True
+        visualise = self.config.superglue_visualise_to_file
 
         # img1 = exp_utils.torch_to_grayscale_np_img(img1).astype(np.float32)
         # img2 = exp_utils.torch_to_grayscale_np_img(img2).astype(np.float32)
         img1_grey = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY).astype(np.float32)
         img2_grey = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY).astype(np.float32)
 
-        affine_score, score_ratio, mconf, median_affine_error, len_matches, vis_out, angle = self.superglue_model.compare(img1_grey, img2_grey, gt=True, affine_fit=False, visualise=visualise, debug=debug)
+        affine_score, score_ratio, mconf, median_affine_error, len_matches, vis_out, angle = self.superglue_model.compare(img1_grey, img2_grey, gt=True, affine_fit=False, visualise=visualise, debug=self.config.debug)
 
         # if visualise:
         #     sns.histplot(mconf)
@@ -291,12 +290,17 @@ class ObjectDetectionModel:
         # if visualise and vis_out is not None:            
         #     display(PILImage.fromarray(vis_out))
 
-        # if visualise:
+        if visualise:       
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            if not os.path.exists("saves/"):
+                os.makedirs("saves/")
+            filename = f"saves/{timestamp}_{label}_matches_{len_matches}.jpg"
             
-        #     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        #     filename = f"saves/{timestamp}_{label}_matches_{len_matches}.jpg"
-        #     print(f"[red]saving file: {filename}")
-        #     cv2.imwrite(filename, vis_out)
+            print("\n[red]************************************")
+            print(f"[red]saving superglue vis: {filename}")
+            print("[red]************************************\n")   
+            
+            cv2.imwrite(filename, vis_out)
 
         
         return angle, vis_out
