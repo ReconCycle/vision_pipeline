@@ -364,6 +364,7 @@ class ObjectDetection:
                         
                         classify_label = classify_labels[batch_imgs_detection_mapping[idx]]
                         conf = confs[batch_imgs_detection_mapping[idx]]
+                        crop_img = batch_crop_imgs_arr[batch_imgs_detection_mapping[idx]]
 
                         if conf > self.config.obj_detection.classifier_threshold:
                             
@@ -402,8 +403,7 @@ class ObjectDetection:
                             print(f"classify: {label_precise_name}, {classify_num}, conf: {conf}")
 
                             if detection.label == Label.smoke_detector:
-
-                                angle_rad, *_ = self.model.superglue_rot_estimation(batch_crop_imgs_arr[idx], classify_label)
+                                angle_rad, *_ = self.model.superglue_rot_estimation(crop_img, classify_label)
 
                                 if angle_rad is not None:
                                     # update angle
