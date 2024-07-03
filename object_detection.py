@@ -229,6 +229,9 @@ class ObjectDetection:
             else:
                 tf_name += f"_{detection.id}"
 
+            if parent_frame is not None:
+                tf_name = parent_frame + "/" + tf_name
+
             detection.tf_name = tf_name
 
         detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)

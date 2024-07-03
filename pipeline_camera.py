@@ -607,8 +607,9 @@ class PipelineCamera:
                 t.header.stamp = timestamp
                 t.header.frame_id = self.parent_frame
                 
-                # since the tf_name is only unique for each camera, we add the parent_frame to the child_frame_id
-                t.child_frame_id = self.parent_frame + "/" + detection.tf_name
+                # tf_name is in the format: parent_frame / blah
+                # this is so that it is unique also over each camera
+                t.child_frame_id =  detection.tf_name
 
                 t.transform = detection.tf
 

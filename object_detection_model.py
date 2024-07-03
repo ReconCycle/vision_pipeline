@@ -266,9 +266,9 @@ class ObjectDetectionModel:
 
         # get the template image from the loaded templates
         img1 = self.superglue_templates[label]
-        print("img1.shape", img1.shape)
+        # print("superglue_rot_estimation: img1.shape", img1.shape)
         img1 = imutils.resize(img1, width=300, height=300)
-        print("img1.shape", img1.shape)
+        # print("superglue_rot_estimation: img1.shape", img1.shape)
 
         # display(PILImage.fromarray(cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)))
 
