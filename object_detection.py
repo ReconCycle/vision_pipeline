@@ -406,11 +406,13 @@ class ObjectDetection:
                             print(f"classify: {label_precise_name}, {classify_num}, conf: {conf}")
 
                             if detection.label == Label.smoke_detector:
-                                angle_rad, *_ = self.model.superglue_rot_estimation(crop_img, classify_label)
+                                # only update angle if it hasn't been set already in get_detections function
+                                if not (hasattr(detection, "angle_set_in_get_detections") and detection.angle_set_in_get_detections):
+                                    angle_rad, *_ = self.model.superglue_rot_estimation(crop_img, classify_label)
 
-                                if angle_rad is not None:
-                                    # update angle
-                                    detection.angle_px = np.rad2deg(angle_rad)
+                                    if angle_rad is not None:
+                                        # update angle
+                                        detection.angle_px = np.rad2deg(angle_rad)
                         else:
                             print(f"[red]classify conf too low: {conf}, {classify_label}")
 
@@ -639,6 +641,9 @@ class ObjectDetection:
                         angle_px = add_angles(battery_covered.angle_px, 180, degrees=True)
                         self.set_rotation(firealarm_back, angle_px, worksurface_detection)
                         self.set_rotation(battery_covered, angle_px, worksurface_detection)
+
+                    # we need to make sure this angle doesn't get overridden
+                    firealarm_back.angle_set_in_get_detections = True
 
 
                     # --> ANOTHER METHOD:

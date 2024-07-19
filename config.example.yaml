@@ -60,7 +60,9 @@ obj_detection:
   
 
   # yolov8 config
-  yolov8_model_file: ~/vision_pipeline/data_limited/yolov8/output_2023-09-25_40000_early_stopping3/best.pt
+  # yolov8_model_file: ~/vision_pipeline/data_limited/yolov8/output_2023-09-25_40000_early_stopping3/best.pt
+  # yolov8_model_file: ~/vision_pipeline/data_limited/yolov8/output_2024-06-06_20000_all/best.pt
+  yolov8_model_file: ~/vision_pipeline/data_limited/yolov8/output_2024-07-17_20000_incl_new_jsi_imgs/epoch80.pt
   yolov8_score_threshold: 0.5
 
   superglue_templates: ~/datasets2/reconcycle/2023-12-04_hcas_fire_alarms_sorted_cropped
@@ -69,5 +71,5 @@ obj_detection:
   rotation_median_filter: True
   superglue_visualise_to_file: False #! saves images... don't run all the time
 
-  classifier_model_file: ~/device_reid/results/2024-03-21__15-58_classify_WORKING/lightning_logs/version_0/checkpoints/epoch=212-step=212.ckpt
+  classifier_model_file: "~/vision_pipeline/data_limited/classifier/2024-07-03__08-33_classify/lightning_logs/version_0/checkpoints/epoch=319-step=319.ckpt"
   classifier_threshold: 0.5

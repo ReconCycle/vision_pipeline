@@ -853,7 +853,8 @@ if __name__ == '__main__':
     config = load_config()
 
 
-    img = cv2.imread(os.path.expanduser("~/datasets2/reconcycle/2022-12-05_work_surface/frame0000.jpg"))
+    # img = cv2.imread(os.path.expanduser("~/datasets2/reconcycle/2022-12-05_work_surface/frame0000.jpg"))
+    img = cv2.imread(os.path.expanduser("~/datasets2/reconcycle/knowledge_graph/data/nodes/kalo/1.png"))
     # img = cv2.imread("data_full/dlc/dlc_work_surface_jsi_05-07-2021/labeled-data/raw_work_surface_jsi_08-07-2021/img000.png")
 
     print("img.shape", img.shape)

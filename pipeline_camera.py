@@ -312,7 +312,9 @@ class PipelineCamera:
         labels = [Label.hca, Label.smoke_detector]
         sample_crop, poly = ObjectReId.find_and_crop_det(self.colour_img, graph_relations, labels=labels, size=300)
 
-        sample_crop_ros = CvBridge().cv2_to_imgmsg(sample_crop, encoding="bgr8")
+        sample_crop_ros = None
+        if sample_crop is not None:
+            sample_crop_ros = CvBridge().cv2_to_imgmsg(sample_crop, encoding="bgr8")
         # TODO: also return graph_relations
 
         return ProcessImgResponse(success=True, 
