@@ -59,7 +59,7 @@ class ObjectReId:
         # print("median_error", median_error)
         # print("max_error", max_error)
         
-        return mean_error, median_error, max_error
+        return mean_error, median_error, max_error, A
 
 
     @classmethod

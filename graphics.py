@@ -56,17 +56,26 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
         else:
             x1_m, y1_m = (-1, -1)
 
-        tracking_id = ""
+        detection_text = ""
         if not detection.valid:
-            tracking_id += "INVALID, "
-        tracking_id += "id " + str(detection.tracking_id) + "," if detection.tracking_id is not None else ""
+            detection_text += "INVALID "
+
+        if detection.is_invalid_reason:
+            detection_text += detection.is_invalid_reason + ", "
+        
+        tracking_id = "id " + str(detection.tracking_id) + "," if detection.tracking_id is not None else ""
         # tracking_score = "t_score " + str(np.round(detection.tracking_score, 1)) if detection.tracking_score is not None else ""
         name = detection.label.name
         if detection.label_face is not None:
-            name += " " + detection.label_face.name
+            name += f" {detection.label_face.name} {detection.score:.2f}"
         if detection.label_precise is not None:
-            name += f" {detection.label_precise_name} ({detection.label_precise})"
-        detection_text = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else '%s: %s %.2f' % (name, tracking_id, detection.score)
+            name += f"  ({detection.label_precise_name} {detection.label_precise}, {detection.label_precise_conf:.2f})"
+        # detection_text = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else '%s: %s %.2f' % (name, tracking_id, detection.score)
+        detection_text += name + ": " + tracking_id + f"({x1_m:.2f}, {y1_m:.2f}, {z1_m:.2f})"
+        if detection.edge_large is not None:
+            detection_text += f" obb width: {detection.edge_large:.3f}m"
+        else:
+            detection_text += f" obb_px width: {detection.edge_px_large}px"
 
         detection_texts.append(detection_text)
     
@@ -185,8 +194,8 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
         if detection.center_px is not None:
             cv2.circle(img_numpy, tuple(detection.center_px), 5, mask_colour, -1)
             cv2.drawContours(img_numpy, [detection.obb_px], 0, outline_colour, 2)
-            
-            if detection.label not in [Label.screw, Label.wires]:
+
+            if detection.valid and detection.label not in [Label.screw, Label.wires]:
                 # draw the arrow
                 point2 = rotated_line(tuple(detection.center_px), detection.angle_px, 60)
                 cv2.arrowedLine(img_numpy, tuple(detection.center_px), point2, mask_colour, 3, tipLength = 0.5)
@@ -200,15 +209,16 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
 
         cv2.putText(img_numpy, fps_text, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
     
-    if info_text is not None and info_text != "":
-        text_color = [0, 255, 0]
-        for j, line in enumerate(info_text.split('\n')):
-            if line != "":
-                color = get_color(j).cpu().detach().numpy() *255
-                color = [int(i) for i in color]
+    if len(detection_texts) > 0:
+        color = [0, 0, 255]
+        for j, detection_text in enumerate(detection_texts):
+            if detection_text != "":
+                if detections[j].valid:
+                    color = get_color(j).cpu().detach().numpy() *255
+                    color = [int(i) for i in color]
                 
                 text_pt = (4, (text_h+8)+(info_text_h+8)*j +info_text_h+2)
-                cv2.putText(img_numpy, line, text_pt, font_face, font_scale, color, font_thickness, cv2.LINE_AA)
+                cv2.putText(img_numpy, detection_text, text_pt, font_face, font_scale, color, font_thickness, cv2.LINE_AA)
     
     if num_dets_to_consider == 0:
         return img_numpy

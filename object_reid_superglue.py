@@ -12,6 +12,7 @@ from shapely.geometry import Polygon, Point
 import matplotlib.cm as cm
 from PIL import Image
 import math
+from scipy.spatial.transform import Rotation
 
 from types import SimpleNamespace
 
@@ -137,6 +138,9 @@ class ObjectReIdSuperGlue(ObjectReId):
         score_ratio = 0.0
         affine_median_error = 100
         angle_est = None
+        est_homo_ransac = None
+        angle_from_similarity = None
+        angle_from_est_affine_partial = None
 
         # 3 matches will always score perfectly because of affine transform
         # let's say we want at least 5 matches to work
@@ -151,40 +155,56 @@ class ObjectReIdSuperGlue(ObjectReId):
             # see superglue_training/match_homography.py, for how we do stuff for evaluation
             # sort_index = np.argsort(mconf)[::-1][0:4]
             # est_homo_dlt = cv2.getPerspectiveTransform(mkpts0[sort_index, :], mkpts1[sort_index, :])
-            est_homo_ransac, _ = cv2.findHomography(mkpts0, mkpts1, method=cv2.RANSAC, maxIters=3000)
-            if est_homo_ransac is None:
-                print("[red]est_homo_ransac is None")
-            else:
-                # get rotation from homography
-                angle_est = self.angle_from_homo(est_homo_ransac)
-                angle_est = add_angles(0, -angle_est) # take the negative angle
-
-                print("angle_est using findHomography", angle_est, "degrees:", np.rad2deg(angle_est))
-                # angle_gt = angle_from_homo(homo_matrix)
-                # angle_diff = np.abs(difference_angle(angle_est, angle_gt))
-                # print("angle_est", angle_est, "angle_gt", angle_gt)
-                # print("difference", np.round(angle_diff, 4))
-
-                if affine_fit:
-                    mean_error, affine_median_error, max_error = ObjectReId.calculate_affine_matching_error(mkpts0, mkpts1)
+            
+            if False: #! method disabled because not in use
+                est_homo_ransac, _ = cv2.findHomography(mkpts0, mkpts1, method=cv2.RANSAC, maxIters=300)
+                if est_homo_ransac is not None:
+                    # get rotation from homography
+                    angle_est = self.angle_from_homo(est_homo_ransac)
+                    # print("angle before negative:", angle_est, "in degrees:", np.rad2deg(angle_est))
+                    angle_est = add_angles(0, angle_est) # make sure angle_est is in [-pi, pi)
+                    angle_est = add_angles(0, -angle_est) # take the "inverse". Use add_angles to make sure we are still between -pi, pi.
                     
-                    # a median error of less than 0.5 is good
-                    strength = 1.0 # increase strength for harsher score function
-                    affine_loss = 1/(strength*affine_median_error + 1) #! we should test this score function
-                    
-                    min_num_kpts = min(len(kpts0), len(kpts1))
-                    
-                    score_ratio = len(matches[valid])/min_num_kpts
+                    # print("angle_est using findHomography", angle_est, "degrees:", np.rad2deg(angle_est))
+                    # angle_gt = angle_from_homo(homo_matrix)
+                    # angle_diff = np.abs(difference_angle(angle_est, angle_gt))
+                    # print("angle_est", angle_est, "angle_gt", angle_gt)
+                    # print("difference", np.round(angle_diff, 4))
 
-                    if debug:
-                        print("confidence[valid]", confidence[valid])
-                        print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
-                        print("mean_error", mean_error)
-                        print("median_error", affine_median_error)
-                        print("max_error", max_error)
-                        print("affine_loss (lower is better)", affine_loss)
-                        print("score_ratio (higher is better)", score_ratio)
-                        print("gt", gt)
+                else:
+                    print("[red]est_homo_ransac is None")
+            
+            # print("mkpts0.shape", mkpts0.shape)
+            # print("mkpts1.shape", mkpts1.shape)
+
+            R, s, t = estimate_similarity_transformation(mkpts0.T, mkpts1.T)
+            # print("R", R)
+            angle_from_similarity = np.arctan2(R[1, 0], R[0,0])
+            angle_from_similarity = add_angles(0, angle_from_similarity) # make sure angle_est is in [-pi, pi)
+            angle_from_similarity = add_angles(0, -angle_from_similarity) # take the "inverse". Use add_angles to make sure we are still between -pi, pi.
+            # print("angle estimate_similarity_transformation", angle_from_similarity, "in degrees:", np.rad2deg(angle_from_similarity))
+                
+            if False: #! method disabled because not in use
+                est_affine_partial_2d = cv2.estimateAffinePartial2D(mkpts0, mkpts1)[0] # don't know why it is a list of two arrays
+                print("est_affine_partial_2d", est_affine_partial_2d)
+
+                angle_from_est_affine_partial = np.arctan2(est_affine_partial_2d[1, 0], est_affine_partial_2d[0,0])
+                angle_from_est_affine_partial = add_angles(0, angle_from_est_affine_partial) # make sure angle_est is in [-pi, pi)
+                angle_from_est_affine_partial = add_angles(0, -angle_from_est_affine_partial) # take the "inverse". Use add_angles to make sure we are still between -pi, pi.
+                print("angle_from_est_affine_partial:", angle_from_est_affine_partial, "in degrees:", np.rad2deg(angle_from_est_affine_partial))
+
+                # if affine_fit:
+                    # mean_error, affine_median_error, max_error, A = ObjectReId.calculate_affine_matching_error(mkpts0, mkpts1)
+                    # print("A", A)
+                    # if debug:
+                    #     print("confidence[valid]", confidence[valid])
+                    #     print("matches[valid].shape", len(matches[valid]), matches[valid].shape)
+                    #     print("mean_error", mean_error)
+                    #     print("median_error", affine_median_error)
+                    #     print("max_error", max_error)
+                    #     print("affine_loss (lower is better)", affine_loss)
+                    #     print("score_ratio (higher is better)", score_ratio)
+                    #     print("gt", gt)
 
         vis_out = None
         if visualise:
@@ -203,7 +223,46 @@ class ObjectReIdSuperGlue(ObjectReId):
                 img1, img2, kpts0, kpts1, mkpts0, mkpts1, color, text,
                 path=None, show_keypoints=self.opt.show_keypoints, small_text=small_text)
         
-        return affine_loss, score_ratio, mconf, affine_median_error, len(matches[valid]), vis_out, angle_est
+        return affine_loss, score_ratio, mconf, affine_median_error, len(matches[valid]), vis_out, angle_est, est_homo_ransac, angle_from_similarity, angle_from_est_affine_partial
+
+
+def estimate_similarity_transformation(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """
+    Estimate similarity transformation (rotation, scale, translation) from source to target (such as the Sim3 group).
+    """
+    k, n = source.shape
+
+    # mx = source.mean(axis=1)
+    # my = target.mean(axis=1)
+    # print("mx", mx.shape)
+    # print("my", my.shape)
+
+    mx = np.array([200, 200]) # for image of 400 x 400
+    my = np.array([200, 200]) # for image of 400 x 400
+    source_centered = source - np.tile(mx, (n, 1)).T
+    target_centered = target - np.tile(my, (n, 1)).T
+
+    sx = np.mean(np.sum(source_centered**2, axis=0))
+    sy = np.mean(np.sum(target_centered**2, axis=0))
+
+    Sxy = (target_centered @ source_centered.T) / n
+
+    U, D, Vt = np.linalg.svd(Sxy, full_matrices=True, compute_uv=True)
+    V = Vt.T
+    rank = np.linalg.matrix_rank(Sxy)
+    if rank < k:
+        raise ValueError("Failed to estimate similarity transformation")
+
+    S = np.eye(k)
+    if np.linalg.det(Sxy) < 0:
+        S[k - 1, k - 1] = -1
+
+    R = U @ S @ V.T
+
+    s = np.trace(np.diag(D) @ S) / sx
+    t = my - s * (R @ mx)
+
+    return R, s, t
 
 
 if __name__ == '__main__':

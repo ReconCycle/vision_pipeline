@@ -12,6 +12,9 @@ from torch import Tensor
 import pyrealsense2
 import re
 import open3d as o3d
+from pathlib import Path
+import pickle
+
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -311,6 +314,51 @@ def path(*sub_paths):
 
     return path_str
 
+
+def load_depth_data_from_filename(file_name_without_ext, images_dir, depth_rescaling_factor=1/1000):
+
+    image_path = images_dir / Path(file_name_without_ext + ".jpg")
+    camera_info_path = images_dir / Path(file_name_without_ext + "_camera_info.pickle")
+    depth_path = images_dir / Path(file_name_without_ext + "_depth.npy")
+    image_viz_path = images_dir / Path(file_name_without_ext + "_depth_viz.jpg")
+
+    colour_img = cv2.imread(str(image_path))
+    depth_vis_img = cv2.imread(str(image_viz_path))
+
+    depth_img = np.load(depth_path)
+    pickleFile = open(camera_info_path, 'rb')
+    camera_info = pickle.load(pickleFile)
+
+    depth_img = depth_img * depth_rescaling_factor
+
+    return colour_img, depth_vis_img, depth_img, camera_info
+
+
+def robust_minimum(data, trim_percentage=0.1):
+    """
+    Calculate a robust minimum by trimming a percentage of the smallest values.
+
+    :param data: List or array of numbers.
+    :param trim_percentage: Percentage of smallest values to trim (0 to 0.5).
+    :return: Robust minimum value.
+    """
+    # Ensure the trim_percentage is between 0 and 0.5
+    if trim_percentage < 0 or trim_percentage > 0.5:
+        raise ValueError("trim_percentage must be between 0 and 0.5")
+    
+    # Sort the data
+    sorted_data = np.sort(data)
+    
+    # Calculate the number of values to trim
+    n_trim = int(len(sorted_data) * trim_percentage)
+    
+    # Trim the smallest values
+    trimmed_data = sorted_data[n_trim:]
+    
+    # Return the minimum of the remaining data
+    return np.min(trimmed_data)
+
+
 class Struct(object):
     """
     Holds the configuration for anything you want it to.
@@ -331,3 +379,5 @@ class Struct(object):
     def print(self):
         for k, v in vars(self).items():
             print(k, ' = ', v)
+
+

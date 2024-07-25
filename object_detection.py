@@ -10,16 +10,18 @@ from rich import print
 from shapely.geometry import Polygon, MultiPolygon, GeometryCollection
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
+from shapely import Point
 from scipy.spatial.transform import Rotation
 
 from yolact_pkg.data.config import Config, COLORS
 from yolact_pkg.yolact import Yolact
+import imutils
 
 from tracker.byte_tracker import BYTETracker
 from context_action_framework.graph_relations import GraphRelations, exists_detection, compute_iou
 import obb
 import graphics
-from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles, circular_median
+from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles, circular_median, robust_minimum
 from context_action_framework.types import Detection, Label, LabelFace, Camera, lookup_label_precise_name
 from object_detector_opencv import SimpleDetector
 from object_reid import ObjectReId
@@ -31,6 +33,7 @@ import tf
 import tf2_ros
 from tf.transformations import quaternion_from_euler, quaternion_multiply, euler_from_quaternion, quaternion_inverse
 import ros_numpy
+from datetime import datetime
 
 
 class ObjectDetection:
@@ -99,9 +102,7 @@ class ObjectDetection:
         if depth_img is not None:
             if colour_img.shape[:2] != depth_img.shape[:2]:
                 raise ValueError("[red]image and depth image shapes do not match! [/red]")
-        
-        # apply median blur to reduce noise
-        colour_img = cv2.medianBlur(colour_img, 5)
+
         
         if self.simple_detector is not None:
             # simple detector opencv
@@ -329,6 +330,16 @@ class ObjectDetection:
             detection.center_px = center_px
             detection.angle_px = angle
 
+            if detection.obb_px is not None:
+                edge_px_small = np.linalg.norm(detection.obb_px[0] - detection.obb_px[1])
+                edge_px_large = np.linalg.norm(detection.obb_px[1] - detection.obb_px[2])
+            
+                if edge_px_large < edge_px_small:
+                    edge_px_small, edge_px_large = edge_px_large, edge_px_small
+            
+                detection.edge_px_small = edge_px_small
+                detection.edge_px_large = edge_px_large
+
             poly = None
             if detection.mask_contour is not None and len(detection.mask_contour) > 2:
                 poly = Polygon(detection.mask_contour)
@@ -353,10 +364,30 @@ class ObjectDetection:
             # batch the classifier
             for idx, detection in enumerate(detections):
                 if detection.label in [Label.smoke_detector, Label.hca]:
-                    
-                    sample_crop, _ = ObjectReId.crop_det(colour_img, detection, size=400)
+
+                    crop_size = int(detection.edge_px_large*1.2) #crop such that 80% of the image is the device
+                    sample_crop, _ = ObjectReId.crop_det(colour_img, detection, size=crop_size)
+                    # sample_crop = imutils.resize(sample_crop, width=400, height=400) # set size to 400x400
+                    sample_crop = cv2.resize(sample_crop, (400, 400), interpolation=cv2.INTER_AREA)
+
+                    if sample_crop.shape[0] != 400 or sample_crop.shape[1] != 400:
+                        raise ValueError(f"imutils.resize failed {sample_crop.shape}")
+
                     batch_imgs_detection_mapping[idx] = len(batch_crop_imgs)
                     batch_crop_imgs.append(sample_crop)
+
+                    # #! DEBUG
+                    # if True:       
+                    #     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    #     filename_crop = os.path.expanduser(f"~/vision_pipeline/saves/{timestamp}_crop_{detection.label}_idx_{idx}.jpg")
+                    #     filename_img = os.path.expanduser(f"~/vision_pipeline/saves/{timestamp}_img.jpg")
+                        
+                    #     print("\n[red]************************************")
+                    #     print(f"[red]saving crop_det (object_detection.py): {filename_crop}")
+                    #     print("[red]************************************\n")   
+                        
+                    #     cv2.imwrite(filename_crop, sample_crop)
+
             
             if len(batch_crop_imgs) > 0:
                 batch_crop_imgs_arr = np.array(batch_crop_imgs)
@@ -401,18 +432,19 @@ class ObjectDetection:
                             
                             label_precise_name = lookup_label_precise_name(classify_type, classify_num)
                             detection.label_precise = classify_num
+                            detection.label_precise_conf = conf
                             detection.label_precise_name = label_precise_name
 
-                            print(f"classify: {label_precise_name}, {classify_num}, conf: {conf}")
+                            print(f"classify: {label_precise_name}, {classify_num}, conf: {conf:.2f}")
 
                             if detection.label == Label.smoke_detector:
                                 # only update angle if it hasn't been set already in get_detections function
                                 if not (hasattr(detection, "angle_set_in_get_detections") and detection.angle_set_in_get_detections):
-                                    angle_rad, *_ = self.model.superglue_rot_estimation(crop_img, classify_label)
+                                    superglue_angle_rad, superglue_vis_out, homo_ransac, angle_from_similarity, angle_from_est_affine_partial = self.model.superglue_rot_estimation(crop_img, classify_label)
 
-                                    if angle_rad is not None:
+                                    if angle_from_similarity is not None:
                                         # update angle
-                                        detection.angle_px = np.rad2deg(angle_rad)
+                                        detection.angle_px = np.rad2deg(angle_from_similarity)
                         else:
                             print(f"[red]classify conf too low: {conf}, {classify_label}")
 
@@ -425,7 +457,6 @@ class ObjectDetection:
             if detection.angle_px is not None:
                 rot_quat = self.angle_to_quat(worksurface_detection, detection.angle_px)
                 
-                # todo: obb_3d
                 #! this tf_px coordinate system is horrible, because the y-axis is wrong.
                 #! so something is wrong here
                 detection.tf_px = Transform(Vector3(*detection.center_px, 0), Quaternion(*rot_quat))
@@ -453,89 +484,143 @@ class ObjectDetection:
                         depth_img is not None and \
                         detection.center_px is not None and \
                         detection.obb_px is not None:
-                    # mask depth image
-                    # depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask.cpu().detach().numpy().astype(np.uint8))
 
-                    depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=detection.mask)
+                    # threshold between 0.1 and 0.5
+                    min_thresh = 0.1
+                    max_thresh = 0.5
+                    depth_img[depth_img < min_thresh] = 0
+                    depth_img[depth_img > max_thresh] = 0
+
+                    # use convex hull mask instead of original mask for hole filling
+                    mask = np.zeros(detection.mask.shape)
+                    convex_hull_mask = np.array(cv2.drawContours(mask, [detection.mask_contour], 0, (1), thickness=cv2.FILLED), dtype=np.uint8)
+                    depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=convex_hull_mask)
                     depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
-                    depth_mean = depth_masked_np.mean()
-                    depth_median = np.ma.median(depth_masked_np)
+
+                    compressed_depth = depth_masked_np.compressed()
+
+                    # TODO: sometimes with small objects like screws, the depth data may not be available because the object is so small.
+                    # TODO: take a wider mask to solve this problem
+                    # TODO: idea 1: use convex hull first.
                     
-                    if not np.count_nonzero(depth_img):
-                        if self.config.obj_detection.debug:
-                            print("[red]detection: depth image is all 0")
-                    
-                    if isinstance(depth_mean, np.float):
+                    # print("detection.mask_contour", )
+                    if len(compressed_depth) == 0:
+                        print("[red]trying again with dilated mask!")
+                        # dilate mask and try again.
+                        kernel = np.ones((5, 5), np.uint8)
+                        convex_hull_mask = cv2.dilate(convex_hull_mask, kernel, iterations=3)
                         
-                        # tf translation comes from img_to_camera_coords(...)
-                        if self.config.obj_detection.debug:
-                            print(f"depth mean {round(depth_mean, 5)}, median {round(depth_median, 5)}")
+                        #! repeated code!!
+                        depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=convex_hull_mask)
+                        depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
+                        compressed_depth = depth_masked_np.compressed()
+
+                        # plt.imshow(depth_masked)
+                        # plt.show()
+
+                        # plt.imshow(depth_img)
+                        # plt.show()
+
+
+                    if len(compressed_depth) > 0:
+                        # depth_mean = np.mean(compressed_depth)
+                        # depth_median = np.median(compressed_depth)
+                        # depth_min = np.min(compressed_depth)
+                        # depth_max = np.max(compressed_depth)
+                        # percentile_20 = np.percentile(compressed_depth, 20)
+                        depth_robust_min = robust_minimum(compressed_depth)
+
+                        # histogram of depth data:
+                        # import matplotlib.pyplot as plt                    
+                        # print("compressed_depth.shape", compressed_depth.shape)
+                        # plt.hist(compressed_depth, bins=1000)
+                        # plt.show()
                         
-                        detection.center = img_to_camera_coords(detection.center_px, depth_mean, camera_info)
-                        detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
-                        detection.box = img_to_camera_coords(detection.box_px, depth_mean, camera_info)
-                        detection.polygon = img_to_camera_coords(detection.polygon_px, depth_mean, camera_info)
+                        if not np.count_nonzero(depth_img):
+                            if self.config.obj_detection.debug:
+                                print("[red]detection: depth image is all 0")
                         
-                        corners = img_to_camera_coords(detection.obb_px, depth_mean, camera_info)
-                        # the lower corners are 2.5cm further away from the camera
-                        corners_low = img_to_camera_coords(detection.obb_px, depth_mean - self.object_depth, camera_info)
-                        detection.obb = corners
-                        detection.obb_3d = np.concatenate((corners, corners_low))
-                        
-                        
-                        # print("detection: detection.obb", detection.obb)
+                        if isinstance(depth_robust_min, np.float):
+                            print(f"{detection.label.name} depth_robust_min {depth_robust_min:.3f}")
+                            
+                            detection.center = img_to_camera_coords(detection.center_px, depth_robust_min, camera_info)
+                            detection.tf = Transform(Vector3(*detection.center), Quaternion(*rot_quat))
+                            detection.box = img_to_camera_coords(detection.box_px, depth_robust_min, camera_info)
+                            detection.polygon = img_to_camera_coords(detection.polygon_px, depth_robust_min, camera_info)
+                            
+                            corners = img_to_camera_coords(detection.obb_px, depth_robust_min, camera_info)
+                            # the lower corners are 2.5cm further away from the camera
+                            corners_low = img_to_camera_coords(detection.obb_px, depth_robust_min - self.object_depth, camera_info)
+                            detection.obb = corners
+                            detection.obb_3d = np.concatenate((corners, corners_low))
+
+                    else:
+                        print(f"[red] no depth info! {detection.label.name}")
+                        detection.is_invalid_reason = "no depth info"
                     
                 else:
                     if self.config.obj_detection.debug:
                         print("[red]detection: detection real-world info couldn't be determined!")
                     detection.obb = None
                     detection.tf = None
+
+                if detection.obb is not None:
+                    # check ratio of obb sides
+                    edge_small = np.linalg.norm(detection.obb[0] - detection.obb[1])
+                    edge_large = np.linalg.norm(detection.obb[1] - detection.obb[2])
+                    
+                    if edge_large < edge_small:
+                        edge_small, edge_large = edge_large, edge_small
+
+                    detection.edge_small = edge_small
+                    detection.edge_large = edge_large
         
             
         # remove objects that don't fit certain constraints, eg. too small, too thin, too big
         def is_valid_detection(detection):
             if detection.angle_px is None:
+                detection.is_invalid_reason = "angle_px is None"
                 if self.config.obj_detection.debug:
                     print(f"[red]detection: {detection.label.name} angle is None![/red]")
                 return False
             
             if detection.obb is None:
+                detection.is_invalid_reason = "obb is None"
                 if self.config.obj_detection.debug:
                     print(f"[red]detection: {detection.label.name} obb is None![/red]")
                 return False
-            
-            # check ratio of obb sides
-            edge_small = np.linalg.norm(detection.obb[0] - detection.obb[1])
-            edge_large = np.linalg.norm(detection.obb[1] - detection.obb[2])
-            
-            if edge_large < edge_small:
-                edge_small, edge_large = edge_large, edge_small
                 
-            ratio = edge_large / edge_small
-
-            #!
-            #! These area constraints don't make sense with close up camera!
-            #!
+            ratio_obb_sides = detection.edge_large / detection.edge_small
 
             # edge_small should be longer than 0.1cm
-            if edge_small < 0.001:
+            if detection.edge_small < 0.001:
+                detection.is_invalid_reason = "edge too small"
                 if self.config.obj_detection.debug:
-                    print(f"[red]detection: {detection.label.name} invalid: edge too small: {round(edge_small, 3)}m")
+                    print(f"[red]detection: {detection.label.name} invalid: edge too small: {round(detection.edge_small, 3)}m")
+                return False
+            
+            # edge_small should be longer than 1cm for everything that is not a screw
+            if detection.edge_small < 0.01 and detection.label != Label.screw:
+                detection.is_invalid_reason = "edge too small"
+                if self.config.obj_detection.debug:
+                    print(f"[red]detection: NOT A SCREW {detection.label.name} invalid: edge too small: {round(detection.edge_small, 3)}m")
                 return False
             
             # edge_large should be shorter than 25cm
-            if edge_large > 0.25:
+            if detection.edge_large > 0.25:
+                detection.is_invalid_reason = "edge too large"
                 if self.config.obj_detection.debug:
-                    print(f"[red]detection: {detection.label.name} invalid: edge too large: {round(edge_large, 3)}m")
+                    print(f"[red]detection: {detection.label.name} invalid: edge too large: {round(detection.edge_large, 3)}m")
                 return False
             
             # if self.config.obj_detection.debug:
-            #     print(f"{detection.label.name}, edge large: {round(edge_large, 3)}m, edge small: {round(edge_small, 3)}m")
+            #     print(f"{detection.label.name}, edge large: {round(detection.edge_large, 3)}m, edge small: {round(detection.edge_small, 3)}m")
             
             # ratio of longest HCA: 3.4
             # ratio of Kalo 1.5 battery: 1.7
             # a really big ratio corresponds to a really long device. Ratio of 5 is probably false positive.
-            if ratio > 5:
+            if ratio_obb_sides > 5:
+                detection.is_invalid_reason = "ratio too big"
                 if self.config.obj_detection.debug:
                     print("[red]detection: invalid: obb ratio of sides too large[/red]")
                 return False
@@ -543,10 +628,12 @@ class ObjectDetection:
             if detection.label == Label.screw:
                 # screws cannot be bigger than 
                 if detection.polygon.area > 0.001:
+                    detection.is_invalid_reason = "area too big"
                     return False
             else:
                 # area should be larger than 1cm^2 = 0.0001 m^2
                 if detection.polygon is not None and detection.polygon.area < 0.0001:
+                    detection.is_invalid_reason = "area too big"
                     if self.config.obj_detection.debug:
                         print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
                     return False
@@ -560,7 +647,7 @@ class ObjectDetection:
             detection.valid = is_valid
         
         # graph relations only uses valid detections
-        graph_relations = GraphRelations(detections)    
+        graph_relations = GraphRelations(detections)
         
         # TODO: filter out duplicate detections in a group
         for group in graph_relations.groups:
@@ -662,13 +749,6 @@ class ObjectDetection:
 
                     # <-- END, ANOTHER METHOD
 
-        # if device contains battery:
-            # possibly flip orientation
-
-        # TODO: classify and estimate rotation
-        # for group in graph_relations.groups:
-            
-        #     pass
 
         # ! remove reid
         if self.config is not None and self.config.reid and colour_img is not None:
@@ -694,6 +774,10 @@ class ObjectDetection:
                 if changing_height < changing_width:
                     height = changing_width
                     width = changing_height
+
+                
+                # height = detection.edge_large
+                # width = detection.edge_small
                 
                 if self.use_ros:
                     marker = self.make_marker(detection.tf, height, width, self.object_depth, detection.id, detection.label)

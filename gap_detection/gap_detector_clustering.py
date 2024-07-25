@@ -15,6 +15,9 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
 
+import matplotlib
+import matplotlib.pyplot as plt
+
 import open3d as o3d
 
 import sklearn.cluster as cluster
@@ -34,8 +37,8 @@ class GapDetectorClustering:
     def __init__(self, config):
         self.config = config
 
-        # threshold max depth distance from camera, in mm
-        self.MAX_DEPTH_THRESHOLD = 240 # mm 
+        # threshold maximum depth distance from camera, in meters
+        self.MAX_DEPTH_THRESHOLD = 0.5 # meters
 
         self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE = 20
 
@@ -124,6 +127,7 @@ class GapDetectorClustering:
         count = 0
         for i in np.arange(mask.shape[0]):
             for j in np.arange(mask.shape[1]):
+                # if not np.isnan(mask[i, j]) and mask[i, j] != None:
                 depth_list[count] = np.array([i, j, mask[i, j]])
                 count += 1
 
@@ -160,25 +164,7 @@ class GapDetectorClustering:
         if self.config.obj_detection.debug:
             print(f"median depth: {round(np.median(depth_img), 4)}")
         
-        # merge colour_img and depth_img
-        colour2 = o3d.geometry.Image(cv2.cvtColor(colour_img, cv2.COLOR_RGB2BGR))
-        depth2 = o3d.geometry.Image((depth_img).astype(np.uint8))
-        
-        rgbd_img = o3d.geometry.RGBDImage.create_from_color_and_depth(colour2, depth2, convert_rgb_to_intensity=False)
-        # rgbd_img = np.dstack((colour_img, depth_img))
-        # print("rgbd_img.shape", rgbd_img.shape)
-        
-        # get intrinsics
-        intrinsics = camera_info_to_o3d_intrinsics(camera_info)
-        
-        if self.config.realsense.debug_clustering:
-        
-            pointcloud = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_img, intrinsics)
 
-            print(pointcloud)
-            print(np.asarray(pointcloud.points))
-
-            o3d.visualization.draw_geometries([pointcloud])
 
         # get the first detection that is hca_back        
         detections_hca_back = graph_relations.exists(Label.hca, LabelFace.back)
@@ -201,57 +187,100 @@ class GapDetectorClustering:
             device_mask = self.mask_from_contour(hull, depth_img.shape).astype(np.uint8)
             
             # mask depth image
-            depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=device_mask)
-
-            #! we should probably mask with the polygon as well.
-            device_poly = detection_hca_back.polygon_px
+            # depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=device_mask)
+            depth_masked_ma = np.ma.masked_array(depth_img,255 - device_mask)
             
-            if device_poly is None:
-                return gaps, img, depth_scaled, device_mask
-            
-            # print("device_poly.area", device_poly.area)
-            # print("len(contour)", len(contour))
-            # print("len(hull)", len(hull))
+            # TODO: implement inpainting:
+            # https://docs.opencv.org/3.4/df/d3d/tutorial_py_inpainting.html
+            # cv2.inpaint(img,mask,3,cv.INPAINT_TELEA)
 
-            points = self.image_to_points_list(depth_masked)
+
+            points = self.image_to_points_list(depth_masked_ma)
 
             if len(points) == 0:
-                return gaps, img, depth_scaled, device_mask
+                return gaps, img, device_mask, depth_masked_ma, None, None
 
         else:
             print("[red]gap detector: detection_hca_back is None!")
-            return gaps, img, depth_scaled, device_mask
+            return gaps, img, device_mask, depth_masked_ma, None, None
 
-        height, width = depth_masked.shape[:2]
+        height, width = depth_masked_ma.shape[:2]
         img = np.zeros((height, width, 3), dtype=np.uint8)
 
         # threshold depth image
-        print("num points thresholded", np.count_nonzero(depth_masked > self.MAX_DEPTH_THRESHOLD))
-        depth_masked[depth_masked > self.MAX_DEPTH_THRESHOLD] = 0
+        # TODO: make this more robust by looking at median value.
+        print("num points thresholded", np.count_nonzero(depth_masked_ma > self.MAX_DEPTH_THRESHOLD))
+        depth_masked_ma[depth_masked_ma > self.MAX_DEPTH_THRESHOLD] = 0
+        depth_masked_ma = np.ma.masked_equal(depth_masked_ma, 0.0, copy=False)
 
-        depth_masked_np = np.ma.masked_equal(depth_masked, 0.0, copy=False)
 
-        depth_max = np.amax(depth_masked)
-        depth_min = np.amin(depth_masked)
-        depth_min_nonzero = depth_masked_np.min() # np.min(points)
+
+        depth_max = np.amax(depth_masked_ma)
+        depth_min = np.amin(depth_masked_ma)
+        depth_min_nonzero = depth_masked_ma.min() # np.min(points)
+        depth_median_nonzero = np.ma.median(depth_masked_ma)
+
+        # TODO: make cut below and above median by around 2cm in each direction. This will remove big outliers.
+        print("[red]TODO: implement removing of outliers")
+
+        if self.config.realsense.debug_clustering:
+            print("gap detector, depth_min:", depth_min)
+            print("gap detector, depth_min_nonzero:", depth_min_nonzero)
+            print("gap detector, depth_median_nonzero:", depth_median_nonzero)
+            print("gap detector, depth_max:", depth_max)
 
         # depth_mean = depth_masked_np.mean()
         # print("depth_mean", depth_mean)
 
         if depth_min == depth_max:
             print("[red]gap detector: depth_min == depth_max!")
-            return gaps, img, depth_masked, device_mask
+            return gaps, img, device_mask, depth_masked_ma, None, None
 
         if depth_min_nonzero is np.NaN or depth_min_nonzero is None:
             print("[red]gap detector: depth_min_nonzero is None!")
-            return gaps, img, depth_masked, device_mask 
+            return gaps, img, device_mask, depth_masked_ma, None, None
+        
 
         # print("depth_min_nonzero", depth_min_nonzero)
         # print("depth_max", depth_max)
 
         # rescale the depth to the range (0, 255) such that the clustering works well
-        depth_scaled = skimage.exposure.rescale_intensity(depth_masked, in_range=(depth_min_nonzero, depth_max), out_range=(0,255)).astype(np.uint8) # shape (480, 640)
-        depth_scaled_points = self.image_to_points_list(depth_scaled) # shape (n, 3)
+        depth_scaled = skimage.exposure.rescale_intensity(depth_masked_ma, in_range=(depth_min_nonzero, depth_max), out_range=(0,255)).astype(np.uint8) # shape (480, 640)
+        
+        depth_gaussian = cv2.GaussianBlur(depth_scaled, (21, 21), 0) #! VERY USEFUL FOR SMOOTHING.
+
+        depth_scaled_masked = np.ma.masked_array(depth_scaled, 255 - device_mask)
+
+        depth_scaled_points = self.image_to_points_list(depth_gaussian) # shape (n, 3)
+
+        # TODO: WIP. Try out RBF
+        #! SLOW:
+        # from scipy.interpolate import RBFInterpolator
+        # x = depth_scaled_points[:,:2]
+        # y = depth_scaled_points[:,2]
+        # asdf = RBFInterpolator(x,y)
+        # print("asdf", asdf)
+
+
+        # if self.config.realsense.debug_clustering:
+        #     # get intrinsics
+        #     intrinsics = camera_info_to_o3d_intrinsics(camera_info)
+        #     # merge colour_img and depth_img
+        #     colour2 = o3d.geometry.Image(cv2.cvtColor(colour_img, cv2.COLOR_RGB2BGR))
+        #     # depth2 = o3d.geometry.Image((depth_img).astype(np.uint8)) #! seb: previously this may have worked but now our depth is in meters, and we need ints.
+        #     depth2 = o3d.geometry.Image((depth_scaled).astype(np.uint8))
+
+            
+        #     rgbd_img = o3d.geometry.RGBDImage.create_from_color_and_depth(colour2, depth2, convert_rgb_to_intensity=False)
+        #     # rgbd_img = np.dstack((colour_img, depth_img))
+        #     # print("rgbd_img.shape", rgbd_img.shape)
+        
+        #     pointcloud = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_img, intrinsics)
+
+        #     # print(pointcloud)
+        #     # print(np.asarray(pointcloud.points))
+
+        #     o3d.visualization.draw_geometries([pointcloud])
 
         contours = []
         contours_small = []
@@ -265,11 +294,12 @@ class GapDetectorClustering:
         if len(depth_scaled_points) > self.MIN_CLUSTER_SIZE:
             clusters, num_of_points = self.clustering(depth_scaled_points)
 
-        # get the contour of each cluster
-        kernel = np.ones((2, 2), np.uint8)
+        print("gap detector, num clusters:", len(clusters))
 
+        # get the contour of each cluster
         for index, cluster in enumerate(clusters):
-            if len(cluster) > self.MIN_CLUSTER_SIZE:
+            if True:
+            # if len(cluster) > self.MIN_CLUSTER_SIZE:
                 # todo: do we need to do this inverting?
                 # todo: what are the funny greenish non-contoured parts of the image?
                 # convert cluster to mask and the create contour
@@ -304,7 +334,7 @@ class GapDetectorClustering:
                             center = self.cnt_center(contour)
                             if center is not None:
                                 
-                                depth = self.mean_depth(depth_masked, cluster[:, :2].astype(int))
+                                depth = self.mean_depth(depth_masked_ma, cluster[:, :2].astype(int))
                                 
                                 if depth is not None:
                                     cluster_obj = contour, poly, area, center, depth, index
@@ -312,7 +342,7 @@ class GapDetectorClustering:
 
 
 
-        print("gap detector: num clusters found:", len(cluster_objs))
+        # print("gap detector: num clusters found:", len(cluster_objs))
 
         # good_points = []
         lines = []
@@ -464,15 +494,15 @@ class GapDetectorClustering:
             colour = [162, 162, 162]
             cv2.line(img, p1, p2, colour, 3)
         
-        for idx, gap in enumerate(gaps_bad):
-            colour = tuple([int(x) for x in [0, 250, 250]])
-            cv2.arrowedLine(img, gap.from_px.astype(int),
-                            gap.to_px.astype(int), colour, 3, tipLength=0.3)
+        # for idx, gap in enumerate(gaps_bad):
+        #     colour = tuple([int(x) for x in [0, 250, 250]])
+        #     cv2.arrowedLine(img, gap.from_px.astype(int),
+        #                     gap.to_px.astype(int), colour, 3, tipLength=0.3)
             
-        for idx, gap in enumerate(gaps_bad2):
-            colour = tuple([int(x) for x in [0, 0, 250]])
-            cv2.arrowedLine(img, gap.from_px.astype(int),
-                            gap.to_px.astype(int), colour, 3, tipLength=0.3)
+        # for idx, gap in enumerate(gaps_bad2):
+        #     colour = tuple([int(x) for x in [0, 0, 250]])
+        #     cv2.arrowedLine(img, gap.from_px.astype(int),
+        #                     gap.to_px.astype(int), colour, 3, tipLength=0.3)
 
         for idx, gap in enumerate(gaps):
             colour = tuple([int(x) for x in get_colour_blue(idx)])
@@ -491,8 +521,8 @@ class GapDetectorClustering:
             color = [255, 255, 255]
             cv2.putText(img, text, text_pt, font_face, font_scale, color, font_thickness, cv2.LINE_AA)
         
-        return gaps, img, depth_scaled, device_mask
-
+        return gaps, img, device_mask, depth_masked_ma, depth_scaled, depth_scaled_masked
+    
     # =============== CLUSTER ALGORITHM WRAPPERS ===============
     def kmeans(self, data):
         return cluster.KMeans(n_clusters=self.KM_number_of_clusters).fit_predict(data)

@@ -262,26 +262,33 @@ class ObjectDetectionModel:
         model_path = os.path.expanduser(self.config.superglue_model_file)
         self.superglue_model = ObjectReIdSuperGlue(model_path, self.config.superglue_match_threshold)
 
-    def superglue_rot_estimation(self, sample, label):
+    def superglue_rot_estimation(self, sample, label, visualise=None, save_visualise=None):
 
         # get the template image from the loaded templates
         img1 = self.superglue_templates[label]
         # print("superglue_rot_estimation: img1.shape", img1.shape)
-        img1 = imutils.resize(img1, width=300, height=300)
+        img1 = imutils.resize(img1, width=400, height=400) #! the input sample must be the same size as this.
         # print("superglue_rot_estimation: img1.shape", img1.shape)
+        if sample.shape != img1.shape:
+            raise ValueError(f"shapes for superglue input do not match: {img1.shape}, {sample.shape}")
 
         # display(PILImage.fromarray(cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)))
 
         img2 = sample
 
-        visualise = self.config.superglue_visualise_to_file
+        if visualise is None:
+            visualise = self.config.superglue_visualise_to_file
+            
+        if save_visualise is None:
+            save_visualise = self.config.superglue_visualise_to_file
 
         # img1 = exp_utils.torch_to_grayscale_np_img(img1).astype(np.float32)
         # img2 = exp_utils.torch_to_grayscale_np_img(img2).astype(np.float32)
         img1_grey = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY).astype(np.float32)
         img2_grey = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY).astype(np.float32)
 
-        affine_score, score_ratio, mconf, median_affine_error, len_matches, vis_out, angle = self.superglue_model.compare(img1_grey, img2_grey, gt=True, affine_fit=False, visualise=visualise, debug=self.config.debug)
+        affine_score, score_ratio, mconf, median_affine_error, len_matches, vis_out, angle, est_homo_ransac, angle_from_similarity, angle_from_est_affine_partial = self.superglue_model.compare(img1_grey, img2_grey, gt=True, affine_fit=False, visualise=visualise, debug=self.config.debug)
+
 
         # if visualise:
         #     sns.histplot(mconf)
@@ -290,7 +297,7 @@ class ObjectDetectionModel:
         # if visualise and vis_out is not None:            
         #     display(PILImage.fromarray(vis_out))
 
-        if visualise:       
+        if save_visualise:       
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             if not os.path.exists("saves/"):
                 os.makedirs("saves/")
@@ -303,4 +310,4 @@ class ObjectDetectionModel:
             cv2.imwrite(filename, vis_out)
 
         
-        return angle, vis_out
+        return angle, vis_out, est_homo_ransac, angle_from_similarity, angle_from_est_affine_partial
