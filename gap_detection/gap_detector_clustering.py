@@ -14,22 +14,24 @@ from scipy.optimize import curve_fit
 from shapely.geometry import LineString, Point, Polygon
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
+import shapely
 
 import matplotlib
 import matplotlib.pyplot as plt
 
 import open3d as o3d
 
+from types import SimpleNamespace
 import sklearn.cluster as cluster
 import hdbscan
 import time
 import cv2
-from itertools import combinations, product
+from itertools import combinations, product, permutations
 import math
 import random
 # Own Modules
 from obb import get_obb_from_contour
-from helpers import get_colour, get_colour_blue, make_valid_poly, img_to_camera_coords, camera_info_to_o3d_intrinsics
+from helpers import get_colour, get_colour_blue, make_valid_poly, img_to_camera_coords, camera_info_to_o3d_intrinsics, robust_minimum, draw_text
 from context_action_framework.types import Gap, Label, LabelFace, Detection
 
 
@@ -43,7 +45,13 @@ class GapDetectorClustering:
         self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE = 20
 
         # min. leverable area. The min. size of the cluster where the lever starts.
-        self.MIN_LEVERABLE_AREA = 100
+        self.MIN_LEVERABLE_AREA = 0.000025 # = 0.005 * 0.005 meters^2, or 5mm * 5mm mm^2
+
+        self.MIN_HEIGHT_DIFFERENCE = 0.005 # 5mm
+
+        self.MAX_DISTANCE_BETWEEN_GAP_CLUSTER_AND_LEVER_CLUSTER = 0.005 # 5mm
+
+
         # min. number of points in cluster (for sanity checks)
         self.MIN_CLUSTER_SIZE = 30
 
@@ -108,17 +116,25 @@ class GapDetectorClustering:
 
 
     @staticmethod
-    def mean_depth(depth_masked, points):
+    def depth_stats(depth_masked, points):
         if len(points) > 0:
             heights = []
             for point in points:
                 height = depth_masked[point[0], point[1]]
                 if height != 0.0:
                     heights.append(height)
+                
+            if len(heights) > 0:
+                depth_stats = SimpleNamespace()
+                depth_stats.mean = np.mean(heights)
+                depth_stats.median = np.median(heights)
+                depth_stats.min = np.min(heights)
+                depth_stats.max = np.max(heights)
+                depth_stats.robust_min = robust_minimum(heights)
 
-            return np.mean(heights)
-        else:
-            return None
+                return depth_stats
+            
+        return None
 
 
     @staticmethod
@@ -156,7 +172,7 @@ class GapDetectorClustering:
 
         # vars to return
         gaps = None
-        img = None
+        cluster_img = None
         depth_scaled = None
         device_mask = None
         
@@ -179,7 +195,7 @@ class GapDetectorClustering:
         # todo: find which area contains the biggest gap 
         # todo: lever that one
         
-        if detection_hca_back is not None:
+        if detection_hca_back is not None and detection_hca_back.polygon_px is not None:
 
             contour = detection_hca_back.mask_contour
             hull = cv2.convexHull(contour, False)
@@ -192,20 +208,19 @@ class GapDetectorClustering:
             
             # TODO: implement inpainting:
             # https://docs.opencv.org/3.4/df/d3d/tutorial_py_inpainting.html
-            # cv2.inpaint(img,mask,3,cv.INPAINT_TELEA)
+            # cv2.inpaint(cluster_img,mask,3,cv.INPAINT_TELEA)
 
 
             points = self.image_to_points_list(depth_masked_ma)
 
             if len(points) == 0:
-                return gaps, img, device_mask, depth_masked_ma, None, None
+                return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
 
         else:
-            print("[red]gap detector: detection_hca_back is None!")
-            return gaps, img, device_mask, depth_masked_ma, None, None
+            print("[red]gap detector: detection_hca_back (or polygon_px) is None!")
+            return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
 
-        height, width = depth_masked_ma.shape[:2]
-        img = np.zeros((height, width, 3), dtype=np.uint8)
+
 
         # threshold depth image
         # TODO: make this more robust by looking at median value.
@@ -234,11 +249,11 @@ class GapDetectorClustering:
 
         if depth_min == depth_max:
             print("[red]gap detector: depth_min == depth_max!")
-            return gaps, img, device_mask, depth_masked_ma, None, None
+            return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
 
         if depth_min_nonzero is np.NaN or depth_min_nonzero is None:
             print("[red]gap detector: depth_min_nonzero is None!")
-            return gaps, img, device_mask, depth_masked_ma, None, None
+            return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
         
 
         # print("depth_min_nonzero", depth_min_nonzero)
@@ -247,48 +262,18 @@ class GapDetectorClustering:
         # rescale the depth to the range (0, 255) such that the clustering works well
         depth_scaled = skimage.exposure.rescale_intensity(depth_masked_ma, in_range=(depth_min_nonzero, depth_max), out_range=(0,255)).astype(np.uint8) # shape (480, 640)
         
-        depth_gaussian = cv2.GaussianBlur(depth_scaled, (21, 21), 0) #! VERY USEFUL FOR SMOOTHING.
+        depth_gaussian = cv2.GaussianBlur(depth_scaled, (7, 7), 0) #! VERY USEFUL FOR SMOOTHING.
 
         depth_scaled_masked = np.ma.masked_array(depth_scaled, 255 - device_mask)
 
         depth_scaled_points = self.image_to_points_list(depth_gaussian) # shape (n, 3)
 
-        # TODO: WIP. Try out RBF
-        #! SLOW:
-        # from scipy.interpolate import RBFInterpolator
-        # x = depth_scaled_points[:,:2]
-        # y = depth_scaled_points[:,2]
-        # asdf = RBFInterpolator(x,y)
-        # print("asdf", asdf)
 
 
-        # if self.config.realsense.debug_clustering:
-        #     # get intrinsics
-        #     intrinsics = camera_info_to_o3d_intrinsics(camera_info)
-        #     # merge colour_img and depth_img
-        #     colour2 = o3d.geometry.Image(cv2.cvtColor(colour_img, cv2.COLOR_RGB2BGR))
-        #     # depth2 = o3d.geometry.Image((depth_img).astype(np.uint8)) #! seb: previously this may have worked but now our depth is in meters, and we need ints.
-        #     depth2 = o3d.geometry.Image((depth_scaled).astype(np.uint8))
-
-            
-        #     rgbd_img = o3d.geometry.RGBDImage.create_from_color_and_depth(colour2, depth2, convert_rgb_to_intensity=False)
-        #     # rgbd_img = np.dstack((colour_img, depth_img))
-        #     # print("rgbd_img.shape", rgbd_img.shape)
-        
-        #     pointcloud = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_img, intrinsics)
-
-        #     # print(pointcloud)
-        #     # print(np.asarray(pointcloud.points))
-
-        #     o3d.visualization.draw_geometries([pointcloud])
-
-        contours = []
-        contours_small = []
         clusters = []
         cluster_objs = []
         gaps = []
         gaps_bad = []
-        gaps_bad2 = []
 
         # sanity check
         if len(depth_scaled_points) > self.MIN_CLUSTER_SIZE:
@@ -296,232 +281,254 @@ class GapDetectorClustering:
 
         print("gap detector, num clusters:", len(clusters))
 
+        height, width = depth_masked_ma.shape[:2]
+        cluster_img = np.zeros((height, width, 3), dtype=np.uint8)
+
         # get the contour of each cluster
         for index, cluster in enumerate(clusters):
-            if True:
-            # if len(cluster) > self.MIN_CLUSTER_SIZE:
-                # todo: do we need to do this inverting?
-                # todo: what are the funny greenish non-contoured parts of the image?
-                # convert cluster to mask and the create contour
-                cluster_img = np.zeros((height, width), dtype=np.uint8)
-                cluster_colour = np.asarray(get_colour(index), dtype=np.uint8)
-                for x, y, z in cluster:
-                    img[int(x), int(y)] = cluster_colour
-                    cluster_img[int(x), int(y)] = 255
 
-                # apply erosion so that the contour is inside the object
-                # cluster_img = cv2.erode(cluster_img, kernel, iterations=1) # ? maybe we can avoid doing this to get a better contour
+            # convert cluster to mask and the create contour
+            cluster_img_mask = np.zeros((height, width), dtype=np.uint8)
+            cluster_colour = get_colour(index)
+            cluster_colour = (int(cluster_colour[0]), int(cluster_colour[1]), int(cluster_colour[2])) 
+            for x, y, z in cluster:
+                # cluster_img[int(x), int(y)] = cluster_colour #! we don't do this, because we remove stuff from the mask
+                cluster_img_mask[int(x), int(y)] = 255
 
-                cluster_contours, _ = cv2.findContours(cluster_img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                cluster_contours = list(cluster_contours)
-                if len(cluster_contours) > 0:
-                    cluster_contours.sort(key=lambda x: len(x), reverse=True)
-                    contour = cluster_contours[0]
-                    contours.append(contour)
-                    contours_small.extend(cluster_contours[1:])
+            # use findContours to get the biggest one only
+            cluster_contours, _ = cv2.findContours(cluster_img_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cluster_contours = list(cluster_contours)
+            if len(cluster_contours) > 0:
+                cluster_contours.sort(key=lambda x: len(x), reverse=True)
+                contour_px = cluster_contours[0]
+                cnt_px_squeeze = contour_px.squeeze()
 
-                    cnt_squeeze = contour.squeeze()
-                    if len(cnt_squeeze) > 3:
-                        try:
-                            poly = Polygon(cnt_squeeze)
-                            poly = make_valid_poly(poly)
+                # convert the contour to a polygon
+                if len(cnt_px_squeeze) > 3:
+                    try:
+                        poly_cluster_px = Polygon(cnt_px_squeeze)
+                        poly_cluster_px = make_valid_poly(poly_cluster_px)
+                        poly_cluster = img_to_camera_coords(poly_cluster_px, depth_img, camera_info)
+
+                    except AssertionError as E:
+                        print("[red]gap detector: error converting contour to polygon![/red]")
+                    else:
+                        # area_px = cv2.contourArea(contour_px)
+                        area_px = poly_cluster_px.area
+                        area = poly_cluster.area
+                        print("area:", area, "area_px:", area_px)
+                        # center_px = self.cnt_center(contour_px)
+                        center_px = poly_cluster_px.centroid
+                        center_px = (int(center_px.x), int(center_px.y))
+                        print("center_px", center_px)
+                        if center_px is not None:
+                            depth_stats  = self.depth_stats(depth_masked_ma, cluster[:, :2].astype(int))
                             
-                            # todo: make valid like for the whole device
-                        except AssertionError as E:
-                            print("[red]gap detector: error converting contour to polygon![/red]")
-                        else:
-                            area = cv2.contourArea(contour)
-                            center = self.cnt_center(contour)
-                            if center is not None:
-                                
-                                depth = self.mean_depth(depth_masked_ma, cluster[:, :2].astype(int))
-                                
-                                if depth is not None:
-                                    cluster_obj = contour, poly, area, center, depth, index
+                            if depth_stats is not None:
+                                    cluster_obj = SimpleNamespace()
+                                    cluster_obj.contour_px = contour_px
+                                    cluster_obj.poly_px = poly_cluster_px
+                                    cluster_obj.poly = poly_cluster
+                                    cluster_obj.area_px = area_px
+                                    cluster_obj.area = area
+                                    cluster_obj.center_px = center_px
+                                    cluster_obj.depth_stats = depth_stats
+                                    cluster_obj.colour = cluster_colour
+                                    cluster_obj.index = index
+                                    cluster_obj.is_valid = True
+
+                                    # cluster_obj = contour_px, poly_cluster_px, poly_cluster, area_px, area, center_px, depth_stats, cluster_colour, index, True
                                     cluster_objs.append(cluster_obj)
 
+        # filter clusters
+        for cluster_obj in cluster_objs:
+            
+            # the center of the cluster should be inside the cluster. This removes some very funny snake like clusters
+            is_centroid_inside = cluster_obj.poly_px.contains(cluster_obj.poly_px.centroid)
+            if not is_centroid_inside:
+                cluster_obj.is_valid = False
+                print("[red]cluster obj is invalid. Centroid not inside polygon")
+
+            # the cluster area should be above a minimum otherwise they are too small to insert lever
+            if cluster_obj.area < self.MIN_LEVERABLE_AREA:
+                print("[red]cluster obj is invalid. area too small:", cluster_obj_low.area)
+                cluster_obj.is_valid = False
 
 
-        # print("gap detector: num clusters found:", len(cluster_objs))
+        print("gap detector: remaining clusters:", len(cluster_objs))
 
         # good_points = []
         lines = []
         points_min_max = []
         counter = 0
-        for cluster_obj1, cluster_obj2 in combinations(cluster_objs, 2):
-            cnt1, poly1, area1, center1, depth1, cluster_id1 = cluster_obj1
-            cnt2, poly2, area2, center2, depth2, cluster_id2 = cluster_obj2
+        for cluster_obj_low, cluster_obj_high in permutations(cluster_objs, 2):
+            
+            # if either cluster is not valid, don't continue
+            if not cluster_obj_low.is_valid or not cluster_obj_high.is_valid:
+                continue
 
-            # the cluster area should be above a minimum otherwise they are too small to insert lever
-            if area1 > self.MIN_LEVERABLE_AREA or area2 > self.MIN_LEVERABLE_AREA:
 
-                    # depth is the distance from camera to point
-                    # this will tell us which side is the lower side of the gap
+            # in this permutation, cluster_obj_low is the lever area, and cluster_obj_high gets levered.
+            # the bigger the depth, the lower it is
+            if cluster_obj_low.depth_stats.median < cluster_obj_high.depth_stats.median and cluster_obj_low.depth_stats.median < cluster_obj_high.depth_stats.median + self.MIN_HEIGHT_DIFFERENCE:
+                print("[red]perm: not the lower depth: low", cluster_obj_low.depth_stats.median, "high:", cluster_obj_high.depth_stats.median)
+                continue # skip current iteration
 
-                if depth2 > depth1 and area2 > self.MIN_LEVERABLE_AREA:
-                    # mean2 is further from camera than mean1. mean2 is the gap
-                    # points_low, points_idx_low, cnt_low = points2, points2_idx, cnt2
-                    cnt_low = cnt2
-                    poly_low = poly2
-                    center_low = center2
-                    depth_low = depth2
-                    cluster_id_low = cluster_id2
+            print("processing valid pair! with depths: low", cluster_obj_low.depth_stats.median, "high:", cluster_obj_high.depth_stats.median)
 
-                    # points_high, points_idx_high, cnt_high = points1, points1_idx, cnt1
-                    # poly_high = poly1
-                    cnt_high = cnt1
-                    center_high = center1
-                    depth_high = depth1
-                    cluster_id_high = cluster_id1
-                elif depth1 > depth2 and area1 > self.MIN_LEVERABLE_AREA:
-                    # mean1 is further from camera than mean2. mean1 is the gap
-                    # points_low, points_idx_low, cnt_low = points1, points1_idx, cnt1
-                    cnt_low = cnt1
-                    poly_low = poly1
-                    center_low = center1
-                    depth_low = depth1
-                    cluster_id_low = cluster_id1
+            obb_px, obb_center_px, rot_quat = get_obb_from_contour(cluster_obj_low.contour_px)
 
-                    # points_high, points_idx_high, cnt_high = points2, points2_idx, cnt2
-                    # poly_high = poly2
-                    cnt_high = cnt2
-                    center_high = center2
-                    depth_high = depth2
-                    cluster_id_high = cluster_id2
-                else:
-                    break
+            gap = Gap()
+            gap.id = counter
 
-                # / 1000, to convert from mm to m, required for img_to_camera_coords(...)
+            gap.from_depth = cluster_obj_low.depth_stats.median
+            gap.to_depth = cluster_obj_high.depth_stats.median
+            
+            # todo: add these properties:
+            
+            # gap.from_det = 
+            # gap.to_det = 
 
-                obb_px, obb_center_px, rot_quat = get_obb_from_contour(cnt_low)
+            # todo: convert to meters
+            gap.obb = obb_px
+            # gap.obb_3d = 
 
-                gap = Gap()
-                gap.id = counter
-
-                gap.from_depth = depth_low # / 1000
-                gap.to_depth = depth_high # / 1000
-                
-                # todo: add these properties:
-                
-                # gap.from_det = 
-                # gap.to_det = 
-
-                # todo: convert to meters
-                gap.obb = obb_px
-                # gap.obb_3d = 
-
-                gap.from_px = np.asarray([center_low[0], center_low[1]])
-                gap.to_px = np.asarray([center_high[0], center_high[1]])
-                
-                from_3d = img_to_camera_coords(gap.from_px, 
-                                                        gap.from_depth, 
-                                                        camera_info)
-                to_3d = img_to_camera_coords(gap.to_px, 
-                                                    gap.to_depth, 
+            gap.from_px = np.asarray([cluster_obj_low.center_px[0], cluster_obj_low.center_px[1]])
+            gap.to_px = np.asarray([cluster_obj_high.center_px[0], cluster_obj_high.center_px[1]])
+            
+            from_3d = img_to_camera_coords(gap.from_px, 
+                                                    gap.from_depth, 
                                                     camera_info)
-                
-                gap.from_tf = Transform(Vector3(*from_3d), Quaternion(0.0, 0.0, 0.1, 0.0))
-                gap.to_tf = Transform(Vector3(*to_3d), Quaternion(0.0, 0.0, 0.1, 0.0))
-                
-                # gap.from_depth = depth_masked[center_low[1], center_low[0]] / 1000
-                # gap.to_depth = depth_masked[center_high[1], center_high[0]] / 1000
-                
-                gap.from_cluster = cluster_id_low
-                gap.to_cluster = cluster_id_high
-                
-                counter += 1
-                
-                # todo: check if Pose is 0, 0, 0
+            to_3d = img_to_camera_coords(gap.to_px, 
+                                                gap.to_depth, 
+                                                camera_info)
+            
+            gap.from_tf = Transform(Vector3(*from_3d), Quaternion(0.0, 0.0, 0.1, 0.0))
+            gap.to_tf = Transform(Vector3(*to_3d), Quaternion(0.0, 0.0, 0.1, 0.0))
+            
+            # gap.from_depth = depth_masked[center_low[1], center_low[0]] / 1000
+            # gap.to_depth = depth_masked[center_high[1], center_high[0]] / 1000
+            
+            gap.from_cluster = cluster_obj_low.index
+            gap.to_cluster = cluster_obj_high.index
+            
+            counter += 1
+            
+            # todo: check if Pose is 0, 0, 0
 
-                p = Pose()
+            p = Pose()
+            
+            p.position.x = from_3d[0]
+            p.position.y = from_3d[1]
+            p.position.z = from_3d[2]
+            # Make sure the quaternion is valid and normalized
+            p.orientation.x = 0.0
+            p.orientation.y = 0.0
+            p.orientation.z = 0.0
+            p.orientation.w = 1.0
+
+            p_stamped = PoseStamped()
+            p_stamped.pose = p
+            p_stamped.header.stamp = rospy.Time.now()
+            p_stamped.header.frame_id = "realsense_link"
+
+            # quaternion should point towards to_camera
+
+            gap.pose_stamped = p_stamped
+
+            # todo: return obb and bb_camera
+
+            
+            
+            #! IMPROVE THIS. 
+            # exclude lever actions where the clusters aren't next to each other.
+            # do it by checking if the line intersects other clusters
+            # line_intersects_another_cluster = False
+            # line_px = LineString([gap.from_px, gap.to_px])
+            # for cnt, poly, area, center, depth_stats, cluster_id in cluster_objs:
+            #     if cluster_id != gap.from_cluster and cluster_id != gap.to_cluster:
+            #         if line_px.intersects(poly):
+            #             # line intersects another cluster. conclusion: clusters aren't next to each other
+            #             line_intersects_another_cluster = True
+            #             break
+            
+            is_valid_gap = True
+
+            # test if clusters are "next to each other". If there is a small cluster in the way, it should still be okay.
+            min_dist_between_polys = shapely.distance(cluster_obj_low.poly, cluster_obj_high.poly)
+            print("min_dist_between_polys", min_dist_between_polys) # TODO
+            if min_dist_between_polys > self.MAX_DISTANCE_BETWEEN_GAP_CLUSTER_AND_LEVER_CLUSTER:
+                print("too far apart!!", min_dist_between_polys)
+                is_valid_gap = False
+
+            # lever action is from: center_low -> center_high
+            # exclude actions where: center_high is too close to the device edge.
+            center_high_pt = Point(cluster_obj_high.center_px[0],cluster_obj_high.center_px[1])
+            if detection_hca_back.polygon_px.exterior.distance(center_high_pt) < self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE:
+                is_valid_gap = False
+
+            if is_valid_gap:
+                gaps.append(gap)
+            else:
+                # center_high too close to device edge
+                gaps_bad.append(gap)
                 
-                p.position.x = from_3d[0]
-                p.position.y = from_3d[1]
-                p.position.z = from_3d[2]
-                # Make sure the quaternion is valid and normalized
-                p.orientation.x = 0.0
-                p.orientation.y = 0.0
-                p.orientation.z = 0.0
-                p.orientation.w = 1.0
-
-                p_stamped = PoseStamped()
-                p_stamped.pose = p
-                p_stamped.header.stamp = rospy.Time.now()
-                p_stamped.header.frame_id = "realsense_link"
-
-                # quaternion should point towards to_camera
-
-                gap.pose_stamped = p_stamped
-
-                # todo: return obb and bb_camera
-
-                # exclude lever actions where the clusters aren't next to each other.
-                # do it by checking if the line intersects other clusters
-                line_intersects_another_cluster = False
-                line_px = LineString([gap.from_px, gap.to_px])
-                for cnt, poly, area, center, depth, cluster_id in cluster_objs:
-                    if cluster_id != gap.from_cluster and cluster_id != gap.to_cluster:
-                        if line_px.intersects(poly):
-                            # line intersects another cluster. conclusion: clusters aren't next to each other
-                            line_intersects_another_cluster = True
-                            break
-                
-                # lever action is from: center_low -> center_high
-                # exclude actions where: center_high is too close to the device edge.
-                center_high_pt = Point(center_high[0],center_high[1])
-                
-                if line_intersects_another_cluster:
-                    gaps_bad2.append(gap)
-                elif device_poly.exterior.distance(center_high_pt) < self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE:
-                    # center_high too close to device edge
-                    gaps_bad.append(gap)
-                else:
-                    gaps.append(gap)
 
         # ? sort the lever actions based on which one is closest to the center of the device
         # gaps.sort(key=lambda gap: np.linalg.norm(gap[0][:2] - obj_center), reverse=False)
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        
+        for cluster_obj in cluster_objs:            
+            # Convert the Shapely polygon to a NumPy array of integer points
+            poly_cluster_px_contour = np.array(cluster_obj.poly_px.exterior.coords, dtype=np.int32)
 
-        cv2.drawContours(img, contours, -1, (0, 255, 0), 1)
-        cv2.drawContours(img, contours_small, -1, (0, 0, 255), 1)
+            # Reshape for OpenCV - contours need to be in shape (number_of_points, 1, 2)
+            poly_cluster_px_contour = poly_cluster_px_contour.reshape((-1, 1, 2))
+
+            # colour invalid clusters red
+            if cluster_obj.is_valid:
+                colour = cluster_obj.colour
+            else:
+                colour = (0, 0, 255)
+
+            cv2.drawContours(cluster_img, [poly_cluster_px_contour], 0, color=colour, thickness=cv2.FILLED)
+
 
         for p_min, p_max in points_min_max:
-            cv2.circle(img, p_min, 6, (50, 141, 168), -1)
-            cv2.circle(img, p_max, 6, (190, 150, 37), -1)
+            cv2.circle(cluster_img, p_min, 6, (50, 141, 168), -1)
+            cv2.circle(cluster_img, p_max, 6, (190, 150, 37), -1)
 
         for idx, [p1, p2] in enumerate(lines):
             # colour = tuple([int(x) for x in get_colour(idx)])
             colour = [162, 162, 162]
-            cv2.line(img, p1, p2, colour, 3)
+            cv2.line(cluster_img, p1, p2, colour, 3)
         
         # for idx, gap in enumerate(gaps_bad):
         #     colour = tuple([int(x) for x in [0, 250, 250]])
-        #     cv2.arrowedLine(img, gap.from_px.astype(int),
+        #     cv2.arrowedLine(cluster_img, gap.from_px.astype(int),
         #                     gap.to_px.astype(int), colour, 3, tipLength=0.3)
             
         # for idx, gap in enumerate(gaps_bad2):
         #     colour = tuple([int(x) for x in [0, 0, 250]])
-        #     cv2.arrowedLine(img, gap.from_px.astype(int),
+        #     cv2.arrowedLine(cluster_img, gap.from_px.astype(int),
         #                     gap.to_px.astype(int), colour, 3, tipLength=0.3)
 
         for idx, gap in enumerate(gaps):
             colour = tuple([int(x) for x in get_colour_blue(idx)])
-            cv2.arrowedLine(img, gap.from_px.astype(int),
+            cv2.arrowedLine(cluster_img, gap.from_px.astype(int),
                             gap.to_px.astype(int), colour, 3, tipLength=0.3)
 
         # print avg height of each cluster
         for cluster_obj in cluster_objs:
-            _, _, _, center, depth, _ = cluster_obj
-            if not np.isnan(depth):
-                text = str(round(depth, 2))
-            else:
-                text = "NaN"
-            text_pt = center
-            font_scale = 0.4
-            color = [255, 255, 255]
-            cv2.putText(img, text, text_pt, font_face, font_scale, color, font_thickness, cv2.LINE_AA)
+            if cluster_obj.is_valid:
+                if not np.isnan(cluster_obj.depth_stats.median):
+                    text = f"median:{cluster_obj.depth_stats.median:.3f}, min: {cluster_obj.depth_stats.min:.3f}, area_px: {cluster_obj.area_px}"
+                else:
+                    text = "NaN"
+
+                w, h = draw_text(cluster_img, text, pos=cluster_obj.center_px, font_scale=1, text_color=cluster_obj.colour)
+
         
-        return gaps, img, device_mask, depth_masked_ma, depth_scaled, depth_scaled_masked
+        return gaps, cluster_img, device_mask, depth_masked_ma, depth_scaled, depth_scaled_masked, depth_gaussian
     
     # =============== CLUSTER ALGORITHM WRAPPERS ===============
     def kmeans(self, data):

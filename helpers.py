@@ -23,6 +23,25 @@ import itertools
 from shapely.geometry import LineString, Point, Polygon, MultiPolygon, GeometryCollection
 from shapely.validation import make_valid
 from shapely.validation import explain_validity
+import shapely
+
+
+def draw_text(img, text,
+          font=cv2.FONT_HERSHEY_PLAIN,
+          pos=(0, 0),
+          font_scale=3,
+          font_thickness=2,
+          text_color=(0, 255, 0),
+          text_color_bg=(0, 0, 0)
+          ):
+
+    x, y = pos
+    text_size, _ = cv2.getTextSize(text, font, font_scale, font_thickness)
+    text_w, text_h = text_size
+    cv2.rectangle(img, pos, (x + text_w, y + text_h), text_color_bg, -1)
+    cv2.putText(img, text, (x, y + text_h + font_scale - 1), font, font_scale, text_color, font_thickness)
+
+    return text_size
 
 
 def str2bool(v):
@@ -95,8 +114,8 @@ def img_to_camera_coords(x_y, depth, camera_info):
     
     def pixels_to_meters(x_y):
         if isinstance(depth, np.ndarray):
-            print("depth.shape", depth.shape)
-            single_depth = depth[x_y[1], x_y[0]]
+            # print("depth.shape", depth.shape, "pos:", x_y[1], x_y[0])
+            single_depth = depth[int(x_y[1]), int(x_y[0])]
         else:
             single_depth = depth
         result = pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, x_y, single_depth)
@@ -264,18 +283,27 @@ def make_valid_poly(poly):
         poly = make_valid(poly)
         
         # we sometimes get a GeometryCollection, where the first item is a MultiPolygon
-        if isinstance(poly, GeometryCollection):
-            for i in np.arange(len(poly.geoms)):
-                if isinstance(poly.geoms[i], MultiPolygon):
-                    poly = poly.geoms[i]
-                    break
-                
-        # we sometimes get a MultiPolygon where the first item is usually the polygon we want
+        idx_largest_poly = None
+        len_largest_poly = -1
         if isinstance(poly, MultiPolygon) or isinstance(poly, GeometryCollection):
             for i in np.arange(len(poly.geoms)):
-                if isinstance(poly.geoms[i], Polygon):
-                    poly = poly.geoms[i]
-                    break
+                if poly.geoms[i].area > len_largest_poly:
+                    idx_largest_poly = i
+                    len_largest_poly = poly.geoms[i].area
+
+            poly = poly.geoms[idx_largest_poly]
+
+        # repeat step because sometimes we have a multipolygon inside a geometry collection
+        idx_largest_poly = None
+        len_largest_poly = -1
+        if isinstance(poly, MultiPolygon) or isinstance(poly, GeometryCollection):
+            # print("[red]poly is GeometryCollection")
+            for i in np.arange(len(poly.geoms)):                
+                if poly.geoms[i].area > len_largest_poly:
+                    idx_largest_poly = i
+                    len_largest_poly = poly.geoms[i].area
+
+            poly = poly.geoms[idx_largest_poly]
 
         # return a Polygon or None
         if not isinstance(poly, Polygon):
@@ -341,6 +369,9 @@ def robust_minimum(data, trim_percentage=0.1):
     :param trim_percentage: Percentage of smallest values to trim (0 to 0.5).
     :return: Robust minimum value.
     """
+    if len(data) == 0:
+        return None
+    
     # Ensure the trim_percentage is between 0 and 0.5
     if trim_percentage < 0 or trim_percentage > 0.5:
         raise ValueError("trim_percentage must be between 0 and 0.5")
@@ -351,11 +382,14 @@ def robust_minimum(data, trim_percentage=0.1):
     # Calculate the number of values to trim
     n_trim = int(len(sorted_data) * trim_percentage)
     
-    # Trim the smallest values
-    trimmed_data = sorted_data[n_trim:]
-    
-    # Return the minimum of the remaining data
-    return np.min(trimmed_data)
+    if n_trim < len(sorted_data):
+        # Trim the smallest values
+        trimmed_data = sorted_data[n_trim:]
+        
+        # Return the minimum of the remaining data
+        return np.min(trimmed_data)
+    else:
+        return None
 
 
 class NumpyEncoder(json.JSONEncoder):
