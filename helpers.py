@@ -118,23 +118,33 @@ def img_to_camera_coords(x_y, depth, camera_info):
             single_depth = depth[int(x_y[1]), int(x_y[0])]
         else:
             single_depth = depth
+        if single_depth is None or single_depth == 0.0:
+            # print("single_depth", single_depth)
+            return None
+        
         result = pyrealsense2.rs2_deproject_pixel_to_point(_intrinsics, x_y, single_depth)
         result = np.asarray(result)
 
-        #result[0]: right, result[1]: down, result[2]: forward
-        # return result[2], -result[0], -result[1] #! DON"T KNOW?
         return result[0], result[1], result[2]
     
     def pixels_to_meters_of_arr(x_y):
         results = []
         for single_x_y in x_y:
-            results.append(pixels_to_meters(single_x_y))
+            result = pixels_to_meters(single_x_y)
+            if result is not None:
+                results.append(result)
+
         return results
     
     if isinstance(x_y, Polygon):
         polygon_coords = np.asarray(list(x_y.exterior.coords))
         
         polygon_coords_m = pixels_to_meters_of_arr(polygon_coords)
+        # polygon should have at least 3 coordinates
+        if len(polygon_coords_m) < 2:
+            print("len(polygon_coords)", len(polygon_coords))
+            print("len(polygon_coords_m)", len(polygon_coords_m))
+            return None
         return Polygon(polygon_coords_m)
 
     elif len(x_y.shape) == 2:
@@ -145,7 +155,12 @@ def img_to_camera_coords(x_y, depth, camera_info):
     else:
         # x, y = x_y
         # single x, y pair
-        return np.asarray(pixels_to_meters(x_y))
+        result = pixels_to_meters(x_y)
+        if result is None:
+            return None
+        
+        return np.asarray(result)
+            
 
 
 def scale_img(img):
@@ -189,6 +204,8 @@ COLOURS = ((244,  67,  54),
           (121,  85,  72),
           (158, 158, 158),
           ( 96, 125, 139))
+
+COLOURS2 = [(0, 255, 0), (255, 0, 255), (0, 127, 255), (255, 127, 0), (127, 191, 127), (185, 2, 62), (75, 1, 221), (20, 87, 110), (172, 109, 251), (228, 253, 9), (0, 255, 255), (94, 139, 5)]
 
 COLOURS_BLUES = ((227, 5, 34),
                  (209, 59, 78),
@@ -312,6 +329,15 @@ def make_valid_poly(poly):
                 print(list(poly.geoms))
             poly = None
     
+    return poly
+
+def simplify_poly(poly):
+    for _ in np.arange(3):
+        if len(poly.exterior.coords) > 20:
+            poly = poly.simplify(tolerance=5.) # tolerance in pixels
+        else:
+            break
+
     return poly
 
 def rotate_img(img, angle_deg):
