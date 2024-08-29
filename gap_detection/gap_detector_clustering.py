@@ -42,10 +42,12 @@ class GapDetectorClustering:
         # threshold maximum depth distance from camera, in meters
         self.MAX_DEPTH_THRESHOLD = 0.5 # meters
 
-        self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE = 20
+        self.MIN_DIST_LEVER_OBJ_CENTER_TO_DEVICE_EDGE = 20 # pixels
 
         # min. leverable area. The min. size of the cluster where the lever starts.
-        self.MIN_LEVERABLE_AREA = 0.0001 # = 0.01 * 0.01 meters^2, or 10mm * 10mm mm^2
+        # ! This really changes accuracy, but may be necessary for small gaps
+        self.MIN_LEVERABLE_AREA = 0.000036 # = 0.006 * 0.006 meters^2, or 6mm * 6mm mm^2
+        # self.MIN_LEVERABLE_AREA = 0.0001 # = 0.01 * 0.01 meters^2, or 10mm * 10mm mm^2
 
         self.MIN_HEIGHT_DIFFERENCE = 0.005 # 5mm
 
@@ -82,8 +84,12 @@ class GapDetectorClustering:
             3: self.hdbscan
         }
         cluster_algorithm = clustering_switch[self.clustering_mode]
+
+        start_time = time.time()
+
         labels = cluster_algorithm(points)
 
+        print(f"time clustering: {time.time() - start_time}")
 
         labels = np.array(labels) # shape (n,)
         labels_T = np.array([labels]).T # shape (n, 1)
@@ -211,7 +217,7 @@ class GapDetectorClustering:
             # cv2.inpaint(cluster_img,mask,3,cv.INPAINT_TELEA)
 
 
-            points = self.image_to_points_list(depth_masked_ma)
+            points = self.image_to_points_list(depth_masked_ma) #! UNUSED.
 
             if len(points) == 0:
                 return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
@@ -258,9 +264,18 @@ class GapDetectorClustering:
         
         # rescale the depth to the range (0, 255) such that the clustering works well
         depth_scaled = skimage.exposure.rescale_intensity(depth_masked_ma, in_range=(depth_min_nonzero, depth_max), out_range=(0,255)).astype(np.uint8)
+
+        print("depth_scaled", np.min(depth_scaled), np.max(depth_scaled))
+
         depth_gaussian = cv2.GaussianBlur(depth_scaled, (7, 7), 0) #! VERY USEFUL FOR SMOOTHING.
-        depth_scaled_masked = np.ma.masked_array(depth_scaled, 255 - device_mask)
-        depth_scaled_points = self.image_to_points_list(depth_gaussian) # shape (n, 3)
+
+        #! TESTING:
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+        depth_opening = cv2.morphologyEx(depth_gaussian, cv2.MORPH_OPEN, kernel)
+
+
+        depth_scaled_masked = np.ma.masked_array(depth_scaled, 255 - device_mask) #! ? unused?
+        depth_scaled_points = self.image_to_points_list(depth_opening) # shape (n, 3) #! Changed from depth_gaussian to depth_opening.
 
         clusters = []
         cluster_objs = []
@@ -307,7 +322,7 @@ class GapDetectorClustering:
                             depth_stats  = self.depth_stats(depth_masked_ma, cluster[:, :2].astype(int))
                             # make sure depth_stats is not none before continuing
                             if depth_stats is not None:
-                                poly_cluster_simple_px = simplify_poly(poly_cluster_px)
+                                poly_cluster_simple_px = simplify_poly(poly_cluster_px, try_max_num_coords=30)
                                 poly_cluster = img_to_camera_coords(poly_cluster_px, depth_img, camera_info)
                                 if poly_cluster is None:
                                     # something is wrong with the depth_img possibly. use median instead
@@ -318,7 +333,7 @@ class GapDetectorClustering:
                                 if poly_cluster is not None:
                                     area = poly_cluster.area
 
-                                cluster_colour = COLOURS2[index]
+                                cluster_colour = COLOURS2[index % len(COLOURS2)]
                                 cluster_colour = (int(cluster_colour[0]), int(cluster_colour[1]), int(cluster_colour[2])) 
                                 # cluster_colour = get_colour(index)
 
@@ -348,6 +363,7 @@ class GapDetectorClustering:
         cluster_objs.sort(key=lambda x: x.area_px, reverse=True)
 
         # TODO: remove cluster that is covered completely by another
+        # TODO: really this shouldn't be the case. We should not be removing the inner polygons (e.g. donuts)
         for cluster_obj1, cluster_obj2 in permutations(cluster_objs, 2):
             polygon1 = cluster_obj1.poly_px
             polygon2 = cluster_obj2.poly_px
@@ -386,6 +402,8 @@ class GapDetectorClustering:
 
         counter = 0
         for cluster_obj_low, cluster_obj_high in permutations(cluster_objs, 2):
+
+            info_text = ""
             
             # if either cluster is not valid, don't continue
             if not cluster_obj_low.is_valid or not cluster_obj_high.is_valid:
@@ -397,6 +415,9 @@ class GapDetectorClustering:
                 continue # skip current iteration
 
             if cluster_obj_low.depth_stats.median < cluster_obj_high.depth_stats.median + self.MIN_HEIGHT_DIFFERENCE:
+                msg = f"{cluster_obj_low.depth_stats.median:.3f} < {cluster_obj_high.depth_stats.median:.3f} + {self.MIN_HEIGHT_DIFFERENCE} = {(cluster_obj_high.depth_stats.median + self.MIN_HEIGHT_DIFFERENCE):.3f}"
+                print(msg)
+                info_text += msg
                 continue # skip current iteration
 
             # lever action is from: center_low -> center_high
@@ -442,7 +463,7 @@ class GapDetectorClustering:
             
             gap.from_cluster = cluster_obj_low.index
             gap.to_cluster = cluster_obj_high.index
-            gap.info_text = ""
+            gap.info_text = info_text
             counter += 1
             
             
@@ -487,12 +508,12 @@ class GapDetectorClustering:
             min_dist_between_polys_along_arrow = None
             if not intersection_from.is_empty and not intersection_to.is_empty:
                 if intersection_from.geom_type == 'MultiPoint':
-                    point_from = min(intersection_from.geoms, key=lambda point: point.distance(centroid_from))
+                    point_from = max(intersection_from.geoms, key=lambda point: point.distance(centroid_from))
                 else:
                     point_from = intersection_from
 
                 if intersection_to.geom_type == 'MultiPoint':
-                    point_to = min(intersection_to.geoms, key=lambda point: point.distance(centroid_to))
+                    point_to = max(intersection_to.geoms, key=lambda point: point.distance(centroid_to))
                 else:
                     point_to = intersection_to
 
@@ -550,25 +571,30 @@ class GapDetectorClustering:
 
             cv2.drawContours(cluster_img, [poly_cluster_px_contour], 0, color=colour, thickness=cv2.FILLED)
 
+            if not cluster_obj.is_valid:
+                # draw a white border around the invalid contours
+                cv2.drawContours(cluster_img, [poly_cluster_px_contour], 0, color=(255, 255, 255), thickness=1)
 
-        def draw_arrow_with_text(gap, colour):
+
+        def draw_arrow_with_text(gap, colour, show_text=True):
             cv2.arrowedLine(cluster_img, gap.from_px.astype(int),
                             gap.to_px.astype(int), colour, 3, tipLength=0.3)
             
-            if len(gap.info_text) > 0:
+            if show_text and len(gap.info_text) > 0:
                 # write text at midpoint of line
                 line_px = LineString([gap.from_px.astype(int), gap.to_px.astype(int)])
                 midpoint_line_px = line_px.interpolate(0.5, normalized=True)
                 midpoint_line_px = (int(midpoint_line_px.x), int(midpoint_line_px.y))
                 draw_text(cluster_img, gap.info_text, pos=midpoint_line_px, font_scale=1, text_color=colour) 
 
-        # for idx, gap in enumerate(gaps_bad):
-        #     colour = tuple([int(x) for x in [0, 0, 250]])
-        #     draw_arrow_with_text(gap, colour)
+        if self.config.realsense.debug_clustering:
+            for idx, gap in enumerate(gaps_bad):
+                colour = tuple([int(x) for x in [0, 0, 255]])
+                draw_arrow_with_text(gap, colour)
 
         for idx, gap in enumerate(gaps):
             colour = tuple([int(x) for x in get_colour_blue(idx)])
-            draw_arrow_with_text(gap, colour)
+            draw_arrow_with_text(gap, colour, show_text=self.config.realsense.debug_clustering)
 
         # print avg height of each cluster
         count_clusters = 0
@@ -588,13 +614,15 @@ class GapDetectorClustering:
                 text += f"depth(median: {cluster_obj.depth_stats.median:.3f}, min: {cluster_obj.depth_stats.min:.3f}), area(px: {cluster_obj.area_px}, m: {cluster_obj.area:.5f}) thinness: {cluster_obj.thinness_ratio:.3f}"
                 if len(cluster_obj.info) > 0:
                     text += f"{cluster_obj.info}"
+
                 # ! only for debugging:
-                # draw_text(cluster_img, text, pos=cluster_obj.center_px, font_scale=1, text_color=(0, 0, 255))
-                draw_text(cluster_img, text, pos=(10, 10 + count_clusters*20), font_scale=1, text_color=(0, 0, 255))
-                count_clusters += 1
+                if self.config.realsense.debug_clustering:
+                    draw_text(cluster_img, text, pos=cluster_obj.center_px, font_scale=1, text_color=(0, 0, 255))
+                    draw_text(cluster_img, text, pos=(10, 10 + count_clusters*20), font_scale=1, text_color=(0, 0, 255))
+                    count_clusters += 1
 
         
-        return gaps, cluster_img, device_mask, depth_masked_ma, depth_scaled, depth_scaled_masked, depth_gaussian
+        return gaps, cluster_img, device_mask, depth_masked_ma, depth_scaled, depth_scaled_masked, depth_gaussian, depth_opening
     
     # =============== CLUSTER ALGORITHM WRAPPERS ===============
     def kmeans(self, data):

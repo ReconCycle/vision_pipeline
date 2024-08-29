@@ -21,7 +21,7 @@ from tracker.byte_tracker import BYTETracker
 from context_action_framework.graph_relations import GraphRelations, exists_detection, compute_iou
 import obb
 import graphics
-from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles, circular_median, robust_minimum
+from helpers import Struct, make_valid_poly, img_to_camera_coords, add_angles, circular_median, robust_minimum, simplify_poly
 from context_action_framework.types import Detection, Label, LabelFace, Camera, lookup_label_precise_name
 from object_detector_opencv import SimpleDetector
 from object_reid import ObjectReId
@@ -344,7 +344,7 @@ class ObjectDetection:
             if detection.mask_contour is not None and len(detection.mask_contour) > 2:
                 poly = Polygon(detection.mask_contour)
                 poly = make_valid_poly(poly)
-                
+
                 for _ in np.arange(3):
                     if len(poly.exterior.coords) > 20:
                         poly = poly.simplify(tolerance=5.) # tolerance in pixels
@@ -628,12 +628,14 @@ class ObjectDetection:
             if detection.label == Label.screw:
                 # screws cannot be bigger than 
                 if detection.polygon.area > 0.001:
-                    detection.is_invalid_reason = "area too big"
+                    detection.is_invalid_reason = "(screw) area too big"
+                    if self.config.obj_detection.debug:
+                        print("[red]detection: invalid: screw area too big[/red]")
                     return False
             else:
                 # area should be larger than 1cm^2 = 0.0001 m^2
                 if detection.polygon is not None and detection.polygon.area < 0.0001:
-                    detection.is_invalid_reason = "area too big"
+                    detection.is_invalid_reason = "polygon area too small"
                     if self.config.obj_detection.debug:
                         print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
                     return False

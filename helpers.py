@@ -140,8 +140,8 @@ def img_to_camera_coords(x_y, depth, camera_info):
         polygon_coords = np.asarray(list(x_y.exterior.coords))
         
         polygon_coords_m = pixels_to_meters_of_arr(polygon_coords)
-        # polygon should have at least 3 coordinates
-        if len(polygon_coords_m) < 2:
+        # polygon should have at least 4 coordinates
+        if len(polygon_coords_m) < 4:
             print("len(polygon_coords)", len(polygon_coords))
             print("len(polygon_coords_m)", len(polygon_coords_m))
             return None
@@ -331,9 +331,9 @@ def make_valid_poly(poly):
     
     return poly
 
-def simplify_poly(poly):
+def simplify_poly(poly, try_max_num_coords=20):
     for _ in np.arange(3):
-        if len(poly.exterior.coords) > 20:
+        if len(poly.exterior.coords) > try_max_num_coords:
             poly = poly.simplify(tolerance=5.) # tolerance in pixels
         else:
             break
@@ -370,10 +370,10 @@ def path(*sub_paths):
 
 def load_depth_data_from_filename(file_name_without_ext, images_dir, depth_rescaling_factor=1/1000):
 
-    image_path = images_dir / Path(file_name_without_ext + ".jpg")
-    camera_info_path = images_dir / Path(file_name_without_ext + "_camera_info.pickle")
-    depth_path = images_dir / Path(file_name_without_ext + "_depth.npy")
-    image_viz_path = images_dir / Path(file_name_without_ext + "_depth_viz.jpg")
+    image_path = images_dir / Path(str(file_name_without_ext) + ".jpg")
+    camera_info_path = images_dir / Path(str(file_name_without_ext) + "_camera_info.pickle")
+    depth_path = images_dir / Path(str(file_name_without_ext) + "_depth.npy")
+    image_viz_path = images_dir / Path(str(file_name_without_ext) + "_depth_viz.jpg")
 
     colour_img = cv2.imread(str(image_path))
     depth_vis_img = cv2.imread(str(image_viz_path))

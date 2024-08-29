@@ -71,7 +71,7 @@ def get_labelled_img(img, masks=None, detections=None, h=None, w=None, undo_tran
         if detection.label_precise is not None:
             name += f"  ({detection.label_precise_name} {detection.label_precise}, {detection.label_precise_conf:.2f})"
         # detection_text = '%s: %s %.2f, (%.2f, %.2f, %.2f)' % (name, tracking_id, detection.score, x1_m, y1_m, z1_m) if args.display_scores else '%s: %s %.2f' % (name, tracking_id, detection.score)
-        detection_text += name + ": " + tracking_id + f"({x1_m:.2f}, {y1_m:.2f}, {z1_m:.2f})"
+        detection_text += name + ": " + tracking_id + f"({x1_m:.3f}, {y1_m:.3f}, {z1_m:.3f})"
         if detection.edge_large is not None:
             detection_text += f" obb width: {detection.edge_large:.3f}m"
         else:
