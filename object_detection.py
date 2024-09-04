@@ -241,34 +241,35 @@ class ObjectDetection:
             if self.config.obj_detection.rotation_median_filter:
                 # apply filter to angle
                 for detection in detections:
-                    # filter by object
-                    if detection.label == Label.smoke_detector and detection.tracking_id is not None:
+                    if detection.valid:
+                        # filter by object
+                        if detection.label == Label.smoke_detector and detection.tracking_id is not None:
 
-                        if detection.tf_name not in self.angle_hist_dict:
-                            # print("[blue]created history dict")
-                            self.angle_hist_dict[detection.tf_name] = []
+                            if detection.tf_name not in self.angle_hist_dict:
+                                # print("[blue]created history dict")
+                                self.angle_hist_dict[detection.tf_name] = []
 
-                        # print(f"[blue]added angle to history_dict track: {detection.tf_name, detection.angle_px}deg, list len: {len(self.angle_hist_dict[detection.tf_name])}")
-                        # add angle_px to history
-                        self.angle_hist_dict[detection.tf_name].append(detection.angle_px)
-                        
-                        # prune list
-                        n = 10
-                        if len(self.angle_hist_dict[detection.tf_name]) > n+4:
-                            # keep last 4 elements in list, when pruning
-                            del self.angle_hist_dict[detection.tf_name][:n]
+                            # print(f"[blue]added angle to history_dict track: {detection.tf_name, detection.angle_px}deg, list len: {len(self.angle_hist_dict[detection.tf_name])}")
+                            # add angle_px to history
+                            self.angle_hist_dict[detection.tf_name].append(detection.angle_px)
+                            
+                            # prune list
+                            n = 10
+                            if len(self.angle_hist_dict[detection.tf_name]) > n+4:
+                                # keep last 4 elements in list, when pruning
+                                del self.angle_hist_dict[detection.tf_name][:n]
 
-                        # last 4 elements:
-                        if len(self.angle_hist_dict[detection.tf_name]) >= 4:
-                            last_angles = self.angle_hist_dict[detection.tf_name][-4:]
+                            # last 4 elements:
+                            if len(self.angle_hist_dict[detection.tf_name]) >= 4:
+                                last_angles = self.angle_hist_dict[detection.tf_name][-4:]
 
-                            median_idx = circular_median(last_angles, degrees=True)
-                            median_angle = last_angles[median_idx]
+                                median_idx = circular_median(last_angles, degrees=True)
+                                median_angle = last_angles[median_idx]
 
-                            # print(f"[green] {detection.label.name}, median_angle {median_angle}, {last_angles}")
+                                # print(f"[green] {detection.label.name}, median_angle {median_angle}, {last_angles}")
 
-                            # set the angle and the median angle
-                            self.set_rotation(detection, median_angle, worksurface_detection)
+                                # set the angle and the median angle
+                                self.set_rotation(detection, median_angle, worksurface_detection)
 
         graphics_start = time.time()
         if extra_text is not None:
@@ -649,7 +650,8 @@ class ObjectDetection:
             detection.valid = is_valid
         
         # graph relations only uses valid detections
-        graph_relations = GraphRelations(detections)
+        #! we may need to set this to True to fix Boris' bug!!
+        graph_relations = GraphRelations(detections, use_valid_detections=False)
         
         # TODO: filter out duplicate detections in a group
         for group in graph_relations.groups:

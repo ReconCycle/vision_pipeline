@@ -139,7 +139,7 @@ class PipelineRealsense(PipelineCamera):
 
         if compute_gaps:
             # apply mask to depth image and convert to pointcloud
-            gaps, cluster_img, depth_scaled, device_mask \
+            gaps, cluster_img, device_mask, depth_masked_ma, depth_scaled, depth_scaled_masked, depth_gaussian, depth_opening \
                 = self.gap_detector.lever_detector(
                     self.colour_img,
                     self.depth_img,
