@@ -166,7 +166,7 @@ class LabelMeImporter():
                 all_batch_crop_imgs.append(batch_crop_imgs)
 
                 if use_yield:
-                    yield colour_img_path, detections, graph_relations, module, camera, batch_crop_imgs
+                    yield colour_img_path, colour_img, detections, graph_relations, module, camera, batch_crop_imgs
 
                     if reset_worksurface_each_time:
                         print("[blue]resetting worksurface detection")
@@ -176,7 +176,7 @@ class LabelMeImporter():
                 print(f"[red]No image matched for {json_path}")
 
         if not use_yield:
-            return img_paths, all_detections, all_graph_relations, modules, cameras, all_batch_crop_imgs
+            return img_paths, colour_img, all_detections, all_graph_relations, modules, cameras, all_batch_crop_imgs
         
 
     def _process_labelme_img(self, json_data, colour_img, depth_img=None, camera_info=None, apply_scale=1.0):
@@ -260,12 +260,12 @@ class LabelMeImporter():
         detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs = self.object_detection.get_detections(detections, colour_img, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
         
         graph_relations_text = graph_relations.to_text()
-        print("graph:", graph_relations_text)
-        print("list_wc_components", graph_relations.list_wc_components)
-        print("detections", len(detections))
+        # print("graph:", graph_relations_text)
+        # print("list_wc_components", graph_relations.list_wc_components)
+        # print("detections", len(detections))
         
         if depth_img is not None:
-            gaps, cluster_img, depth_scaled, device_mask \
+            gaps, cluster_img, depth_scaled, device_mask, *_ \
                 = self.gap_detector.lever_detector(
                     colour_img,
                     depth_img,

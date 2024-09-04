@@ -178,6 +178,8 @@ for tag, device_data in devices_data.items():
         crop_img = Image.open(crop_path)
 
         crop_imgs[tag] = crop_img
+
+print("crop_imgs", crop_imgs)
 # %%
 
 device = "cuda" if torch.cuda.is_available() else "cpu"

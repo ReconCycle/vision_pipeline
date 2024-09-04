@@ -14,6 +14,7 @@ import re
 import open3d as o3d
 from pathlib import Path
 import pickle
+from PIL import Image as PILImage
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -260,6 +261,18 @@ def img_grid(imgs, w=2, h=None, margin=0):
     # cv2.imwrite(name, resized, compression_params)
     return img_matrix
 
+def img_row(imgs, spacing=10):
+    num_imgs = len(imgs)
+    total_width = sum([img.size[0] for img in imgs]) + (num_imgs-1)*spacing
+    max_height = max([img.size[1] for img in imgs])
+    new_image = PILImage.new('RGB', (total_width, max_height), color=(255, 255, 255))
+
+    past_width = 0
+    for idx, img in enumerate(imgs):
+        new_image.paste(img, (past_width, 0))
+        past_width += img.size[0] + spacing
+    
+    return new_image
 
 def add_angles(angle1, angle2, degrees=False):
     if degrees:

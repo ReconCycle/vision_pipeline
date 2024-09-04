@@ -238,7 +238,10 @@ class GapDetectorClustering:
 
         depth_max = np.amax(depth_masked_ma)
         depth_min = np.amin(depth_masked_ma)
+        
         depth_min_nonzero = depth_masked_ma.min() # np.min(points)
+        depth_min_nonzero = np.nan if depth_min_nonzero is np.ma.masked else float(depth_min_nonzero)
+
         depth_median_nonzero = np.ma.median(depth_masked_ma)
 
         # TODO: make cut below and above median by around 2cm in each direction. This will remove big outliers.
@@ -263,6 +266,9 @@ class GapDetectorClustering:
             return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
         
         # rescale the depth to the range (0, 255) such that the clustering works well
+        print("depth_masked_ma.shape", depth_masked_ma.shape)
+        print("depth_min_nonzero", depth_min_nonzero, type(depth_min_nonzero))
+        print("depth_max", depth_max, type(depth_max))
         depth_scaled = skimage.exposure.rescale_intensity(depth_masked_ma, in_range=(depth_min_nonzero, depth_max), out_range=(0,255)).astype(np.uint8)
 
         print("depth_scaled", np.min(depth_scaled), np.max(depth_scaled))
