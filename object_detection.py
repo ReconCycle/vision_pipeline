@@ -95,6 +95,13 @@ class ObjectDetection:
             label_face = label_mapping[model_label][1]
         
         return Label[label], label_face
+    
+    @staticmethod
+    def update_invalid_reason(detection, msg):
+        if detection.is_invalid_reason is None:
+            detection.is_invalid_reason = msg
+        else:
+            detection.is_invalid_reason += f", {msg}"
 
     def get_prediction(self, colour_img, depth_img=None, worksurface_detection=None, extra_text=None, camera_info=None, use_tracker=True, use_classify=True, parent_frame=None, table_name=None):
         t_start = time.time()
@@ -538,6 +545,7 @@ class ObjectDetection:
                         # plt.show()
                         
                         if not np.count_nonzero(depth_img):
+                            self.update_invalid_reason(detection, "depth image is all 0")
                             if self.config.obj_detection.debug:
                                 print("[red]detection: depth image is all 0")
                         
@@ -557,7 +565,7 @@ class ObjectDetection:
 
                     else:
                         print(f"[red] no depth info! {detection.label.name}")
-                        detection.is_invalid_reason = "no depth info"
+                        self.update_invalid_reason(detection, "no depth info")
                     
                 else:
                     if self.config.obj_detection.debug:
@@ -580,13 +588,13 @@ class ObjectDetection:
         # remove objects that don't fit certain constraints, eg. too small, too thin, too big
         def is_valid_detection(detection):
             if detection.angle_px is None:
-                detection.is_invalid_reason = "angle_px is None"
+                self.update_invalid_reason(detection, "angle_px is None")
                 if self.config.obj_detection.debug:
                     print(f"[red]detection: {detection.label.name} angle is None![/red]")
                 return False
             
             if detection.obb is None:
-                detection.is_invalid_reason = "obb is None"
+                self.update_invalid_reason(detection, "obb is None")
                 if self.config.obj_detection.debug:
                     print(f"[red]detection: {detection.label.name} obb is None![/red]")
                 return False
@@ -595,21 +603,21 @@ class ObjectDetection:
 
             # edge_small should be longer than 0.1cm
             if detection.edge_small < 0.001:
-                detection.is_invalid_reason = "edge too small"
+                
                 if self.config.obj_detection.debug:
                     print(f"[red]detection: {detection.label.name} invalid: edge too small: {round(detection.edge_small, 3)}m")
                 return False
             
             # edge_small should be longer than 1cm for everything that is not a screw
             if detection.edge_small < 0.01 and detection.label != Label.screw:
-                detection.is_invalid_reason = "edge too small"
+                self.update_invalid_reason(detection, "edge too small")
                 if self.config.obj_detection.debug:
                     print(f"[red]detection: NOT A SCREW {detection.label.name} invalid: edge too small: {round(detection.edge_small, 3)}m")
                 return False
             
             # edge_large should be shorter than 25cm
             if detection.edge_large > 0.25:
-                detection.is_invalid_reason = "edge too large"
+                self.update_invalid_reason(detection, "edge too large")
                 if self.config.obj_detection.debug:
                     print(f"[red]detection: {detection.label.name} invalid: edge too large: {round(detection.edge_large, 3)}m")
                 return False
@@ -621,7 +629,7 @@ class ObjectDetection:
             # ratio of Kalo 1.5 battery: 1.7
             # a really big ratio corresponds to a really long device. Ratio of 5 is probably false positive.
             if ratio_obb_sides > 5:
-                detection.is_invalid_reason = "ratio too big"
+                self.update_invalid_reason(detection, "ratio too big")
                 if self.config.obj_detection.debug:
                     print("[red]detection: invalid: obb ratio of sides too large[/red]")
                 return False
@@ -629,14 +637,14 @@ class ObjectDetection:
             if detection.label == Label.screw:
                 # screws cannot be bigger than 
                 if detection.polygon.area > 0.001:
-                    detection.is_invalid_reason = "(screw) area too big"
+                    self.update_invalid_reason(detection, "(screw) area too big")
                     if self.config.obj_detection.debug:
                         print("[red]detection: invalid: screw area too big[/red]")
                     return False
             else:
                 # area should be larger than 1cm^2 = 0.0001 m^2
                 if detection.polygon is not None and detection.polygon.area < 0.0001:
-                    detection.is_invalid_reason = "polygon area too small"
+                    self.update_invalid_reason(detection, "polygon area too small")
                     if self.config.obj_detection.debug:
                         print(f"[red]detection: {detection.label.name} invalid: polygon area too small "+ str(detection.polygon.area) +"[/red]")
                     return False

@@ -145,6 +145,7 @@ class GapDetectorClustering:
 
     @staticmethod
     def image_to_points_list(mask):
+        time6 = time.time()
         depth_list = np.zeros((mask.shape[0]*mask.shape[1], 3))
         count = 0
         for i in np.arange(mask.shape[0]):
@@ -153,9 +154,18 @@ class GapDetectorClustering:
                 depth_list[count] = np.array([i, j, mask[i, j]])
                 count += 1
 
+        # depth_list = np.array([np.array([i, j, mask[i, j]]) for i in np.arange(mask.shape[0]) for j in np.arange(mask.shape[1])])
+
+        time7 = time.time()
+
         depth_axis_pts = depth_list[:, 2]
         # filtering camara defects, where depth = 0
         depth_list = depth_list[depth_axis_pts != 0]
+
+        time8 = time.time()
+
+        print(f"time7-time6 clustering: {(time7-time6):.3f}")
+        print(f"time8-time7 clustering: {(time8-time7):.3f}")
         
         return depth_list
 
@@ -169,6 +179,7 @@ class GapDetectorClustering:
 
     def lever_detector(self, colour_img, depth_img, detections, graph_relations, camera_info, aruco_pose=None, aruco_point=None):
 
+        time0 = time.time()
         # print("aruco_pose", aruco_pose)
         # print("aruco_point", aruco_point)
         # print("camera_info", camera_info)
@@ -207,7 +218,7 @@ class GapDetectorClustering:
             hull = cv2.convexHull(contour, False)
             # get mask of segmentation from contour so that we get only the largest component
             device_mask = self.mask_from_contour(hull, depth_img.shape).astype(np.uint8)
-            
+
             # mask depth image
             # depth_masked = cv2.bitwise_and(depth_img, depth_img, mask=device_mask)
             depth_masked_ma = np.ma.masked_array(depth_img,255 - device_mask)
@@ -216,17 +227,15 @@ class GapDetectorClustering:
             # https://docs.opencv.org/3.4/df/d3d/tutorial_py_inpainting.html
             # cv2.inpaint(cluster_img,mask,3,cv.INPAINT_TELEA)
 
-
-            points = self.image_to_points_list(depth_masked_ma) #! UNUSED.
-
-            if len(points) == 0:
-                return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None, None
+            # points = self.image_to_points_list(depth_masked_ma) #! UNUSED.
+            # if len(points) == 0:
+                # return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None, None
 
         else:
             print("[red]gap detector: detection_hca_back (or polygon_px) is None!")
             return gaps, cluster_img, device_mask, None, None, None, None, None
 
-
+        time1 = time.time()
 
         # threshold depth image
         # TODO: make this more robust by looking at median value.
@@ -281,12 +290,17 @@ class GapDetectorClustering:
 
 
         depth_scaled_masked = np.ma.masked_array(depth_scaled, 255 - device_mask) #! ? unused?
+
+        time1a = time.time()
+
         depth_scaled_points = self.image_to_points_list(depth_opening) # shape (n, 3) #! Changed from depth_gaussian to depth_opening.
 
         clusters = []
         cluster_objs = []
         gaps = []
         gaps_bad = []
+
+        time2 = time.time()
 
         # sanity check
         if len(depth_scaled_points) > self.MIN_CLUSTER_SIZE:
@@ -367,6 +381,8 @@ class GapDetectorClustering:
 
         # sort clusters by size:
         cluster_objs.sort(key=lambda x: x.area_px, reverse=True)
+
+        time3 = time.time()
 
         # TODO: remove cluster that is covered completely by another
         # TODO: really this shouldn't be the case. We should not be removing the inner polygons (e.g. donuts)
@@ -558,6 +574,7 @@ class GapDetectorClustering:
                 # center_high too close to device edge
                 gaps_bad.append(gap)
                 
+        time4 = time.time()
 
         # ? sort the lever actions based on which one is closest to the center of the device
         # gaps.sort(key=lambda gap: np.linalg.norm(gap[0][:2] - obj_center), reverse=False)
@@ -627,7 +644,15 @@ class GapDetectorClustering:
                     draw_text(cluster_img, text, pos=(10, 10 + count_clusters*20), font_scale=1, text_color=(0, 0, 255))
                     count_clusters += 1
 
-        
+        time5 = time.time()
+
+        print(f"time1-time0 clustering: {(time1-time0):.3f}")
+        print(f"time2-time1a clustering: {(time2-time1a):.3f}")
+        print(f"time2-time1 clustering: {(time2-time1):.3f}")
+        print(f"time3-time2 clustering: {(time3-time2):.3f}")
+        print(f"time4-time3 clustering: {(time4-time3):.3f}")
+        print(f"time5-time4 clustering: {(time5-time4):.3f}")
+
         return gaps, cluster_img, device_mask, depth_masked_ma, depth_scaled, depth_scaled_masked, depth_gaussian, depth_opening
     
     # =============== CLUSTER ALGORITHM WRAPPERS ===============
