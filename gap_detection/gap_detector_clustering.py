@@ -220,11 +220,11 @@ class GapDetectorClustering:
             points = self.image_to_points_list(depth_masked_ma) #! UNUSED.
 
             if len(points) == 0:
-                return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
+                return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None, None
 
         else:
             print("[red]gap detector: detection_hca_back (or polygon_px) is None!")
-            return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
+            return gaps, cluster_img, device_mask, None, None, None, None, None
 
 
 
@@ -258,12 +258,12 @@ class GapDetectorClustering:
         if depth_min == depth_max:
             if self.config.realsense.debug_clustering:
                 print("[red]gap detector: depth_min == depth_max!")
-            return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
+            return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None, None
 
         if depth_min_nonzero is np.NaN or depth_min_nonzero is None:
             if self.config.realsense.debug_clustering:
                 print("[red]gap detector: depth_min_nonzero is None!")
-            return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None
+            return gaps, cluster_img, device_mask, depth_masked_ma, None, None, None, None
         
         # rescale the depth to the range (0, 255) such that the clustering works well
         print("depth_masked_ma.shape", depth_masked_ma.shape)

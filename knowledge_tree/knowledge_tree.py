@@ -18,6 +18,7 @@ import natsort
 import pickle
 from types import SimpleNamespace
 
+from context_action_framework.types import Detection, Label, Module, Camera, LabelFace
 from vision_pipeline.llm_data_generator.labelme_importer import LabelMeImporter
 
 from treelib import Node, Tree
@@ -152,6 +153,24 @@ class KnowledgeTree:
                 elif  len(qa_json_matches) == 0:
                     print(f"[red]no QA json for {json_path}")
 
+                if json_path is not None:
+                    json_data = json.load(open(json_path))
+
+                    module = None
+                    if 'module' in json_data:
+                        module_str = json_data['module']
+                        if module_str in Module.__members__:
+                            module = Module[module_str]
+                    
+                    camera = None
+                    if 'camera' in json_data:
+                        camera_str = json_data['camera']
+                        if camera_str in Camera.__members__:
+                            camera = Camera[camera_str]
+
+                if qa_json_path is not None:
+                    qa_json_data = json.load(open(qa_json_path))
+
                 # add all info to devices_data dict
                 img_path_added.extend([colour_img_path, depth_viz_img_path, crop_img_path])
 
@@ -161,7 +180,11 @@ class KnowledgeTree:
                 device_data.colour_img_path = colour_img_path
                 device_data.depth_path = depth_path
                 device_data.depth_viz_img_path = depth_viz_img_path
+                device_data.json_data = json_data
+                device_data.qa_json_data = qa_json_data
                 device_data.camera_info = camera_info
+                device_data.camera = camera
+                device_data.module = module
                 device_data.crop_img_path = crop_img_path
                 device_data.crop_img = None
                 device_data.crop_img_encoding = None

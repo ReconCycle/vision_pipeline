@@ -87,6 +87,7 @@ class LabelMeImporter():
         
         image_paths = list(images_dir.glob('*.png')) 
         image_paths.extend(list(images_dir.glob('*.jpg')))
+        image_paths = [path for path in image_paths if "viz" not in str(path.stem)]
         
         # don't work on the cropped images. Remove them from the image paths
         if filter_cropped:
@@ -110,6 +111,7 @@ class LabelMeImporter():
         modules = []
         cameras = []
         all_batch_crop_imgs = []
+        gt_actions = []
 
         for idx, json_path in enumerate(tqdm_json_paths):
             tqdm_json_paths.set_description(f"Converting {Path(json_path).stem}")
@@ -156,7 +158,7 @@ class LabelMeImporter():
                     # camera_info is not None only when realsense is used
                     self.worksurface_detection = WorkSurfaceDetection(colour_img, self.work_surface_ignore_border_width, debug=self.debug_work_surface_detection)
 
-                detections, graph_relations, module, camera, batch_crop_imgs = self._process_labelme_img(json_data, colour_img, depth_img, camera_info)
+                detections, graph_relations, module, camera, batch_crop_imgs, gt_action = self._process_labelme_img(json_data, colour_img, depth_img, camera_info)
 
                 img_paths.append(colour_img_path)
                 all_detections.append(detections)
@@ -164,9 +166,10 @@ class LabelMeImporter():
                 modules.append(module)
                 cameras.append(camera)
                 all_batch_crop_imgs.append(batch_crop_imgs)
+                gt_actions.append(gt_action)
 
                 if use_yield:
-                    yield colour_img_path, colour_img, detections, graph_relations, module, camera, batch_crop_imgs
+                    yield colour_img_path, colour_img, detections, graph_relations, module, camera, batch_crop_imgs, gt_action
 
                     if reset_worksurface_each_time:
                         print("[blue]resetting worksurface detection")
@@ -176,7 +179,7 @@ class LabelMeImporter():
                 print(f"[red]No image matched for {json_path}")
 
         if not use_yield:
-            return img_paths, colour_img, all_detections, all_graph_relations, modules, cameras, all_batch_crop_imgs
+            return img_paths, colour_img, all_detections, all_graph_relations, modules, cameras, all_batch_crop_imgs, gt_actions
         
 
     def _process_labelme_img(self, json_data, colour_img, depth_img=None, camera_info=None, apply_scale=1.0):
@@ -201,6 +204,11 @@ class LabelMeImporter():
             camera_str = json_data['camera']
             if camera_str in Camera.__members__:
                 camera = Camera[camera_str]
+
+        #! for llm_prompt_generator. Quick way to get gt action.
+        gt_action = None
+        if 'gt_action' in json_data:
+            gt_action = json_data['gt_action']
         
         if camera is not None:
             print(f"[blue]camera: {camera.name}")
@@ -258,6 +266,29 @@ class LabelMeImporter():
                     idx += 1
 
         detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs = self.object_detection.get_detections(detections, colour_img, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
+
+
+        def get_first_detection_in_label_list_by_priority(label_list):
+            for label_type in label_list:
+                for idx, detection in enumerate(detections):
+                    if detection.label is label_type:
+                        return detection
+            return None
+
+        # when no hca or smoke detector crops are found, use the next relevant label
+        # TODO: somehow make this nicer using multiple cropped images.
+        if len(batch_crop_imgs) == 0:
+            # these labels are in order of priority
+            detection = get_first_detection_in_label_list_by_priority([Label.pcb, Label.pcb_covered, Label.battery, Label.battery_covered, Label.plastic_clip, Label.internals, Label.hca_empty, Label.hca_empty])
+
+            if detection is not None:
+                crop_size = int(detection.edge_px_large*1.4) #crop such that 80% of the image is the device
+                sample_crop, _ = ObjectReId.crop_det(colour_img, detection, size=crop_size)
+                sample_crop = cv2.resize(sample_crop, (400, 400), interpolation=cv2.INTER_AREA)
+
+                batch_crop_imgs.append(sample_crop) #! here we add it
+
+
         
         graph_relations_text = graph_relations.to_text()
         # print("graph:", graph_relations_text)
@@ -276,7 +307,7 @@ class LabelMeImporter():
             print("gaps", gaps)
             
 
-        return detections, graph_relations, module, camera, batch_crop_imgs
+        return detections, graph_relations, module, camera, batch_crop_imgs, gt_action
     
 
     def labelme_to_detections(self, json_data, sample):
