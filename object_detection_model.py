@@ -25,6 +25,7 @@ from ultralytics import YOLO
 
 from device_reid.model_classify import ClassifyModel
 from vision_pipeline.object_reid_superglue import ObjectReIdSuperGlue
+from context_action_framework.types import classify_name_to_class_id
 import imutils
 
 
@@ -54,6 +55,10 @@ class ObjectDetectionModel:
         elif config.model.lower() == "yolov8":
             self.model_type = ModelType.yolov8
             self.yolov8, self.dataset = self.load_yolov8(config)
+        
+        self.classifier_allow_list = None
+        if hasattr(config, "classifier_allow_list"):
+            self.classifier_allow_list = config.classifier_allow_list
 
         self.load_classify_model()
         self.load_superglue_model()
@@ -184,11 +189,29 @@ class ObjectDetectionModel:
         model_path = os.path.expanduser(self.config.classifier_model_file)
         self.classify_model = ClassifyModel.load_from_checkpoint(model_path, strict=False)
 
-        print("model.learning_rate", self.classify_model.learning_rate)
-        print("model.batch_size", self.classify_model.batch_size)
-        print("model.freeze_backbone", self.classify_model.freeze_backbone)
+        print("classify_model.learning_rate", self.classify_model.learning_rate)
+        print("classify_model.batch_size", self.classify_model.batch_size)
+        print("classify_model.freeze_backbone", self.classify_model.freeze_backbone)
+        print("classify_model.labels", self.classify_model.labels)
 
-    
+        # based on the allow list, we filter the model labels
+        # we do this because the allow list has labels, that we want to convert like so:
+        # smokedet_kalo -> firealarm_front_05, firealarm_back_05, firealarm_back_05.1
+        self.filtered_model_labels = []
+        self.filtered_indices = []
+        if self.classifier_allow_list is not None and len(self.classifier_allow_list) > 0:
+            for model_label in self.classify_model.labels:
+                # for each model_label, check if it is on the classifier_allow_list
+                for allow_item in self.classifier_allow_list:
+                    name_type, class_id = classify_name_to_class_id(allow_item)
+                    if name_type in model_label and class_id in model_label:
+                        self.filtered_model_labels.append(model_label)
+
+            print("self.filtered_model_labels", self.filtered_model_labels)
+            self.filtered_indices = [self.classify_model.labels.index(label) for label in self.filtered_model_labels]
+
+
+
     def infer_classify(self, sample_cropped):
         norm_mean = [0.485, 0.456, 0.406]
         norm_std = [0.229, 0.224, 0.225]
@@ -212,8 +235,6 @@ class ObjectDetectionModel:
         with torch.no_grad():
             logits = self.classify_model(img_tensor)
 
-            preds = torch.argmax(logits, dim=1)
-
             # print("logits.shape", logits.shape)
             # print("preds.shape", preds.shape, preds)
 
@@ -221,13 +242,22 @@ class ObjectDetectionModel:
             # pred_label = self.classify_model.labels[preds[0]]
             # we took logsoftmax, so we have to take the exp to get confidence
             # conf = torch.exp(logits[0][preds[0]])
+            if len(self.filtered_indices) > 0:
+                # filter confidence based on allow list!
+                # self.filtered_indices computed offline
+                filtered_logits = logits[:, self.filtered_indices]
+                filtered_preds = torch.argmax(filtered_logits, dim=1)
 
-            # for a batch:
-            pred_label = [self.classify_model.labels[i] for i in preds]
+                pred_label = [self.filtered_model_labels[i] for i in filtered_preds]
+                conf = [float(torch.exp(filtered_logits[i][filtered_preds[i]]).cpu()) for i in np.arange(len(filtered_preds))]
 
-            # we took logsoftmax, so we have to take the exp to get confidence
-            # ! there must be a better way to write this
-            conf = [float(torch.exp(logits[i][preds[i]]).cpu()) for i in np.arange(len(preds))]
+            else:
+                # for a batch:
+                preds = torch.argmax(logits, dim=1)
+                pred_label = [self.classify_model.labels[i] for i in preds]
+
+                # we took logsoftmax, so we have to take the exp to get confidence
+                conf = [float(torch.exp(logits[i][preds[i]]).cpu()) for i in np.arange(len(preds))]
         
         return pred_label, conf
     

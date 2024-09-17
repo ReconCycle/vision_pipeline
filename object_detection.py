@@ -62,6 +62,8 @@ class ObjectDetection:
 
         self.tracker_dict = {}
 
+        # print("object_detection", self.model.dataset.class_names)
+
         # for each class, create a tracker
         for idx, a_class in enumerate(self.model.dataset.class_names):
             #! frame_rate is actually unused inside BYTETracker

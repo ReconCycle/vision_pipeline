@@ -7,39 +7,12 @@ Project to track heat cost allocators and the individual parts of the heat cost 
 
 ## Device Classification
 
-Each device has a unique class that is called `label_precise`. See the following charts:
-
-![chat HCAs](./readme/device_chart.png)
+Each device has a unique class that is called `label_precise`. Refer to the [context action framework](https://github.com/ReconCycle/context_action_framework) for details.
 
 ## Detections
 
-Each detection has the following attributes:
-- id (int): index in detections list
-- tracking_id (int): unique ID per label that is stable across frames.
+The detection object is described in the [context action framework](https://github.com/ReconCycle/context_action_framework).
 
-- label (Label): hca/smoke_detector/battery...
-- label_face (LabelFace/None): front/back/side1/side2
-- label_precise (str/None): 01/01.1/02...
-- label_precise_name (str/None): kalo/minal/fumonic/siemens/...
-- score (float): segmentation confidence
-
-- tf_px (Transform): transform in pixels
-- box_px (array): bounding box in pixels
-- obb_px (array): oriented bounding box in pixels
-- center_px (array): center coordinates in pixels
-- polygon_px (Polygon): polygon segmentation in pixels
-
-- tf (Transform): transform in meters
-- box (array): bounding box in meters
-- obb (array): oriented bounding box in meters
-- center (array): center coordinates in meters
-- polygon (Polygon): polygon segmentation in meters
-
-- obb_3d (array): oriented bounding box with depth in meters
-
-- parent_frame (str): ROS parent frame name
-- table_name (str/None): table name of detection location 
-- tf_name (str): ROS transform name corresponding to published detection TF
 
 ## Installation
 
