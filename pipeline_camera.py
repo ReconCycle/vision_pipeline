@@ -29,7 +29,7 @@ from visualization_msgs.msg import MarkerArray
 from geometry_msgs.msg import Transform, Vector3, Quaternion, PoseArray, TransformStamped
 
 from context_action_framework.srv import VisionDetection, VisionDetectionResponse, VisionDetectionRequest, ProcessImg, ProcessImgResponse
-from context_action_framework.msg import VisionDetails
+from context_action_framework.msg import VisionDetails, VisionGroup
 from context_action_framework.msg import Detection as ROSDetection
 from context_action_framework.msg import Detections as ROSDetections
 from context_action_framework.types import detections_to_ros, gaps_to_ros, Label, Camera
@@ -98,6 +98,8 @@ class PipelineCamera:
         # self.processed_colour_img = None # ? unused
         self.labelled_img = None
         self.detections = None
+        self.graph_relations = None
+        self.group_crop_imgs = None
         self.markers = None
         # self.poses = None # ? unused
         self.graph_img = None
@@ -286,7 +288,23 @@ class PipelineCamera:
         if self.detections is not None:
             header = rospy.Header()
             header.stamp = rospy.Time.now()
-            vision_details = VisionDetails(header, self.processed_acquisition_stamp, self.camera_type, will_return_gaps, detections_to_ros(self.detections), ros_gaps)
+            
+            # return the vision_groups as well, containing cropped image, 
+            #    and detections in group
+            vision_groups = []
+            for idx, detections in enumerate(self.graph_relations.groups):
+                group_cropped_img = self.group_crop_imgs[idx]
+                ros_group_cropped_img = CvBridge().cv2_to_imgmsg(group_cropped_img, encoding="bgr8")
+                vision_group = VisionGroup(
+                    header,
+                    ros_group_cropped_img,
+                    detections_to_ros(detections)
+                )
+                vision_groups.append(vision_group)
+
+            print(f"[blue] vision_single_det_cb: created vision groups! {len(vision_groups)}")
+
+            vision_details = VisionDetails(header, self.processed_acquisition_stamp, self.camera_type, will_return_gaps, detections_to_ros(self.detections), ros_gaps, vision_groups)
             return VisionDetectionResponse(True, vision_details, img)
         else:
             print(self.camera_name +": returning empty response!")
@@ -300,7 +318,7 @@ class PipelineCamera:
         print(f"(process_img_cb) received image to process {img.shape}")
 
         #! we are not running on main thread. Some things may not work!!
-        labelled_img, detections, markers, poses, graph_img, graph_relations = self.process_img(colour_img=img)
+        labelled_img, detections, markers, poses, graph_img, graph_relations, group_crop_imgs = self.process_img(colour_img=img)
 
         # ! probably should pass self.colour_img instead of class variable
         detections_ros = detections_to_ros(detections)
@@ -339,6 +357,7 @@ class PipelineCamera:
         if state == False:
             self.labelled_img = None
             self.detections = None
+            self.group_crop_imgs = None
     
             
     def enable_camera(self, state):
@@ -475,7 +494,7 @@ class PipelineCamera:
         if t_prev is not None and self.last_run_time - t_prev > 0:
             fps = "fps_total: " + str(round(1 / (self.last_run_time - t_prev), 1)) + ", "
 
-        labelled_img, detections, markers, poses, graph_img, *remaining_args = self.process_img(fps, compute_gaps)
+        labelled_img, detections, markers, poses, graph_img, graph_relations, group_crop_imgs, *remaining_args = self.process_img(fps, compute_gaps)
 
         self.publish(labelled_img, detections, markers, poses, graph_img, *remaining_args)
         
@@ -485,6 +504,8 @@ class PipelineCamera:
         # self.processed_colour_img = processing_colour_img # ? unused
         self.labelled_img = labelled_img
         self.detections = detections
+        self.graph_relations = graph_relations
+        self.group_crop_imgs = group_crop_imgs
         # self.markers = markers # ? unused
         # self.poses = poses # ? unused
         # self.graph_img = graph_img # ? unused
@@ -527,7 +548,7 @@ class PipelineCamera:
                 print(self.camera_name +": detecting work surface...")
                 self.worksurface_detection = WorkSurfaceDetection(self.colour_img, self.camera_config.work_surface_ignore_border_width, debug=self.camera_config.debug_work_surface_detection)
         
-        labelled_img, detections, markers, poses, graph_img, graph_relations = self.object_detection.get_prediction(self.colour_img, 
+        labelled_img, detections, markers, poses, graph_img, graph_relations, group_crop_imgs = self.object_detection.get_prediction(self.colour_img, 
             depth_img=depth_img, 
             worksurface_detection=self.worksurface_detection, 
             extra_text=fps, 
@@ -544,7 +565,7 @@ class PipelineCamera:
             self.aruco_detection = ArucoDetection()
             labelled_img = self.aruco_detection.run(labelled_img, worksurface_detection=self.worksurface_detection)
         
-        return labelled_img, detections, markers, poses, graph_img, graph_relations
+        return labelled_img, detections, markers, poses, graph_img, graph_relations, group_crop_imgs
 
     def publish(self, img, detections, markers, poses, graph_img, *args):
         

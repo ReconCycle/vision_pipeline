@@ -135,7 +135,7 @@ class PipelineRealsense(PipelineCamera):
         
         # colour_img = np.array(cv2.cvtColor(colour_img, cv2.COLOR_BGR2RGB))
         
-        labelled_img, detections, markers, poses, graph_img, graph_relations = super().process_img(fps, depth_img=self.depth_img, camera_info=self.camera_info)
+        labelled_img, detections, markers, poses, graph_img, graph_relations, group_crop_imgs = super().process_img(fps, depth_img=self.depth_img, camera_info=self.camera_info)
 
         if compute_gaps:
             # apply mask to depth image and convert to pointcloud
@@ -152,9 +152,10 @@ class PipelineRealsense(PipelineCamera):
         else:
             gaps, cluster_img, depth_scaled, device_mask = None, None, None, None
 
-        return labelled_img, detections, markers, poses, graph_img, gaps, cluster_img, depth_scaled, device_mask
+        return labelled_img, detections, markers, poses, graph_img, graph_relations, group_crop_imgs, gaps, cluster_img, depth_scaled, device_mask
     
-
+    
+    # publish(self, img, detections, markers, poses, graph_img, *args):
     def publish(self, img, detections, markers, poses, graph_img, gaps, cluster_img, depth_scaled, device_mask):
         header, timestamp = super().publish(img, detections, markers, poses, graph_img)
         

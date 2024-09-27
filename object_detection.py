@@ -244,7 +244,7 @@ class ObjectDetection:
 
             detection.tf_name = tf_name
 
-        detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
+        detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs, group_crop_imgs = self.get_detections(detections, colour_img, depth_img, worksurface_detection, camera_info, use_classify=use_classify)
 
         if use_tracker:
             if self.config.obj_detection.rotation_median_filter:
@@ -292,7 +292,7 @@ class ObjectDetection:
         self.fps_objdet = 1.0 / (time.time() - t_start)
 
 
-        return labelled_img, detections, markers, poses, graph_img, graph_relations
+        return labelled_img, detections, markers, poses, graph_img, graph_relations, group_crop_imgs
     
     def angle_to_quat(self, worksurface_detection, angle_px):
         if worksurface_detection is not None:
@@ -398,6 +398,7 @@ class ObjectDetection:
                         
                     #     cv2.imwrite(filename_crop, sample_crop)
 
+            # TODO: to which group does the crop belong to?
             
             if len(batch_crop_imgs) > 0:
                 batch_crop_imgs_arr = np.array(batch_crop_imgs)
@@ -664,9 +665,23 @@ class ObjectDetection:
         graph_relations = GraphRelations(detections, use_valid_detections=False)
         
         # TODO: filter out duplicate detections in a group
-        for group in graph_relations.groups:
-            for detection in group:
-                pass
+        # for group in graph_relations.groups:
+        #     for detection in group:
+        #         pass
+
+        
+        group_crop_imgs = []
+        for group_detections in graph_relations.groups:
+            # for detection in group:
+            detection = group_detections[0] # really do this better, take the middle point of the group
+
+            crop_size = int(detection.edge_px_large*1.2) #crop such that 80% of the image is the device
+            sample_crop, _ = ObjectReId.crop_det(colour_img, detection, size=crop_size)
+            # sample_crop = imutils.resize(sample_crop, width=400, height=400) # set size to 400x400
+            sample_crop = cv2.resize(sample_crop, (400, 400), interpolation=cv2.INTER_AREA)
+
+            group_crop_imgs.append(sample_crop)
+
 
         # TODO: for a group with multiple objects, add an enclosing object
         # for group in graph_relations.groups:
@@ -808,7 +823,7 @@ class ObjectDetection:
         if time.time() - obb_start > 0:
             fps_obb = 1.0 / (time.time() - obb_start)
         
-        return detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs
+        return detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs, group_crop_imgs
 
 
     def make_marker(self, tf, x, y, z, id, label):
