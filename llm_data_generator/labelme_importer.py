@@ -112,6 +112,7 @@ class LabelMeImporter():
         cameras = []
         all_batch_crop_imgs = []
         gt_actions = []
+        gt_reasonings = []
 
         for idx, json_path in enumerate(tqdm_json_paths):
             tqdm_json_paths.set_description(f"Converting {Path(json_path).stem}")
@@ -158,7 +159,7 @@ class LabelMeImporter():
                     # camera_info is not None only when realsense is used
                     self.worksurface_detection = WorkSurfaceDetection(colour_img, self.work_surface_ignore_border_width, debug=self.debug_work_surface_detection)
 
-                detections, graph_relations, module, camera, batch_crop_imgs, gt_action = self._process_labelme_img(json_data, colour_img, depth_img, camera_info)
+                detections, graph_relations, module, camera, batch_crop_imgs, gt_action, gt_reasoning = self._process_labelme_img(json_data, colour_img, depth_img, camera_info)
 
                 img_paths.append(colour_img_path)
                 all_detections.append(detections)
@@ -167,9 +168,10 @@ class LabelMeImporter():
                 cameras.append(camera)
                 all_batch_crop_imgs.append(batch_crop_imgs)
                 gt_actions.append(gt_action)
+                gt_reasonings.append(gt_reasoning)
 
                 if use_yield:
-                    yield colour_img_path, colour_img, detections, graph_relations, module, camera, batch_crop_imgs, gt_action
+                    yield colour_img_path, colour_img, detections, graph_relations, module, camera, batch_crop_imgs, gt_action, gt_reasoning
 
                     if reset_worksurface_each_time:
                         print("[blue]resetting worksurface detection")
@@ -179,7 +181,7 @@ class LabelMeImporter():
                 print(f"[red]No image matched for {json_path}")
 
         if not use_yield:
-            return img_paths, colour_img, all_detections, all_graph_relations, modules, cameras, all_batch_crop_imgs, gt_actions
+            return img_paths, colour_img, all_detections, all_graph_relations, modules, cameras, all_batch_crop_imgs, gt_actions, gt_reasonings
         
 
     def _process_labelme_img(self, json_data, colour_img, depth_img=None, camera_info=None, apply_scale=1.0):
@@ -209,6 +211,10 @@ class LabelMeImporter():
         gt_action = None
         if 'gt_action' in json_data:
             gt_action = json_data['gt_action']
+
+        gt_reasoning = None
+        if 'gt_reasoning' in json_data:
+            gt_reasoning = json_data['gt_reasoning']
         
         if camera is not None:
             print(f"[blue]camera: {camera.name}")
@@ -265,7 +271,7 @@ class LabelMeImporter():
                     detections.append(detection)
                     idx += 1
 
-        detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs = self.object_detection.get_detections(detections, colour_img, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
+        detections, markers, poses, graph_img, graph_relations, fps_obb, batch_crop_imgs, group_crop_imgs = self.object_detection.get_detections(detections, colour_img, depth_img=depth_img, worksurface_detection=worksurface_detection, camera_info=camera_info)
 
 
         def get_first_detection_in_label_list_by_priority(label_list):
@@ -307,7 +313,7 @@ class LabelMeImporter():
             print("gaps", gaps)
             
 
-        return detections, graph_relations, module, camera, batch_crop_imgs, gt_action
+        return detections, graph_relations, module, camera, batch_crop_imgs, gt_action, gt_reasoning
     
 
     def labelme_to_detections(self, json_data, sample):
